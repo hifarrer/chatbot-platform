@@ -41,7 +41,20 @@ login_manager.login_view = 'login'
 # Initialize services
 document_processor = DocumentProcessor()
 chatbot_trainer = ChatbotTrainer()
-chat_service = ChatServiceOpenAI()
+
+# Initialize chat service lazily to avoid startup errors
+chat_service = None
+
+def get_chat_service():
+    global chat_service
+    if chat_service is None:
+        try:
+            chat_service = ChatServiceOpenAI()
+        except ValueError as e:
+            print(f"⚠️ WARNING: {e}")
+            print("💡 OpenAI service not available. Some features may be limited.")
+            return None
+    return chat_service
 
 # Database Models
 class User(UserMixin, db.Model):
@@ -87,6 +100,11 @@ def load_user(user_id):
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Railway"""
+    return jsonify({'status': 'healthy', 'service': 'ChatBot Platform'}), 200
 
 @app.route('/contact')
 def contact():
@@ -281,7 +299,12 @@ def chat_api(embed_code):
     user_message = data['message']
     
     try:
-        bot_response = chat_service.get_response(chatbot.id, user_message)
+        # Get chat service with lazy initialization
+        service = get_chat_service()
+        if service is None:
+            return jsonify({'error': 'Chat service not available. Please configure OpenAI API key.'}), 503
+            
+        bot_response = service.get_response(chatbot.id, user_message)
         
         # Save conversation
         conversation = Conversation(
