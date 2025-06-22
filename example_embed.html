@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Example Website with ChatBot</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background: #f4f4f4;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        
+        .header {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        
+        .content {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .instructions {
+            background: #e9ecef;
+            padding: 20px;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+        
+        .code-block {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #e9ecef;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌟 Welcome to My Website</h1>
+            <p>This is an example website showing how to embed the ChatBot Platform chatbot</p>
+        </div>
+        
+        <div class="content">
+            <h2>About This Demo</h2>
+            <p>This page demonstrates how easy it is to add an AI chatbot to your website using the ChatBot Platform. The chatbot appears as a floating button in the bottom-right corner.</p>
+            
+            <h2>How It Works</h2>
+            <ul>
+                <li>Create and train your chatbot on the ChatBot Platform</li>
+                <li>Get your unique embed code</li>
+                <li>Paste the code into your website</li>
+                <li>Your visitors can now chat with your AI assistant!</li>
+            </ul>
+            
+            <div class="instructions">
+                <h3>📋 How to Add This to Your Website</h3>
+                <p><strong>Step 1:</strong> Replace the embed code below with your actual chatbot's embed code from the ChatBot Platform.</p>
+                
+                <p><strong>Step 2:</strong> Update the domain URL to match where your ChatBot Platform is hosted.</p>
+                
+                <p><strong>Step 3:</strong> Paste this code before the closing <code>&lt;/body&gt;</code> tag on your website.</p>
+                
+                <div class="code-block">
+&lt;!-- ChatBot Embed Code --&gt;
+&lt;div id="chatbot-YOUR_EMBED_CODE"&gt;&lt;/div&gt;
+&lt;script src="https://your-domain.com/static/js/chatbot-embed.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+ChatbotEmbed.init({
+    embedCode: 'YOUR_EMBED_CODE',
+    apiUrl: 'https://your-domain.com/api/chat/YOUR_EMBED_CODE',
+    containerId: 'chatbot-YOUR_EMBED_CODE',
+    title: 'My AI Assistant',
+    placeholder: 'Ask me anything...'
+});
+&lt;/script&gt;
+                </div>
+            </div>
+            
+            <h2>✨ Features</h2>
+            <ul>
+                <li><strong>Intelligent Responses:</strong> Trained on your documents</li>
+                <li><strong>24/7 Availability:</strong> Always ready to help</li>
+                <li><strong>Easy Integration:</strong> Just copy and paste</li>
+                <li><strong>Mobile Friendly:</strong> Works on all devices</li>
+                <li><strong>Customizable:</strong> Match your brand colors</li>
+            </ul>
+            
+            <h2>🚀 Try It Out</h2>
+            <p>Look for the blue chatbot button in the bottom-right corner of this page. Click it to start a conversation!</p>
+            
+            <p><em>Note: This is a demo. In a real implementation, you would replace the placeholder embed code with your actual chatbot's code from the ChatBot Platform.</em></p>
+        </div>
+    </div>
+
+    <!-- 
+    DEMO CHATBOT EMBED CODE 
+    Replace this with your actual embed code from the ChatBot Platform
+    -->
+    <div id="chatbot-demo"></div>
+    <script src="http://localhost:5000/static/js/chatbot-embed.js"></script>
+    <script>
+    // This is a demo - replace with your actual embed code
+    ChatbotEmbed.init({
+        embedCode: 'demo-chatbot-12345',
+        apiUrl: 'http://localhost:5000/api/chat/YOUR_ACTUAL_EMBED_CODE',
+        containerId: 'chatbot-demo',
+        title: 'Demo Assistant',
+        placeholder: 'Try asking me something...'
+    });
+    </script>
+    
+    <!-- Demo message for when chatbot is not available -->
+    <script>
+    // Show a demo message if the chatbot API is not available
+    setTimeout(function() {
+        const demoMessage = document.createElement('div');
+        demoMessage.style.cssText = `
+            position: fixed;
+            bottom: 100px;
+            right: 20px;
+            background: #007bff;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            max-width: 250px;
+            z-index: 9998;
+            animation: fadeIn 0.5s ease-in;
+        `;
+        demoMessage.innerHTML = '💡 This is a demo! Create your own chatbot at the ChatBot Platform to get a working embed code.';
+        document.body.appendChild(demoMessage);
+        
+        // Auto-hide after 10 seconds
+        setTimeout(() => {
+            demoMessage.style.opacity = '0';
+            setTimeout(() => demoMessage.remove(), 500);
+        }, 10000);
+    }, 3000);
+    </script>
+    
+    <style>
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    </style>
+</body>
+</html> 

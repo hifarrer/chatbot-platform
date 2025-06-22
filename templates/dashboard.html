@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - ChatBot Platform{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-tachometer-alt me-2"></i>Dashboard</h2>
+    <a href="{{ url_for('create_chatbot') }}" class="btn btn-primary">
+        <i class="fas fa-plus me-2"></i>Create New Chatbot
+    </a>
+</div>
+
+{% if chatbots %}
+    <div class="row">
+        {% for chatbot in chatbots %}
+        <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fas fa-robot me-2"></i>{{ chatbot.name }}
+                    </h5>
+                    {% if chatbot.is_trained %}
+                        <span class="badge bg-success">Trained</span>
+                    {% else %}
+                        <span class="badge bg-warning">Not Trained</span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    <p class="card-text">{{ chatbot.description or 'No description provided' }}</p>
+                    <div class="small text-muted mb-3">
+                        <i class="fas fa-calendar me-1"></i>
+                        Created: {{ chatbot.created_at.strftime('%Y-%m-%d') }}
+                    </div>
+                    <div class="small text-muted mb-3">
+                        <i class="fas fa-file me-1"></i>
+                        Documents: {{ chatbot.documents|length }}
+                    </div>
+                    <div class="small text-muted mb-3">
+                        <i class="fas fa-comments me-1"></i>
+                        Conversations: {{ chatbot.conversations|length }}
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <div class="d-grid gap-2">
+                        <a href="{{ url_for('chatbot_details', chatbot_id=chatbot.id) }}" 
+                           class="btn btn-outline-primary btn-sm">
+                            <i class="fas fa-cog me-1"></i>Manage
+                        </a>
+                        {% if chatbot.is_trained %}
+                        <button class="btn btn-info btn-sm" onclick="showEmbedCode('{{ chatbot.embed_code }}')">
+                            <i class="fas fa-code me-1"></i>Get Embed Code
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="text-center py-5">
+        <div class="mb-4">
+            <i class="fas fa-robot fa-5x text-muted"></i>
+        </div>
+        <h3 class="text-muted">No chatbots yet</h3>
+        <p class="text-muted mb-4">Create your first chatbot to get started!</p>
+        <a href="{{ url_for('create_chatbot') }}" class="btn btn-primary btn-lg">
+            <i class="fas fa-plus me-2"></i>Create Your First Chatbot
+        </a>
+    </div>
+{% endif %}
+
+<!-- Embed Code Modal -->
+<div class="modal fade" id="embedModal" tabindex="-1" aria-labelledby="embedModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="embedModalLabel">
+                    <i class="fas fa-code me-2"></i>Embed Code
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Copy and paste this code into your website where you want the chatbot to appear:</p>
+                <div class="position-relative">
+                    <pre class="bg-light p-3 rounded"><code id="embedCode"></code></pre>
+                    <button class="btn btn-sm btn-outline-secondary position-absolute top-0 end-0 m-2" 
+                            onclick="copyEmbedCode()" id="copyBtn">
+                        <i class="fas fa-copy me-1"></i>Copy
+                    </button>
+                </div>
+                <div class="alert alert-info mt-3">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Note:</strong> Make sure to replace <code>YOUR_DOMAIN</code> with your actual domain name where this chatbot platform is hosted.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showEmbedCode(embedCode) {
+    const domain = window.location.origin;
+    const code = `<div id="chatbot-${embedCode}"></div>
+<script src="${domain}/static/js/chatbot-embed.js"><\/script>
+<script>
+ChatbotEmbed.init({
+    embedCode: '${embedCode}',
+    apiUrl: '${domain}/api/chat/${embedCode}',
+    containerId: 'chatbot-${embedCode}'
+});
+<\/script>`;
+    
+    document.getElementById('embedCode').textContent = code;
+    const modal = new bootstrap.Modal(document.getElementById('embedModal'));
+    modal.show();
+}
+
+function copyEmbedCode() {
+    const code = document.getElementById('embedCode').textContent;
+    navigator.clipboard.writeText(code).then(function() {
+        const btn = document.getElementById('copyBtn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
+        btn.classList.remove('btn-outline-secondary');
+        btn.classList.add('btn-success');
+        
+        setTimeout(function() {
+            btn.innerHTML = originalText;
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-outline-secondary');
+        }, 2000);
+    });
+}
+</script>
+{% endblock %} 

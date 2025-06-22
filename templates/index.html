@@ -1,0 +1,321 @@
+{% extends "base.html" %}
+
+{% block title %}Home - ChatBot Platform{% endblock %}
+
+{% block content %}
+<div class="hero-section text-center py-5 mb-5">
+    <div class="container">
+        <h1 class="display-4 fw-bold mb-4 animate-fade-in">
+            <i class="fas fa-robot text-primary me-3"></i>
+            Build Your Own AI Chatbot
+        </h1>
+        <p class="lead mb-4 animate-fade-in-delay">
+            Create, train, and deploy intelligent chatbots for your website in minutes.
+            Upload your documents, train your bot, and embed it anywhere.
+        </p>
+        
+        <!-- Try It Now Highlight Box -->
+        <div class="try-now-highlight mb-4 animate-bounce-subtle">
+            <div class="highlight-box">
+                <div class="d-flex align-items-center justify-content-center mb-3">
+                    <div class="chatbot-icon-large me-3">
+                        <i class="fas fa-comments fa-3x text-primary"></i>
+                    </div>
+                    <div class="text-start">
+                        <h4 class="mb-1 text-primary">Try Our Platform Assistant!</h4>
+                        <p class="mb-0 text-muted">Click the blue chat bubble in the bottom-right corner →</p>
+                    </div>
+                </div>
+                <div class="highlight-arrow">
+                    <i class="fas fa-arrow-down fa-2x text-warning animate-bounce"></i>
+                </div>
+            </div>
+        </div>
+        
+        {% if not current_user.is_authenticated %}
+            <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg me-md-2 animate-pulse">
+                    <i class="fas fa-rocket me-2"></i>Get Started Free
+                </a>
+                <a href="{{ url_for('login') }}" class="btn btn-outline-primary btn-lg">
+                    <i class="fas fa-sign-in-alt me-2"></i>Sign In
+                </a>
+            </div>
+        {% else %}
+            <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg me-md-2">
+                    <i class="fas fa-tachometer-alt me-2"></i>Go to Dashboard
+                </a>
+                <a href="{{ url_for('create_chatbot') }}" class="btn btn-success btn-lg">
+                    <i class="fas fa-plus me-2"></i>Create New Chatbot
+                </a>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="container">
+    <!-- Features Preview Section -->
+    <div class="row mb-5">
+        <div class="col-lg-12 text-center">
+            <h2 class="mb-4">See It In Action</h2>
+            <div class="demo-stats">
+                <div class="row g-4">
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-robot fa-2x text-primary"></i>
+                            </div>
+                            <h3 class="counter" data-target="1000">0</h3>
+                            <p>Chatbots Created</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-file-upload fa-2x text-success"></i>
+                            </div>
+                            <h3 class="counter" data-target="5000">0</h3>
+                            <p>Documents Processed</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-comments fa-2x text-info"></i>
+                            </div>
+                            <h3 class="counter" data-target="50000">0</h3>
+                            <p>Conversations</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-globe fa-2x text-warning"></i>
+                            </div>
+                            <h3 class="counter" data-target="100">0</h3>
+                            <p>Websites Powered</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8 mx-auto">
+            <h2 class="text-center mb-5">How It Works</h2>
+            
+            <div class="row g-4">
+                <div class="col-md-4">
+                    <div class="card h-100 text-center feature-card">
+                        <div class="card-body">
+                            <div class="feature-icon mb-3">
+                                <i class="fas fa-plus-circle fa-3x text-primary"></i>
+                            </div>
+                            <h5 class="card-title">1. Create Your Chatbot</h5>
+                            <p class="card-text">
+                                Start by creating a new chatbot and giving it a name and description.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-4">
+                    <div class="card h-100 text-center feature-card">
+                        <div class="card-body">
+                            <div class="feature-icon mb-3">
+                                <i class="fas fa-upload fa-3x text-success"></i>
+                            </div>
+                            <h5 class="card-title">2. Upload Documents</h5>
+                            <p class="card-text">
+                                Upload PDF, DOCX, or TXT files to train your chatbot with your content.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-4">
+                    <div class="card h-100 text-center feature-card">
+                        <div class="card-body">
+                            <div class="feature-icon mb-3">
+                                <i class="fas fa-brain fa-3x text-warning"></i>
+                            </div>
+                            <h5 class="card-title">3. Train Your Bot</h5>
+                            <p class="card-text">
+                                Click train to process your documents and make your chatbot intelligent.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row g-4 mt-4">
+                <div class="col-md-6">
+                    <div class="card h-100 text-center feature-card">
+                        <div class="card-body">
+                            <div class="feature-icon mb-3">
+                                <i class="fas fa-code fa-3x text-info"></i>
+                            </div>
+                            <h5 class="card-title">4. Get Embed Code</h5>
+                            <p class="card-text">
+                                Copy the embed code and paste it into your website to add the chatbot.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="card h-100 text-center feature-card">
+                        <div class="card-body">
+                            <div class="feature-icon mb-3">
+                                <i class="fas fa-rocket fa-3x text-danger"></i>
+                            </div>
+                            <h5 class="card-title">5. Go Live!</h5>
+                            <p class="card-text">
+                                Your chatbot is now live and ready to help your website visitors.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mt-5">
+        <div class="col-lg-8 mx-auto">
+            <h2 class="text-center mb-4">Powerful Features</h2>
+            <div class="row g-4">
+                <div class="col-md-6">
+                    <div class="d-flex align-items-start feature-item">
+                        <i class="fas fa-check-circle text-success me-3 mt-1"></i>
+                        <div>
+                            <h5>Easy Document Upload</h5>
+                            <p>Support for PDF, DOCX, and TXT file formats with drag-and-drop interface</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="d-flex align-items-start feature-item">
+                        <i class="fas fa-check-circle text-success me-3 mt-1"></i>
+                        <div>
+                            <h5>AI-Powered Responses</h5>
+                            <p>Uses OpenAI GPT technology to understand and respond naturally</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="d-flex align-items-start feature-item">
+                        <i class="fas fa-check-circle text-success me-3 mt-1"></i>
+                        <div>
+                            <h5>Multiple Chatbots</h5>
+                            <p>Create unlimited chatbots for different purposes and websites</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="d-flex align-items-start feature-item">
+                        <i class="fas fa-check-circle text-success me-3 mt-1"></i>
+                        <div>
+                            <h5>Easy Embedding</h5>
+                            <p>Simple code snippet to embed on any website with customizable styling</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Call to Action Section -->
+    <div class="row mt-5">
+        <div class="col-lg-8 mx-auto text-center">
+            <div class="cta-section">
+                <h2 class="mb-3">Ready to Get Started?</h2>
+                <p class="lead mb-4">Join thousands of businesses using AI chatbots to improve customer engagement</p>
+                {% if not current_user.is_authenticated %}
+                    <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg me-3">
+                        <i class="fas fa-rocket me-2"></i>Start Building Now
+                    </a>
+                    <a href="{{ url_for('contact') }}" class="btn btn-outline-primary btn-lg">
+                        <i class="fas fa-envelope me-2"></i>Contact Us
+                    </a>
+                {% else %}
+                    <a href="{{ url_for('create_chatbot') }}" class="btn btn-success btn-lg">
+                        <i class="fas fa-plus me-2"></i>Create Your First Chatbot
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Platform Assistant Chatbot -->
+<div id="chatbot-container"></div>
+<script src="{{ url_for('static', filename='js/chatbot-embed.js') }}"></script>
+<script>
+window.addEventListener('load', function() {
+    // Initialize the Platform Assistant chatbot
+    ChatbotEmbed.init({
+        embedCode: 'a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb',
+        apiUrl: '{{ request.url_root }}api/chat/a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb',
+        containerId: 'chatbot-container',
+        title: 'Platform Assistant',
+        placeholder: 'Ask me about features and how to use the platform!',
+        theme: 'light',
+        position: 'bottom-right'
+    });
+
+    // Add highlighting effect to chatbot after page loads
+    setTimeout(function() {
+        const chatbotToggle = document.querySelector('.chatbot-toggle');
+        if (chatbotToggle) {
+            chatbotToggle.classList.add('highlight-pulse');
+            // Remove highlight after 5 seconds
+            setTimeout(() => {
+                chatbotToggle.classList.remove('highlight-pulse');
+            }, 5000);
+        }
+    }, 2000);
+
+    // Counter animation
+    const counters = document.querySelectorAll('.counter');
+    let animationStarted = false;
+    
+    const animateCounter = (counter) => {
+        const target = parseInt(counter.getAttribute('data-target'));
+        const increment = target / 100;
+        let current = 0;
+        
+        const updateCounter = () => {
+            if (current < target) {
+                current += increment;
+                counter.innerText = Math.ceil(current).toLocaleString();
+                requestAnimationFrame(updateCounter);
+            } else {
+                counter.innerText = target.toLocaleString();
+            }
+        };
+        
+        updateCounter();
+    };
+    
+    // Start counter animation when in view
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting && !animationStarted) {
+                animationStarted = true;
+                counters.forEach(counter => {
+                    animateCounter(counter);
+                });
+                observer.unobserve(entry.target);
+            }
+        });
+    });
+    
+    const statsSection = document.querySelector('.demo-stats');
+    if (statsSection) {
+        observer.observe(statsSection);
+    }
+});
+</script>
+{% endblock %} 

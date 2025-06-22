@@ -1,0 +1,15 @@
+# Minimal requirements for basic functionality
+Flask>=2.3.0
+Flask-SQLAlchemy>=3.0.0
+Flask-Login>=0.6.0
+Flask-WTF>=1.1.0
+WTForms>=3.0.0
+Werkzeug>=2.3.0
+python-dotenv>=1.0.0
+PyPDF2>=3.0.0
+python-docx>=0.8.11
+
+# AI packages (install separately if needed)
+# sentence-transformers>=2.2.0
+# numpy>=1.21.0
+# scikit-learn>=1.2.0 
