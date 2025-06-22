@@ -1,13 +1,23 @@
 import os
 import pickle
-import numpy as np
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
 import json
+
+# Optional imports for AI functionality
+try:
+    import numpy as np
+    from sentence_transformers import SentenceTransformer
+    from sklearn.metrics.pairwise import cosine_similarity
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
+    print("⚠️ WARNING: AI libraries not available. Using OpenAI-only mode.")
 
 class ChatbotTrainer:
     def __init__(self):
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')
+        if AI_AVAILABLE:
+            self.model = SentenceTransformer('all-MiniLM-L6-v2')
+        else:
+            self.model = None
         self.data_dir = 'training_data'
         os.makedirs(self.data_dir, exist_ok=True)
     
@@ -31,16 +41,20 @@ class ChatbotTrainer:
         if not sentences:
             raise ValueError("No content found to train the chatbot")
         
-        # Generate embeddings for all sentences
-        print("🧠 DEBUG: Generating embeddings...")
-        embeddings = self.model.encode(sentences)
-        print(f"✅ DEBUG: Generated embeddings shape: {embeddings.shape}")
-        
         # Save training data
         training_data = {
-            'sentences': sentences,
-            'embeddings': embeddings.tolist()
+            'sentences': sentences
         }
+        
+        # Generate embeddings only if AI libraries are available
+        if AI_AVAILABLE and self.model:
+            print("🧠 DEBUG: Generating embeddings...")
+            embeddings = self.model.encode(sentences)
+            print(f"✅ DEBUG: Generated embeddings shape: {embeddings.shape}")
+            training_data['embeddings'] = embeddings.tolist()
+        else:
+            print("⚠️ DEBUG: Skipping embeddings generation (OpenAI-only mode)")
+            training_data['embeddings'] = None
         
         file_path = os.path.join(self.data_dir, f'chatbot_{chatbot_id}.json')
         with open(file_path, 'w', encoding='utf-8') as f:
@@ -158,8 +172,9 @@ class ChatbotTrainer:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
-            # Convert embeddings back to numpy array
-            data['embeddings'] = np.array(data['embeddings'])
+            # Convert embeddings back to numpy array if available
+            if data.get('embeddings') and AI_AVAILABLE:
+                data['embeddings'] = np.array(data['embeddings'])
             
             print(f"✅ DEBUG: Loaded training data: {len(data['sentences'])} sentences")
             return data
@@ -188,6 +203,11 @@ class ChatbotTrainer:
         if not training_data:
             print("❌ DEBUG: No training data available")
             return []
+        
+        # If AI libraries are not available or no embeddings, use simple text matching
+        if not AI_AVAILABLE or not training_data.get('embeddings') or not self.model:
+            print("⚠️ DEBUG: Using simple text matching (no embeddings available)")
+            return self._simple_text_search(training_data['sentences'], query, top_k)
         
         # Encode the query
         query_embedding = self.model.encode([query])
@@ -244,3 +264,28 @@ class ChatbotTrainer:
             })
         
         return context_sentences 
+    
+    def _simple_text_search(self, sentences, query, top_k=3):
+        """
+        Simple text-based search when embeddings are not available
+        """
+        query_words = set(query.lower().split())
+        
+        results = []
+        for idx, sentence in enumerate(sentences):
+            sentence_words = set(sentence.lower().split())
+            
+            # Calculate simple word overlap
+            overlap = len(query_words.intersection(sentence_words))
+            if overlap > 0:
+                # Simple scoring based on word overlap and sentence length
+                score = overlap / (len(query_words) + len(sentence_words) - overlap)
+                results.append({
+                    'content': sentence,
+                    'similarity': score,
+                    'index': idx
+                })
+        
+        # Sort by score and return top k
+        results.sort(key=lambda x: x['similarity'], reverse=True)
+        return results[:top_k]
