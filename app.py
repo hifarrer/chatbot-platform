@@ -315,29 +315,40 @@ def create_app():
 
     @app.route('/api/chat/<embed_code>', methods=['POST'])
     def chat_api(embed_code):
-        chatbot = Chatbot.query.filter_by(embed_code=embed_code).first_or_404()
-        
-        if not chatbot.is_trained:
-            return jsonify({'error': 'Chatbot is not trained yet'}), 400
-        
-        data = request.get_json()
-        user_message = data.get('message', '').strip()
-        
-        if not user_message:
-            return jsonify({'error': 'Message is required'}), 400
-        
         try:
+            chatbot = Chatbot.query.filter_by(embed_code=embed_code).first()
+            if not chatbot:
+                return jsonify({'error': 'Chatbot not found. Please check the embed code.'}), 404
+            
+            if not chatbot.is_trained:
+                return jsonify({'error': 'Chatbot is not trained yet. Please upload documents and train the chatbot first.'}), 400
+            
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'No data received'}), 400
+                
+            user_message = data.get('message', '').strip()
+            
+            if not user_message:
+                return jsonify({'error': 'Message is required'}), 400
+            
+            print(f"🤖 Chat API: Processing message for chatbot {chatbot.id}: '{user_message}'")
+            
             # Try to use OpenAI service first, fallback to local trainer
             service = get_chat_service()
             if service and hasattr(service, 'get_response'):
                 try:
                     response = service.get_response(chatbot.id, user_message)
+                    print(f"✅ OpenAI response generated")
                 except Exception as e:
-                    print(f"OpenAI service failed: {e}, falling back to local trainer")
+                    print(f"⚠️ OpenAI service failed: {e}, falling back to local trainer")
                     response = chatbot_trainer.generate_response(chatbot.id, user_message)
+                    print(f"✅ Local trainer response generated")
             else:
                 # Use local chatbot trainer
+                print(f"🔄 Using local chatbot trainer")
                 response = chatbot_trainer.generate_response(chatbot.id, user_message)
+                print(f"✅ Local trainer response generated")
             
             # Save conversation
             conversation = Conversation(
@@ -348,9 +359,14 @@ def create_app():
             db.session.add(conversation)
             db.session.commit()
             
+            print(f"💬 Response: {response[:100]}...")
             return jsonify({'response': response})
+            
         except Exception as e:
-            return jsonify({'error': f'Failed to generate response: {str(e)}'}), 500
+            print(f"❌ Chat API Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': 'Sorry, I encountered an error. Please try again.'}), 500
 
     @app.route('/embed/<embed_code>')
     def embed_code(embed_code):
@@ -370,5 +386,154 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        create_demo_chatbot()
     
-    return app 
+    return app
+
+def create_demo_chatbot():
+    """Create a demo chatbot for the homepage if it doesn't exist"""
+    demo_embed_code = 'a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb'
+    
+    # Check if demo chatbot already exists
+    existing_chatbot = Chatbot.query.filter_by(embed_code=demo_embed_code).first()
+    if existing_chatbot:
+        return existing_chatbot
+    
+    # Create demo user if doesn't exist
+    demo_user = User.query.filter_by(username='demo').first()
+    if not demo_user:
+        demo_user = User(
+            username='demo',
+            email='demo@chatbot-platform.com',
+            password_hash=generate_password_hash('demo123')
+        )
+        db.session.add(demo_user)
+        db.session.commit()
+    
+    # Create demo chatbot
+    demo_chatbot = Chatbot(
+        name='Platform Assistant',
+        description='A helpful assistant that can answer questions about the chatbot platform',
+        embed_code=demo_embed_code,
+        user_id=demo_user.id,
+        is_trained=True
+    )
+    
+    db.session.add(demo_chatbot)
+    db.session.commit()
+    
+    # Create demo training data
+    demo_content = """
+About the Chatbot Platform
+
+This is a comprehensive AI-powered chatbot platform that enables businesses and individuals to create intelligent conversational assistants for their websites. Our platform combines ease of use with powerful AI technology to deliver professional chatbot solutions.
+
+Core Services Offered
+
+Document-Based Training: Upload PDF, DOCX, and TXT files to train your chatbot with your specific content. The platform extracts text from documents and creates intelligent responses based on your material.
+
+Multi-Bot Management: Create unlimited chatbots for different purposes - customer support, FAQ assistance, product information, or specialized knowledge bases.
+
+Easy Website Integration: Get a simple embed code that can be added to any website in minutes. No technical expertise required.
+
+AI-Powered Responses: Uses advanced natural language processing with fallback to OpenAI integration for enhanced conversational abilities.
+
+Real-Time Chat Interface: Professional chat widget with typing indicators, customizable themes, and mobile-responsive design.
+
+Conversation Analytics: Track all conversations, monitor chatbot performance, and analyze user interactions through your dashboard.
+
+How to Get Started
+
+Step 1: Create Your Account
+Register for a free account using your email address. No credit card required to start building chatbots.
+
+Step 2: Create Your First Chatbot
+From your dashboard, click "Create Chatbot" and give it a name and description that reflects its purpose.
+
+Step 3: Upload Training Documents
+Upload relevant documents (manuals, FAQs, product information, policies) in PDF, DOCX, or TXT format. The platform will process these automatically.
+
+Step 4: Train Your Chatbot
+Click the "Train" button to process your documents and create the AI knowledge base. This usually takes just a few minutes.
+
+Step 5: Get Your Embed Code
+Once trained, copy the provided embed code and paste it into your website's HTML. The chatbot will appear as a floating widget.
+
+Usage Examples
+
+Customer Support: Upload your support documentation, product manuals, and FAQ documents to create a 24/7 customer service assistant.
+
+Educational Content: Teachers can upload course materials, syllabi, and reading lists to create study assistants for students.
+
+Business Information: Real estate agents can upload property details, market reports, and service information to help potential clients.
+
+Technical Documentation: Software companies can upload API documentation, user guides, and troubleshooting materials.
+
+Company Policies: HR departments can create chatbots trained on employee handbooks, benefits information, and company policies.
+
+Platform Features
+
+Drag-and-Drop File Upload: Simple interface for uploading multiple documents at once.
+
+Automatic Text Extraction: Intelligent processing of PDF and DOCX files to extract relevant text content.
+
+Smart Response Generation: AI algorithms that understand context and provide relevant answers from your training materials.
+
+Conversation History: Complete logs of all chatbot interactions for analysis and improvement.
+
+Multiple Deployment Options: Embed codes work on WordPress, Shopify, custom websites, and any HTML-based platform.
+
+Mobile Optimization: Chatbot widgets automatically adapt to mobile devices for seamless user experience.
+
+Customization Options: Adjust colors, positioning, welcome messages, and placeholder text to match your brand.
+
+Technical Specifications
+
+Supported File Formats: PDF (including scanned documents with OCR), Microsoft Word DOCX, and plain text TXT files.
+
+File Size Limits: Up to 16MB per file upload with support for multiple files per chatbot.
+
+Response Time: Typically under 2 seconds for generating responses from trained content.
+
+Deployment: Cloud-hosted solution with 99.9% uptime and automatic scaling.
+
+Security: All data is encrypted in transit and at rest, with secure API endpoints for chat functionality.
+
+Integration: RESTful API available for custom integrations and advanced use cases.
+
+Pricing and Plans
+
+Free Tier: Create unlimited chatbots, upload documents, and embed on websites at no cost.
+
+OpenAI Integration: Optional upgrade for enhanced AI responses using GPT technology (requires OpenAI API key).
+
+Enterprise Features: Contact us for advanced analytics, custom branding, and priority support options.
+
+Support and Resources
+
+Documentation: Comprehensive guides available for setup, customization, and troubleshooting.
+
+Community: Access to user forums and knowledge sharing with other platform users.
+
+Contact Support: Direct support available through the contact form for technical assistance.
+
+Regular Updates: Platform continuously improved with new features and AI enhancements.
+
+Getting Help
+
+If you need assistance, you can:
+- Check the documentation and guides in your dashboard
+- Contact support through the contact form
+- Register for an account to access the full tutorial system
+- Use this demo chatbot to ask specific questions about features and functionality
+
+The platform is designed to be user-friendly while providing powerful AI capabilities for creating professional chatbot solutions.
+"""
+    
+    try:
+        chatbot_trainer.train_chatbot(demo_chatbot.id, demo_content)
+        print(f"✅ Demo chatbot created and trained with embed code: {demo_embed_code}")
+    except Exception as e:
+        print(f"⚠️ Demo chatbot created but training failed: {e}")
+    
+    return demo_chatbot 
