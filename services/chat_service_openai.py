@@ -75,7 +75,12 @@ class ChatServiceOpenAI:
         # Find similar content
         similar_content = self.trainer.find_similar_content(chatbot_id, user_message, top_k=5)
         
+        print(f"🔍 DEBUG: Found {len(similar_content)} similar content items")
+        for i, item in enumerate(similar_content):
+            print(f"   {i+1}. Similarity: {item['similarity']:.3f} - Content: {item['content'][:50]}...")
+        
         if not similar_content:
+            print("❌ DEBUG: No similar content found by trainer")
             return None
         
         # Build context from most relevant passages
@@ -87,7 +92,7 @@ class ChatServiceOpenAI:
             similarity = item['similarity']
             
             # Only include reasonably relevant content
-            if similarity > 0.2:
+            if similarity > 0.1:
                 # Add some context about relevance
                 passage = f"[Relevance: {similarity:.2f}] {content}"
                 
@@ -96,6 +101,24 @@ class ChatServiceOpenAI:
                     total_length += len(passage)
                 else:
                     break
+        
+        # If no content met the threshold, include the best matches anyway
+        if not context_passages and similar_content:
+            print("⚠️ DEBUG: No content met similarity threshold, using best matches anyway")
+            for item in similar_content[:3]:  # Take top 3 regardless of score
+                content = item['content'].strip()
+                similarity = item['similarity']
+                passage = f"[Relevance: {similarity:.2f}] {content}"
+                
+                if total_length + len(passage) < max_context_length:
+                    context_passages.append(passage)
+                    total_length += len(passage)
+                else:
+                    break
+        
+        print(f"📄 DEBUG: Final context has {len(context_passages)} passages, total length: {total_length}")
+        for i, passage in enumerate(context_passages):
+            print(f"   Context {i+1}: {passage[:100]}...")
         
         return context_passages
     
