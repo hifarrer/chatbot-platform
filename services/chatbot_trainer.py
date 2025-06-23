@@ -289,3 +289,46 @@ class ChatbotTrainer:
         # Sort by score and return top k
         results.sort(key=lambda x: x['similarity'], reverse=True)
         return results[:top_k]
+    
+    def generate_response(self, chatbot_id, user_message):
+        """
+        Generate a response for the user message using trained data
+        """
+        print(f"🤖 DEBUG: Generating response for: '{user_message}'")
+        
+        # Find similar content
+        similar_content = self.find_similar_content(chatbot_id, user_message, top_k=3)
+        
+        if not similar_content:
+            return "I'm sorry, I don't have enough information to answer that question. Please try rephrasing or ask something else."
+        
+        # Use the most similar content as the response
+        best_match = similar_content[0]
+        response = best_match['content']
+        
+        print(f"✅ DEBUG: Best match similarity: {best_match['similarity']:.3f}")
+        print(f"📝 DEBUG: Response: {response[:100]}...")
+        
+        # Clean up the response (remove Q: prefixes, etc.)
+        response = self._clean_response(response)
+        
+        return response
+    
+    def _clean_response(self, response):
+        """
+        Clean up the response text
+        """
+        # Remove common prefixes
+        prefixes_to_remove = ['Q:', 'A:', 'Question:', 'Answer:']
+        
+        for prefix in prefixes_to_remove:
+            if response.startswith(prefix):
+                response = response[len(prefix):].strip()
+        
+        # If it looks like a question, try to find a better answer
+        if self._looks_like_question(response):
+            # This is a question, not an answer - we should handle this better
+            # For now, just return a generic response
+            return "I found a related question in my training data, but I need more specific information to provide a proper answer."
+        
+        return response.strip()

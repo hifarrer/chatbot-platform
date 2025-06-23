@@ -306,8 +306,17 @@ def create_app():
             return jsonify({'error': 'Message is required'}), 400
         
         try:
-            # Generate response using the trained chatbot
-            response = chatbot_trainer.generate_response(chatbot.id, user_message)
+            # Try to use OpenAI service first, fallback to local trainer
+            service = get_chat_service()
+            if service and hasattr(service, 'get_response'):
+                try:
+                    response = service.get_response(chatbot.id, user_message)
+                except Exception as e:
+                    print(f"OpenAI service failed: {e}, falling back to local trainer")
+                    response = chatbot_trainer.generate_response(chatbot.id, user_message)
+            else:
+                # Use local chatbot trainer
+                response = chatbot_trainer.generate_response(chatbot.id, user_message)
             
             # Save conversation
             conversation = Conversation(

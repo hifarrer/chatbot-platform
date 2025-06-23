@@ -1,0 +1,24 @@
+# Railway Deployment Requirements (Lightweight)
+# This version excludes heavy AI libraries to stay within Railway's size limits
+
+# Core Flask dependencies
+Flask>=2.3.0,<3.0.0
+Flask-SQLAlchemy>=3.0.0,<4.0.0
+Flask-Login>=0.6.0,<1.0.0
+Werkzeug>=2.3.0,<3.0.0
+
+# Document processing
+PyPDF2>=3.0.0,<4.0.0
+python-docx>=0.8.11,<1.0.0
+
+# Production server
+gunicorn>=21.0.0,<22.0.0
+
+# Environment management
+python-dotenv>=1.0.0,<2.0.0
+
+# OpenAI API for chat (much smaller than local AI)
+openai>=1.0.0,<2.0.0
+
+# Basic utilities (lightweight)
+requests>=2.31.0,<3.0.0 
