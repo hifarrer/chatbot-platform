@@ -45,21 +45,37 @@ def initialize_app():
 if __name__ == '__main__':
     print("Starting Chatbot Platform...")
     
-    # Check dependencies
-    check_dependencies()
-    
-    # Initialize app
-    initialize_app()
-    
-    # Create Flask app
-    app = create_app()
-    
-    # Get port from environment or default to 5000
-    port = int(os.environ.get('PORT', 5000))
-    
-    # Run the app
-    print(f"Starting server on port {port}...")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    try:
+        # Check dependencies
+        check_dependencies()
+        
+        # Initialize app
+        initialize_app()
+        
+        # Create Flask app
+        app = create_app()
+        
+        # Get port from environment or default to 5000
+        port = int(os.environ.get('PORT', 5000))
+        
+        # Run the app
+        print(f"Starting server on port {port}...")
+        print(f"Health check available at: http://0.0.0.0:{port}/health")
+        app.run(host='0.0.0.0', port=port, debug=False)
+    except Exception as e:
+        print(f"Failed to start application: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 else:
     # For production deployment (gunicorn)
-    app = create_app() 
+    print("Creating app for production...")
+    try:
+        initialize_app()
+        app = create_app()
+        print("App created successfully for gunicorn")
+    except Exception as e:
+        print(f"Failed to create app: {e}")
+        import traceback
+        traceback.print_exc()
+        raise 

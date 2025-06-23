@@ -107,7 +107,23 @@ def create_app():
     @app.route('/health')
     def health_check():
         """Health check endpoint for Railway"""
-        return jsonify({'status': 'healthy', 'service': 'ChatBot Platform'}), 200
+        try:
+            # Check database connection
+            from sqlalchemy import text
+            db.session.execute(text('SELECT 1'))
+            db_status = "connected"
+        except Exception as e:
+            print(f"Database health check failed: {e}")
+            db_status = "error"
+        
+        health_data = {
+            'status': 'healthy',
+            'service': 'ChatBot Platform',
+            'database': db_status,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        
+        return jsonify(health_data), 200
 
     @app.route('/contact')
     def contact():
