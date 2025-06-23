@@ -25,6 +25,7 @@ openai>=1.0.0,<2.0.0
 
 # Basic utilities (lightweight)
 requests>=2.31.0,<3.0.0
+setuptools>=65.0.0
 
 # Heavy AI packages excluded for Render deployment
 # Use requirements-full.txt for local development with sentence-transformers

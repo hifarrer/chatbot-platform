@@ -5,34 +5,19 @@ Application entry point for the Chatbot Platform
 import os
 import sys
 import subprocess
-import pkg_resources
+import importlib.util
 from app import create_app
 
 def check_dependencies():
-    """Check if all required dependencies are installed"""
-    required_packages = [
-        'flask',
-        'flask-sqlalchemy',
-        'sentence-transformers',
-        'PyPDF2',
-        'python-docx',
-        'scikit-learn',
-        'numpy',
-        'torch',
-        'transformers'
-    ]
-    
-    missing_packages = []
-    for package in required_packages:
-        try:
-            pkg_resources.get_distribution(package)
-        except pkg_resources.DistributionNotFound:
-            missing_packages.append(package)
-    
-    if missing_packages:
-        print(f"Missing packages: {', '.join(missing_packages)}")
-        print("Installing missing packages...")
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install'] + missing_packages)
+    """Check if critical dependencies are available"""
+    try:
+        import flask
+        import flask_sqlalchemy
+        print("✅ Core dependencies available")
+        return True
+    except ImportError as e:
+        print(f"❌ Missing critical dependency: {e}")
+        return False
 
 def initialize_app():
     """Initialize the application with required directories"""
@@ -47,7 +32,8 @@ if __name__ == '__main__':
     
     try:
         # Check dependencies
-        check_dependencies()
+        if not check_dependencies():
+            sys.exit(1)
         
         # Initialize app
         initialize_app()
