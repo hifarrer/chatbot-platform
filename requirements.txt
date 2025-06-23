@@ -1,16 +1,31 @@
-# Minimal requirements for OpenAI-powered chatbot platform
+# Render.com Deployment Requirements (Lightweight)
+# This version excludes heavy AI libraries to stay within size limits
+
+# Core Flask dependencies
 Flask>=2.3.0,<3.0.0
 Flask-SQLAlchemy>=3.0.0,<4.0.0
 Flask-Login>=0.6.0,<1.0.0
-Flask-WTF>=1.1.0,<2.0.0
-WTForms>=3.0.0,<4.0.0
 Werkzeug>=2.3.0,<3.0.0
-python-dotenv>=1.0.0,<2.0.0
+
+# Database support
+psycopg2-binary>=2.9.0,<3.0.0
+
+# Document processing
 PyPDF2>=3.0.0,<4.0.0
 python-docx>=0.8.11,<1.0.0
-openai>=1.0.0,<2.0.0
-gunicorn>=20.0.0,<22.0.0
 
-# Heavy AI packages excluded for Railway deployment
+# Production server
+gunicorn>=21.0.0,<22.0.0
+
+# Environment management
+python-dotenv>=1.0.0,<2.0.0
+
+# OpenAI API for chat (much smaller than local AI)
+openai>=1.0.0,<2.0.0
+
+# Basic utilities (lightweight)
+requests>=2.31.0,<3.0.0
+
+# Heavy AI packages excluded for Render deployment
 # Use requirements-full.txt for local development with sentence-transformers
-# For Railway: Uses OpenAI API instead of local AI models 
+# For Render: Uses OpenAI API instead of local AI models 
