@@ -173,8 +173,9 @@ class ChatbotTrainer:
                 data = json.load(f)
             
             # Convert embeddings back to numpy array if available
-            if data.get('embeddings') and AI_AVAILABLE:
-                data['embeddings'] = np.array(data['embeddings'])
+            embeddings_data = data.get('embeddings')
+            if embeddings_data is not None and len(embeddings_data) > 0 and AI_AVAILABLE:
+                data['embeddings'] = np.array(embeddings_data)
             
             print(f"✅ DEBUG: Loaded training data: {len(data['sentences'])} sentences")
             return data
@@ -205,7 +206,8 @@ class ChatbotTrainer:
             return []
         
         # If AI libraries are not available or no embeddings, use simple text matching
-        if not AI_AVAILABLE or not training_data.get('embeddings') or not self.model:
+        embeddings = training_data.get('embeddings')
+        if not AI_AVAILABLE or embeddings is None or len(embeddings) == 0 or not self.model:
             print("⚠️ DEBUG: Using simple text matching (no embeddings available)")
             return self._simple_text_search(training_data['sentences'], query, top_k)
         

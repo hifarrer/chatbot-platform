@@ -334,21 +334,48 @@ def create_app():
             
             print(f"🤖 Chat API: Processing message for chatbot {chatbot.id}: '{user_message}'")
             
-            # Try to use OpenAI service first, fallback to local trainer
-            service = get_chat_service()
-            if service and hasattr(service, 'get_response'):
+            # Import and use the ChatService for better response handling
+            try:
+                from services.chat_service import ChatService
+                print(f"✅ Successfully imported ChatService")
+                chat_service = ChatService()
+                print(f"✅ Successfully created ChatService instance")
+            except Exception as e:
+                print(f"❌ Failed to import/create ChatService: {e}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({'error': f'Service initialization failed: {str(e)}'}), 500
+            
+            # Try to use OpenAI service first, fallback to local chat service
+            openai_service = get_chat_service()
+            if openai_service and hasattr(openai_service, 'get_response'):
                 try:
-                    response = service.get_response(chatbot.id, user_message)
+                    print(f"🔄 Trying OpenAI service")
+                    response = openai_service.get_response(chatbot.id, user_message)
                     print(f"✅ OpenAI response generated")
                 except Exception as e:
-                    print(f"⚠️ OpenAI service failed: {e}, falling back to local trainer")
-                    response = chatbot_trainer.generate_response(chatbot.id, user_message)
-                    print(f"✅ Local trainer response generated")
+                    print(f"⚠️ OpenAI service failed: {e}, falling back to local chat service")
+                    try:
+                        response = chat_service.get_response(chatbot.id, user_message)
+                        print(f"✅ Local chat service response generated")
+                    except Exception as e2:
+                        print(f"❌ Local chat service also failed: {e2}")
+                        return jsonify({'error': f'Both services failed. OpenAI: {str(e)}, Local: {str(e2)}'}), 500
             else:
-                # Use local chatbot trainer
-                print(f"🔄 Using local chatbot trainer")
-                response = chatbot_trainer.generate_response(chatbot.id, user_message)
-                print(f"✅ Local trainer response generated")
+                # Use local chat service (better than direct trainer)
+                print(f"🔄 Using local chat service")
+                try:
+                    response = chat_service.get_response(chatbot.id, user_message)
+                    print(f"✅ Local chat service response generated")
+                except Exception as e:
+                    print(f"❌ Local chat service failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return jsonify({'error': f'Chat service failed: {str(e)}'}), 500
+            
+            # Ensure response is not None or empty
+            if not response or response.strip() == "":
+                response = "I'm sorry, I couldn't generate a proper response. Please try asking your question differently."
             
             # Save conversation
             conversation = Conversation(
@@ -364,9 +391,17 @@ def create_app():
             
         except Exception as e:
             print(f"❌ Chat API Error: {str(e)}")
+            print(f"❌ Error type: {type(e).__name__}")
             import traceback
             traceback.print_exc()
-            return jsonify({'error': 'Sorry, I encountered an error. Please try again.'}), 500
+            
+            # More detailed error information
+            error_details = {
+                'error': 'Sorry, I encountered an error. Please try again.',
+                'debug_info': str(e) if app.debug else None
+            }
+            
+            return jsonify(error_details), 500
 
     @app.route('/embed/<embed_code>')
     def embed_code(embed_code):
@@ -384,7 +419,7 @@ def create_app():
     def create_demo_route():
         """Manual route to create/recreate the demo chatbot"""
         try:
-            demo_chatbot = create_demo_chatbot(chatbot_trainer)
+            demo_chatbot = create_demo_chatbot_internal()
             return jsonify({
                 'success': True,
                 'message': 'Demo chatbot created/updated successfully',
@@ -397,50 +432,77 @@ def create_app():
                 'error': str(e)
             }), 500
 
+    @app.route('/debug-chat-service')
+    def debug_chat_service():
+        """Debug endpoint to check chat service functionality"""
+        try:
+            from services.chat_service import ChatService
+            from services.chatbot_trainer import ChatbotTrainer
+            
+            # Test imports
+            chat_service = ChatService()
+            trainer = ChatbotTrainer()
+            
+            # Check methods
+            trainer_methods = [method for method in dir(trainer) if not method.startswith('_')]
+            chat_service_methods = [method for method in dir(chat_service) if not method.startswith('_')]
+            
+            return jsonify({
+                'success': True,
+                'chatbot_trainer_methods': trainer_methods,
+                'chat_service_methods': chat_service_methods,
+                'trainer_has_generate_response': hasattr(trainer, 'generate_response'),
+                'chat_service_has_get_response': hasattr(chat_service, 'get_response')
+            })
+        except Exception as e:
+            import traceback
+            return jsonify({
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }), 500
+
     def allowed_file(filename):
         ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx'}
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-    with app.app_context():
-        db.create_all()
-        create_demo_chatbot(chatbot_trainer)
-    
-    return app
-
-def create_demo_chatbot(trainer):
-    """Create a demo chatbot for the homepage if it doesn't exist"""
-    demo_embed_code = 'a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb'
-    
-    # Check if demo chatbot already exists
-    existing_chatbot = Chatbot.query.filter_by(embed_code=demo_embed_code).first()
-    if existing_chatbot:
-        return existing_chatbot
-    
-    # Create demo user if doesn't exist
-    demo_user = User.query.filter_by(username='demo').first()
-    if not demo_user:
-        demo_user = User(
-            username='demo',
-            email='demo@chatbot-platform.com',
-            password_hash=generate_password_hash('demo123')
-        )
-        db.session.add(demo_user)
-        db.session.commit()
-    
-    # Create demo chatbot
-    demo_chatbot = Chatbot(
-        name='Platform Assistant',
-        description='A helpful assistant that can answer questions about the chatbot platform',
-        embed_code=demo_embed_code,
-        user_id=demo_user.id,
-        is_trained=True
-    )
-    
-    db.session.add(demo_chatbot)
-    db.session.commit()
-    
-    # Create demo training data
-    demo_content = """
+    def create_demo_chatbot_internal():
+        """Create a demo chatbot for the homepage if it doesn't exist"""
+        demo_embed_code = 'a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb'
+        
+        # Check if demo chatbot already exists
+        existing_chatbot = Chatbot.query.filter_by(embed_code=demo_embed_code).first()
+        if existing_chatbot and existing_chatbot.is_trained:
+            print(f"✅ Demo chatbot already exists and is trained: {demo_embed_code}")
+            return existing_chatbot
+        
+        # Create demo user if doesn't exist
+        demo_user = User.query.filter_by(username='demo').first()
+        if not demo_user:
+            demo_user = User(
+                username='demo',
+                email='demo@chatbot-platform.com',
+                password_hash=generate_password_hash('demo123')
+            )
+            db.session.add(demo_user)
+            db.session.commit()
+        
+        # Create or update demo chatbot
+        if existing_chatbot:
+            demo_chatbot = existing_chatbot
+        else:
+            demo_chatbot = Chatbot(
+                name='Platform Assistant',
+                description='A helpful assistant that can answer questions about the chatbot platform',
+                embed_code=demo_embed_code,
+                user_id=demo_user.id,
+                is_trained=False
+            )
+            db.session.add(demo_chatbot)
+            db.session.commit()
+        
+        # Create demo training data
+        demo_content = """
 About the Chatbot Platform
 
 This is a comprehensive AI-powered chatbot platform that enables businesses and individuals to create intelligent conversational assistants for their websites. Our platform combines ease of use with powerful AI technology to deliver professional chatbot solutions.
@@ -546,13 +608,25 @@ If you need assistance, you can:
 
 The platform is designed to be user-friendly while providing powerful AI capabilities for creating professional chatbot solutions.
 """
+        
+        try:
+            chatbot_trainer.train_chatbot(demo_chatbot.id, demo_content)
+            demo_chatbot.is_trained = True
+            db.session.commit()
+            print(f"✅ Demo chatbot created and trained with embed code: {demo_embed_code}")
+        except Exception as e:
+            print(f"⚠️ Demo chatbot created but training failed: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        return demo_chatbot
+
+    with app.app_context():
+        db.create_all()
+        # Create demo chatbot after all services are initialized
+        try:
+            create_demo_chatbot_internal()
+        except Exception as e:
+            print(f"⚠️ Failed to create demo chatbot: {e}")
     
-    try:
-        trainer.train_chatbot(demo_chatbot.id, demo_content)
-        print(f"✅ Demo chatbot created and trained with embed code: {demo_embed_code}")
-    except Exception as e:
-        print(f"⚠️ Demo chatbot created but training failed: {e}")
-        import traceback
-        traceback.print_exc()
-    
-    return demo_chatbot 
+    return app 

@@ -438,7 +438,9 @@
             .then(response => response.json())
             .then(data => {
                 this.hideTyping();
-                this.addMessage(data.response, 'bot');
+                // Handle undefined, null, or empty responses
+                const botResponse = data.response || data.error || 'Sorry, I encountered an issue. Please try again.';
+                this.addMessage(botResponse, 'bot');
             })
             .catch(error => {
                 this.hideTyping();
