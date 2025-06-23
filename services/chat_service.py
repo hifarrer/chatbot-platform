@@ -36,8 +36,21 @@ class ChatService:
             print(f"   {i+1}. Similarity: {item['similarity']:.3f} - Content: {item['content'][:100]}...")
         
         if not similar_content:
-            print("❌ DEBUG: No similar content found")
-            return random.choice(self.default_responses)
+            print("❌ DEBUG: No similar content found, trying fallback response")
+            # If we have training data but no matches, provide a more helpful response
+            sample_topics = []
+            for sentence in training_data['sentences'][:3]:  # Get first 3 sentences as examples
+                if len(sentence.strip()) > 20:
+                    # Extract key topics from the sentence
+                    clean_sentence = sentence.replace('Q:', '').replace('A:', '').strip()
+                    if len(clean_sentence) > 30:
+                        sample_topics.append(clean_sentence[:60] + "...")
+            
+            if sample_topics:
+                topics_text = " | ".join(sample_topics)
+                return f"I have training data but couldn't find a good match for your question. I can help with topics like: {topics_text}. Could you try rephrasing your question?"
+            else:
+                return random.choice(self.default_responses)
         
         # Smart Q&A matching - if we find a question, look for the answer
         best_response = self._find_best_response(similar_content, user_message)
@@ -55,7 +68,7 @@ class ChatService:
             similarity = item['similarity']
             
             # If we found a question with high similarity, look for the answer
-            if content.startswith('Q:') and similarity > 0.7:
+            if content.startswith('Q:') and similarity > 0.3:
                 print(f"🔍 DEBUG: Found matching Q: question: {content[:50]}...")
                 
                 # Look for the corresponding answer in the similar content
@@ -79,7 +92,7 @@ class ChatService:
             sentence_index = item.get('index', -1)
             
             # Check if this looks like a question
-            if self._is_question_like(content) and similarity > 0.8:
+            if self._is_question_like(content) and similarity > 0.3:
                 print(f"🔍 DEBUG: Found question-like content at index {sentence_index}: {content[:50]}...")
                 
                 # First, try to find the answer in the next few sentences
@@ -108,10 +121,10 @@ class ChatService:
                         print(f"✅ DEBUG: Found answer for question-like content: {answer_content[:50]}...")
                         return answer_content
         
-        # Look for direct answers (starting with 'A:')
+                    # Look for direct answers (starting with 'A:')
         for item in similar_content:
             content = item['content'].strip()
-            if content.startswith('A:') and item['similarity'] > 0.4:
+            if content.startswith('A:') and item['similarity'] > 0.2:
                 print(f"✅ DEBUG: Found direct A: answer: {content[:50]}...")
                 return content[2:].strip()  # Remove 'A:' prefix
         
@@ -125,7 +138,7 @@ class ChatService:
                 continue
             
             # Return the first good non-question content
-            if similarity > 0.3 and len(content) > 20:
+            if similarity > 0.15 and len(content) > 20:
                 print(f"✅ DEBUG: Using best non-question content: {content[:50]}...")
                 return self._format_response(content, similarity)
         

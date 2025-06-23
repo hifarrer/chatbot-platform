@@ -272,25 +272,71 @@ class ChatbotTrainer:
         Simple text-based search when embeddings are not available
         """
         query_words = set(query.lower().split())
+        query_lower = query.lower()
         
         results = []
         for idx, sentence in enumerate(sentences):
-            sentence_words = set(sentence.lower().split())
+            sentence_lower = sentence.lower()
+            sentence_words = set(sentence_lower.split())
             
-            # Calculate simple word overlap
-            overlap = len(query_words.intersection(sentence_words))
-            if overlap > 0:
-                # Simple scoring based on word overlap and sentence length
-                score = overlap / (len(query_words) + len(sentence_words) - overlap)
+            # Calculate different types of matches
+            word_overlap = len(query_words.intersection(sentence_words))
+            
+            # Partial word matching (for words like "platform" matching "platforms")
+            partial_matches = 0
+            for q_word in query_words:
+                for s_word in sentence_words:
+                    if len(q_word) > 3 and (q_word in s_word or s_word in q_word):
+                        partial_matches += 0.5
+            
+            # Substring matching
+            substring_score = 0
+            for q_word in query_words:
+                if len(q_word) > 3 and q_word in sentence_lower:
+                    substring_score += 0.3
+            
+            # Calculate total score
+            total_matches = word_overlap + partial_matches + substring_score
+            
+            if total_matches > 0:
+                # Improved scoring that considers sentence length and match quality
+                score = total_matches / (len(query_words) + len(sentence_words) - word_overlap + 1)
+                
+                # Boost score for exact phrase matches
+                if query_lower in sentence_lower:
+                    score *= 1.5
+                
                 results.append({
                     'content': sentence,
-                    'similarity': score,
+                    'similarity': min(score, 1.0),  # Cap at 1.0
                     'index': idx
                 })
+                
+                print(f"📊 DEBUG: Simple search match {idx}: score={score:.3f}, content='{sentence[:50]}...'")
+        
+        # If no matches found, try even more lenient matching
+        if not results:
+            print("🔍 DEBUG: No matches found, trying lenient search...")
+            for idx, sentence in enumerate(sentences):
+                sentence_lower = sentence.lower()
+                
+                # Very lenient matching - any word from query in sentence
+                for q_word in query_words:
+                    if len(q_word) > 2 and q_word in sentence_lower:
+                        results.append({
+                            'content': sentence,
+                            'similarity': 0.2,  # Low but non-zero score
+                            'index': idx
+                        })
+                        print(f"📊 DEBUG: Lenient match {idx}: '{sentence[:50]}...'")
+                        break
         
         # Sort by score and return top k
         results.sort(key=lambda x: x['similarity'], reverse=True)
-        return results[:top_k]
+        final_results = results[:top_k]
+        
+        print(f"🎯 DEBUG: Simple search returning {len(final_results)} results")
+        return final_results
     
     def generate_response(self, chatbot_id, user_message):
         """
