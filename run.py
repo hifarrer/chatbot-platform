@@ -1,81 +1,65 @@
 #!/usr/bin/env python3
 """
-ChatBot Platform Runner
-
-This script provides an easy way to run the ChatBot Platform with proper initialization.
+Application entry point for the Chatbot Platform
 """
-
 import os
 import sys
-from app import app, db
+import subprocess
+import pkg_resources
+from app import create_app
 
 def check_dependencies():
-    """Check if all required dependencies are installed."""
-    try:
-        import flask
-        import flask_sqlalchemy
-        import flask_login
-        import sentence_transformers
-        import numpy
-        import sklearn
-        print("✅ All dependencies are installed!")
-        return True
-    except ImportError as e:
-        print(f"❌ Missing dependency: {e}")
-        print("Please run: pip install -r requirements.txt")
-        return False
-
-def create_directories():
-    """Create necessary directories if they don't exist."""
-    directories = ['uploads', 'training_data', 'static/css', 'static/js', 'templates']
+    """Check if all required dependencies are installed"""
+    required_packages = [
+        'flask',
+        'flask-sqlalchemy',
+        'sentence-transformers',
+        'PyPDF2',
+        'python-docx',
+        'scikit-learn',
+        'numpy',
+        'torch',
+        'transformers'
+    ]
     
+    missing_packages = []
+    for package in required_packages:
+        try:
+            pkg_resources.get_distribution(package)
+        except pkg_resources.DistributionNotFound:
+            missing_packages.append(package)
+    
+    if missing_packages:
+        print(f"Missing packages: {', '.join(missing_packages)}")
+        print("Installing missing packages...")
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install'] + missing_packages)
+
+def initialize_app():
+    """Initialize the application with required directories"""
+    directories = ['uploads', 'training_data', 'instance']
     for directory in directories:
         if not os.path.exists(directory):
-            os.makedirs(directory, exist_ok=True)
-            print(f"📁 Created directory: {directory}")
-
-def initialize_database():
-    """Initialize the database if it doesn't exist."""
-    with app.app_context():
-        db.create_all()
-        print("📚 Database initialized!")
-
-def main():
-    """Main function to run the application."""
-    print("🤖 ChatBot Platform - Starting up...")
-    print("=" * 50)
-    
-    # Check dependencies
-    if not check_dependencies():
-        sys.exit(1)
-    
-    # Create directories
-    create_directories()
-    
-    # Initialize database
-    initialize_database()
-    
-    print("=" * 50)
-    print("🚀 Starting ChatBot Platform...")
-    print("📍 URL: http://localhost:5000")
-    print("⭐ Features:")
-    print("   - User registration and login")
-    print("   - Create and manage chatbots")
-    print("   - Upload documents for training")
-    print("   - Get embed codes for websites")
-    print("=" * 50)
-    print("📖 Check README.md for detailed instructions")
-    print("🛑 Press Ctrl+C to stop the server")
-    print("=" * 50)
-    
-    # Run the application
-    try:
-        app.run(debug=True, host='0.0.0.0', port=5000)
-    except KeyboardInterrupt:
-        print("\n👋 ChatBot Platform stopped. Goodbye!")
-    except Exception as e:
-        print(f"❌ Error starting application: {e}")
-        sys.exit(1)
+            os.makedirs(directory)
+            print(f"Created directory: {directory}")
 
 if __name__ == '__main__':
-    main() 
+    print("Starting Chatbot Platform...")
+    
+    # Check dependencies
+    check_dependencies()
+    
+    # Initialize app
+    initialize_app()
+    
+    # Create Flask app
+    app = create_app()
+    
+    # Get port from environment or default to 5000
+    port = int(os.environ.get('PORT', 5000))
+    
+    # Run the app
+    print(f"Starting server on port {port}...")
+    app.run(host='0.0.0.0', port=port, debug=False)
+else:
+    # For production deployment (gunicorn)
+    app = create_app() 
