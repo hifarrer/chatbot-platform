@@ -28,7 +28,7 @@
    - **Name**: `chatbot-platform`
    - **Environment**: `Python 3`
    - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `gunicorn run:app --host 0.0.0.0 --port $PORT --workers 1 --timeout 120`
+   - **Start Command**: `gunicorn run:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120`
    - **Plan**: `Free`
 
 ### **3. Environment Variables**
