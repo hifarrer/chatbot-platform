@@ -379,6 +379,23 @@ def create_app():
         if chatbot:
             return render_template('embed.html', embed_code=chatbot.embed_code)
         return "No chatbots available for testing"
+    
+    @app.route('/create-demo-chatbot')
+    def create_demo_route():
+        """Manual route to create/recreate the demo chatbot"""
+        try:
+            demo_chatbot = create_demo_chatbot(chatbot_trainer)
+            return jsonify({
+                'success': True,
+                'message': 'Demo chatbot created/updated successfully',
+                'embed_code': demo_chatbot.embed_code,
+                'is_trained': demo_chatbot.is_trained
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
 
     def allowed_file(filename):
         ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx'}
@@ -386,11 +403,11 @@ def create_app():
 
     with app.app_context():
         db.create_all()
-        create_demo_chatbot()
+        create_demo_chatbot(chatbot_trainer)
     
     return app
 
-def create_demo_chatbot():
+def create_demo_chatbot(trainer):
     """Create a demo chatbot for the homepage if it doesn't exist"""
     demo_embed_code = 'a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb'
     
@@ -531,9 +548,11 @@ The platform is designed to be user-friendly while providing powerful AI capabil
 """
     
     try:
-        chatbot_trainer.train_chatbot(demo_chatbot.id, demo_content)
+        trainer.train_chatbot(demo_chatbot.id, demo_content)
         print(f"✅ Demo chatbot created and trained with embed code: {demo_embed_code}")
     except Exception as e:
         print(f"⚠️ Demo chatbot created but training failed: {e}")
+        import traceback
+        traceback.print_exc()
     
     return demo_chatbot 
