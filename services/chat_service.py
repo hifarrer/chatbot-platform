@@ -20,13 +20,24 @@ class ChatService:
         # Store chatbot_id for use in other methods
         self._current_chatbot_id = chatbot_id
         
+        # Get chatbot info for custom system prompt
+        from app import Chatbot
+        chatbot = Chatbot.query.get(chatbot_id)
+        if not chatbot:
+            return "Chatbot not found."
+        
         # Check if training data exists
         training_data = self.trainer.get_training_data(chatbot_id)
-        if not training_data:
-            print(f"❌ DEBUG: No training data found for chatbot {chatbot_id}")
+        
+        # Allow chatbot to work even without documents if it has a custom prompt
+        if not training_data and not chatbot.system_prompt:
+            print(f"❌ DEBUG: No training data found for chatbot {chatbot_id} and no custom prompt")
             return "I haven't been trained yet. Please upload some documents and train me first!"
         
-        print(f"✅ DEBUG: Found training data with {len(training_data['sentences'])} sentences")
+        if training_data:
+            print(f"✅ DEBUG: Found training data with {len(training_data['sentences'])} sentences")
+        else:
+            print(f"📝 DEBUG: No training data, but chatbot has custom prompt: {chatbot.system_prompt[:50]}...")
         
         # Find similar content from training data
         similar_content = self.trainer.find_similar_content(chatbot_id, user_message, top_k=5)
@@ -37,28 +48,47 @@ class ChatService:
         
         if not similar_content:
             print("❌ DEBUG: No similar content found, trying fallback response")
-            # If we have training data but no matches, provide a more helpful response
-            sample_topics = []
-            for sentence in training_data['sentences'][:3]:  # Get first 3 sentences as examples
-                if len(sentence.strip()) > 20:
-                    # Extract key topics from the sentence
-                    clean_sentence = sentence.replace('Q:', '').replace('A:', '').strip()
-                    if len(clean_sentence) > 30:
-                        sample_topics.append(clean_sentence[:60] + "...")
             
-            if sample_topics:
-                topics_text = " | ".join(sample_topics)
-                return f"I have training data but couldn't find a good match for your question. I can help with topics like: {topics_text}. Could you try rephrasing your question?"
+            # If no training data but has custom prompt, provide a generic response in character
+            if not training_data and chatbot.system_prompt:
+                print("📝 DEBUG: Using custom prompt fallback")
+                return self._generate_custom_prompt_response(chatbot.system_prompt, user_message)
+            
+            # If we have training data but no matches, provide a more helpful response
+            if training_data:
+                sample_topics = []
+                for sentence in training_data['sentences'][:3]:  # Get first 3 sentences as examples
+                    if len(sentence.strip()) > 20:
+                        # Extract key topics from the sentence
+                        clean_sentence = sentence.replace('Q:', '').replace('A:', '').strip()
+                        if len(clean_sentence) > 30:
+                            sample_topics.append(clean_sentence[:60] + "...")
+                
+                if sample_topics:
+                    topics_text = " | ".join(sample_topics)
+                    return f"I have training data but couldn't find a good match for your question. I can help with topics like: {topics_text}. Could you try rephrasing your question?"
+            
+            return random.choice(self.default_responses)
+        
+        # Check if we have good enough similarity to use document content
+        best_similarity = max(item['similarity'] for item in similar_content) if similar_content else 0
+        print(f"📊 DEBUG: Best similarity score: {best_similarity:.3f}")
+        
+        # If similarity is too low, use system prompt instead of forcing document matches
+        if best_similarity < 0.3:
+            print(f"⚠️ DEBUG: Similarity too low ({best_similarity:.3f}), using system prompt response")
+            if chatbot.system_prompt:
+                return self._generate_custom_prompt_response(chatbot.system_prompt, user_message)
             else:
                 return random.choice(self.default_responses)
         
         # Smart Q&A matching - if we find a question, look for the answer
-        best_response = self._find_best_response(similar_content, user_message)
+        best_response = self._find_best_response(similar_content, user_message, chatbot)
         
         print(f"🎯 DEBUG: Selected response: {best_response[:100]}...")
         return best_response
     
-    def _find_best_response(self, similar_content, user_message):
+    def _find_best_response(self, similar_content, user_message, chatbot=None):
         """
         Smart logic to find the best response from similar content
         """
@@ -142,10 +172,15 @@ class ChatService:
                 print(f"✅ DEBUG: Using best non-question content: {content[:50]}...")
                 return self._format_response(content, similarity)
         
-        # If we still don't have a good answer, use the best match but format it better
+        # If we still don't have a good answer, check if we should use system prompt instead
         best_match = similar_content[0]
         best_content = best_match['content'].strip()
         similarity = best_match['similarity']
+        
+        # If similarity is still too low and we have a system prompt, use that instead
+        if similarity < 0.2 and chatbot and chatbot.system_prompt:
+            print(f"⚠️ DEBUG: Document match too weak ({similarity:.3f}), falling back to system prompt")
+            return self._generate_custom_prompt_response(chatbot.system_prompt, user_message)
         
         print(f"⚠️ DEBUG: Using fallback response formatting")
         return self._format_response(best_content, similarity)
@@ -260,4 +295,75 @@ class ChatService:
         This is a temporary solution - we need to pass chatbot_id properly
         For now, we'll modify the get_response method to store it
         """
-        return getattr(self, '_current_chatbot_id', None) 
+        return getattr(self, '_current_chatbot_id', None)
+    
+    def _generate_custom_prompt_response(self, system_prompt, user_message):
+        """
+        Generate a response based on the custom system prompt when no training data is available
+        """
+        # Simple pattern matching for common questions
+        user_lower = user_message.lower()
+        
+        # Extract role/character from system prompt
+        role_phrases = []
+        context_info = ""
+        
+        if "customer support" in system_prompt.lower():
+            role_phrases = [
+                "I'm here to help you as your customer support assistant.",
+                "As a customer support representative, I'm ready to assist you.",
+                "I'm your customer support chatbot, how can I help you today?"
+            ]
+            context_info = "I can help with product questions, troubleshooting, orders, and general support."
+        elif "technical" in system_prompt.lower():
+            role_phrases = [
+                "I'm here to provide technical assistance.",
+                "As a technical assistant, I'm ready to help with your questions.",
+                "I can help you with technical questions and guidance."
+            ]
+            context_info = "I can provide technical guidance, troubleshooting steps, and documentation help."
+        elif "sales" in system_prompt.lower():
+            role_phrases = [
+                "I'm here to help with your purchase decisions.",
+                "As a sales assistant, I can help you find what you need.",
+                "I'm ready to assist with product information and sales."
+            ]
+            context_info = "I can help with product information, pricing, and purchase decisions."
+        elif "platform" in system_prompt.lower() and "chatbot" in system_prompt.lower():
+            role_phrases = [
+                "I'm the Platform Assistant, here to help you with the ChatBot Platform.",
+                "As your Platform Assistant, I can guide you through creating and managing chatbots.",
+                "I'm here to help you make the most of the ChatBot Platform."
+            ]
+            context_info = "I can help with creating chatbots, uploading documents, training, embedding, and platform features."
+        else:
+            # Extract the first sentence of the system prompt as the role
+            first_sentence = system_prompt.split('.')[0] if '.' in system_prompt else system_prompt
+            role_phrases = [
+                f"{first_sentence}. How can I help you?",
+                f"I'm here to assist you. {first_sentence}.",
+                f"{first_sentence}. What would you like to know?"
+            ]
+            context_info = "I'm ready to help with questions related to my role."
+        
+        # Generate contextual responses based on question type
+        if any(word in user_lower for word in ['hello', 'hi', 'hey', 'good morning', 'good afternoon']):
+            return f"Hello! {random.choice(role_phrases)} {context_info}"
+        elif any(word in user_lower for word in ['help', 'support', 'assist', 'can you help']):
+            return f"{random.choice(role_phrases)} {context_info} What specific area would you like help with?"
+        elif any(word in user_lower for word in ['what can you do', 'what do you do', 'capabilities']):
+            return f"{random.choice(role_phrases)} {context_info} Feel free to ask me anything related to my role!"
+        elif any(word in user_lower for word in ['what', 'how', 'why', 'when', 'where', 'who']):
+            # More intelligent responses based on common question patterns
+            if 'what is' in user_lower or 'what are' in user_lower:
+                return f"I'd be happy to explain that for you. {random.choice(role_phrases)} Could you provide more specific details about what you'd like to know?"
+            elif 'how do' in user_lower or 'how to' in user_lower or 'how can' in user_lower:
+                return f"I can help guide you through that process. {random.choice(role_phrases)} Could you tell me more specifically what you're trying to accomplish?"
+            elif 'why' in user_lower:
+                return f"That's a great question! {random.choice(role_phrases)} Could you provide more context so I can give you a helpful explanation?"
+            else:
+                return f"I'd be happy to help answer that question. {random.choice(role_phrases)} Could you provide more specific details about what you're looking for?"
+        elif any(word in user_lower for word in ['thank', 'thanks']):
+            return f"You're welcome! {random.choice(role_phrases)} Is there anything else I can help you with?"
+        else:
+            return f"{random.choice(role_phrases)} {context_info} Could you tell me more about what you need help with?" 

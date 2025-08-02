@@ -20,9 +20,24 @@
                     
                     <div class="mb-3">
                         <label for="description" class="form-label">Description</label>
-                        <textarea class="form-control" id="description" name="description" rows="4"
+                        <textarea class="form-control" id="description" name="description" rows="3"
                                   placeholder="Describe what this chatbot will be used for..."></textarea>
                         <div class="form-text">Optional: Describe the purpose and scope of this chatbot</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="system_prompt" class="form-label">System Prompt <span class="text-danger">*</span></label>
+                        <textarea class="form-control" id="system_prompt" name="system_prompt" rows="4" required
+                                  placeholder="You are a customer support chatbot for a computer store. You help customers with product information, troubleshooting, and purchase decisions. Be friendly, professional, and helpful.">You are a helpful AI assistant. Answer questions based on the provided documents and your general knowledge.</textarea>
+                        <div class="form-text">
+                            <i class="fas fa-lightbulb text-warning me-1"></i>
+                            <strong>This defines your chatbot's personality and role.</strong> Examples:
+                            <ul class="mt-2 mb-0">
+                                <li>"You are a customer support agent for [Company]. Be professional and helpful."</li>
+                                <li>"You are a technical documentation assistant. Provide clear, step-by-step guidance."</li>
+                                <li>"You are a friendly FAQ bot. Answer questions about our services with enthusiasm."</li>
+                            </ul>
+                        </div>
                     </div>
                     
                     <div class="alert alert-info">

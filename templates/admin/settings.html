@@ -1,0 +1,247 @@
+{% extends "admin/base.html" %}
+
+{% block page_title %}Platform Settings{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-home me-2"></i>
+                    Homepage Chatbot Configuration
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Configure which chatbot appears on the homepage and customize its appearance.</p>
+                
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="homepage_chatbot_id" class="form-label">Homepage Chatbot</label>
+                        <select class="form-select" id="homepage_chatbot_id" name="homepage_chatbot_id">
+                            <option value="">Select a trained chatbot...</option>
+                            {% for chatbot in trained_chatbots %}
+                                <option value="{{ chatbot.id }}" 
+                                        {% if current_chatbot_id and current_chatbot_id|int == chatbot.id %}selected{% endif %}>
+                                    {{ chatbot.name }} (by {{ chatbot.owner.username }})
+                                    {% if chatbot.embed_code == 'a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb' %} - Default Demo{% endif %}
+                                </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">
+                            Choose which trained chatbot should appear on the homepage. Only trained chatbots are available.
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="homepage_chatbot_title" class="form-label">Chatbot Title</label>
+                        <input type="text" class="form-control" id="homepage_chatbot_title" 
+                               name="homepage_chatbot_title" value="{{ current_title }}" 
+                               placeholder="Platform Assistant">
+                        <div class="form-text">
+                            The title that appears in the chatbot widget header.
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="homepage_chatbot_placeholder" class="form-label">Input Placeholder</label>
+                        <input type="text" class="form-control" id="homepage_chatbot_placeholder" 
+                               name="homepage_chatbot_placeholder" value="{{ current_placeholder }}" 
+                               placeholder="Ask me anything about the platform...">
+                        <div class="form-text">
+                            The placeholder text that appears in the message input field.
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-2"></i>
+                            Save Settings
+                        </button>
+                        <a href="{{ url_for('index') }}" target="_blank" class="btn btn-outline-secondary">
+                            <i class="fas fa-external-link-alt me-2"></i>
+                            Preview Homepage
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-info-circle me-2"></i>
+                    Current Configuration
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if current_chatbot_id %}
+                    {% set current_chatbot = trained_chatbots|selectattr('id', 'equalto', current_chatbot_id|int)|first %}
+                    {% if current_chatbot %}
+                        <div class="mb-3">
+                            <strong>Active Chatbot:</strong><br>
+                            <div class="d-flex align-items-center mt-2">
+                                <div class="avatar bg-success text-white rounded-circle d-flex align-items-center justify-content-center me-2" 
+                                     style="width: 32px; height: 32px; font-size: 14px;">
+                                    <i class="fas fa-robot"></i>
+                                </div>
+                                <div>
+                                    <div class="fw-bold">{{ current_chatbot.name }}</div>
+                                    <small class="text-muted">by {{ current_chatbot.owner.username }}</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <strong>Embed Code:</strong><br>
+                            <code class="small">{{ current_chatbot.embed_code }}</code>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <strong>Training Status:</strong><br>
+                            <span class="badge bg-success">
+                                <i class="fas fa-check me-1"></i>Trained
+                            </span>
+                            <small class="text-muted d-block mt-1">
+                                {{ current_chatbot.documents|length }} document(s),
+                                {{ current_chatbot.conversations|length }} conversation(s)
+                            </small>
+                        </div>
+                        
+                        {% if current_chatbot.system_prompt %}
+                            <div class="mb-3">
+                                <strong>System Prompt:</strong><br>
+                                <div class="bg-light p-2 rounded small">
+                                    {{ current_chatbot.system_prompt[:100] }}{% if current_chatbot.system_prompt|length > 100 %}...{% endif %}
+                                </div>
+                            </div>
+                        {% endif %}
+                    {% endif %}
+                {% else %}
+                    <div class="text-muted text-center py-3">
+                        <i class="fas fa-robot fa-2x mb-2"></i>
+                        <p>No chatbot configured for homepage</p>
+                        <small>Select a trained chatbot above to display on the homepage.</small>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-code me-2"></i>
+                    Integration
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">
+                    The homepage chatbot is automatically embedded on your website's homepage. 
+                    Visitors can interact with it without needing to register or login.
+                </p>
+                
+                <div class="d-grid gap-2">
+                    <a href="{{ url_for('index') }}" target="_blank" class="btn btn-outline-primary btn-sm">
+                        <i class="fas fa-eye me-2"></i>
+                        View Live Homepage
+                    </a>
+                    {% if current_chatbot_id %}
+                        <button class="btn btn-outline-info btn-sm" onclick="testChatbot()">
+                            <i class="fas fa-comment me-2"></i>
+                            Test Chatbot
+                        </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Available Chatbots Info -->
+{% if trained_chatbots %}
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-list me-2"></i>
+                        Available Trained Chatbots ({{ trained_chatbots|length }})
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        {% for chatbot in trained_chatbots %}
+                            <div class="col-md-6 col-lg-4 mb-3">
+                                <div class="card h-100 {% if current_chatbot_id and current_chatbot_id|int == chatbot.id %}border-primary{% endif %}">
+                                    <div class="card-body">
+                                        <div class="d-flex align-items-center mb-2">
+                                            <div class="avatar bg-success text-white rounded-circle d-flex align-items-center justify-content-center me-2" 
+                                                 style="width: 32px; height: 32px; font-size: 14px;">
+                                                <i class="fas fa-robot"></i>
+                                            </div>
+                                            <div>
+                                                <div class="fw-bold">{{ chatbot.name }}</div>
+                                                <small class="text-muted">by {{ chatbot.owner.username }}</small>
+                                            </div>
+                                        </div>
+                                        
+                                        {% if chatbot.description %}
+                                            <p class="small text-muted mb-2">{{ chatbot.description }}</p>
+                                        {% endif %}
+                                        
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <small class="text-muted">
+                                                    {{ chatbot.documents|length }} docs, 
+                                                    {{ chatbot.conversations|length }} chats
+                                                </small>
+                                            </div>
+                                            {% if current_chatbot_id and current_chatbot_id|int == chatbot.id %}
+                                                <span class="badge bg-primary">Active</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% else %}
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle me-2"></i>
+                <strong>No trained chatbots available.</strong> 
+                Users need to create and train chatbots before they can be used on the homepage.
+            </div>
+        </div>
+    </div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function testChatbot() {
+    // Open homepage in new tab and scroll to chatbot
+    const homepage = window.open('{{ url_for("index") }}', '_blank');
+    
+    // Show success message
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check me-2"></i>Opened!';
+    btn.classList.remove('btn-outline-info');
+    btn.classList.add('btn-success');
+    
+    setTimeout(function() {
+        btn.innerHTML = originalText;
+        btn.classList.remove('btn-success');
+        btn.classList.add('btn-outline-info');
+    }, 2000);
+}
+</script>
+{% endblock %}

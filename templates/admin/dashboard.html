@@ -1,0 +1,206 @@
+{% extends "admin/base.html" %}
+
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="stat-card users">
+            <div class="d-flex align-items-center">
+                <div class="stat-icon">
+                    <i class="fas fa-users"></i>
+                </div>
+                <div class="ms-3">
+                    <h3 class="mb-0">{{ total_users }}</h3>
+                    <p class="text-muted mb-0">Total Users</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="stat-card chatbots">
+            <div class="d-flex align-items-center">
+                <div class="stat-icon">
+                    <i class="fas fa-robot"></i>
+                </div>
+                <div class="ms-3">
+                    <h3 class="mb-0">{{ total_chatbots }}</h3>
+                    <p class="text-muted mb-0">Total Chatbots</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="stat-card trained">
+            <div class="d-flex align-items-center">
+                <div class="stat-icon">
+                    <i class="fas fa-graduation-cap"></i>
+                </div>
+                <div class="ms-3">
+                    <h3 class="mb-0">{{ trained_chatbots }}</h3>
+                    <p class="text-muted mb-0">Trained Bots</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="stat-card conversations">
+            <div class="d-flex align-items-center">
+                <div class="stat-icon">
+                    <i class="fas fa-comments"></i>
+                </div>
+                <div class="ms-3">
+                    <h3 class="mb-0">{{ total_conversations }}</h3>
+                    <p class="text-muted mb-0">Conversations</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-user-plus me-2"></i>
+                    Recent Users
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if recent_users %}
+                    {% for user in recent_users %}
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="avatar bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-3" 
+                                 style="width: 40px; height: 40px;">
+                                {{ user.username[0].upper() }}
+                            </div>
+                            <div>
+                                <div class="fw-bold">{{ user.username }}</div>
+                                <small class="text-muted">{{ user.email }}</small><br>
+                                <small class="text-muted">{{ user.created_at.strftime('%Y-%m-%d') }}</small>
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted">No users yet</p>
+                {% endif %}
+            </div>
+            <div class="card-footer">
+                <a href="{{ url_for('admin_users') }}" class="btn btn-outline-primary btn-sm">
+                    View All Users
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-robot me-2"></i>
+                    Recent Chatbots
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if recent_chatbots %}
+                    {% for chatbot in recent_chatbots %}
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="avatar bg-success text-white rounded-circle d-flex align-items-center justify-content-center me-3" 
+                                 style="width: 40px; height: 40px;">
+                                <i class="fas fa-robot"></i>
+                            </div>
+                            <div>
+                                <div class="fw-bold">{{ chatbot.name }}</div>
+                                <small class="text-muted">by {{ chatbot.owner.username }}</small><br>
+                                <small class="text-muted">
+                                    {% if chatbot.is_trained %}
+                                        <span class="badge bg-success">Trained</span>
+                                    {% else %}
+                                        <span class="badge bg-warning">Not Trained</span>
+                                    {% endif %}
+                                </small>
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted">No chatbots yet</p>
+                {% endif %}
+            </div>
+            <div class="card-footer">
+                <a href="{{ url_for('admin_chatbots') }}" class="btn btn-outline-success btn-sm">
+                    View All Chatbots
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-comments me-2"></i>
+                    Recent Conversations
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if recent_conversations %}
+                    {% for conv in recent_conversations %}
+                        <div class="mb-3 p-2 border-start border-primary border-3">
+                            <div class="fw-bold small">{{ conv.chatbot.name }}</div>
+                            <div class="text-muted small mb-1">{{ conv.user_message[:50] }}{% if conv.user_message|length > 50 %}...{% endif %}</div>
+                            <div class="text-muted small">{{ conv.timestamp.strftime('%Y-%m-%d %H:%M') }}</div>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted">No conversations yet</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-tools me-2"></i>
+                    Quick Actions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3 mb-2">
+                        <a href="{{ url_for('admin_users') }}" class="btn btn-outline-primary w-100">
+                            <i class="fas fa-users me-2"></i>
+                            Manage Users
+                        </a>
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <a href="{{ url_for('admin_chatbots') }}" class="btn btn-outline-success w-100">
+                            <i class="fas fa-robot me-2"></i>
+                            Manage Chatbots
+                        </a>
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <a href="{{ url_for('admin_settings') }}" class="btn btn-outline-info w-100">
+                            <i class="fas fa-cog me-2"></i>
+                            Platform Settings
+                        </a>
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <a href="{{ url_for('index') }}" target="_blank" class="btn btn-outline-secondary w-100">
+                            <i class="fas fa-external-link-alt me-2"></i>
+                            View Website
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

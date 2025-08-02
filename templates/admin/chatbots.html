@@ -1,0 +1,277 @@
+{% extends "admin/base.html" %}
+
+{% block page_title %}Chatbot Management{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">
+        <i class="fas fa-robot me-2"></i>
+        Chatbot Management
+    </h4>
+    <div class="text-muted">
+        Total: {{ chatbots.total }} chatbots
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        {% if chatbots.items %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Owner</th>
+                            <th>Status</th>
+                            <th>Documents</th>
+                            <th>Conversations</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for chatbot in chatbots.items %}
+                            <tr>
+                                <td>{{ chatbot.id }}</td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="avatar bg-success text-white rounded-circle d-flex align-items-center justify-content-center me-2" 
+                                             style="width: 32px; height: 32px; font-size: 14px;">
+                                            <i class="fas fa-robot"></i>
+                                        </div>
+                                        <div>
+                                            <div class="fw-bold">{{ chatbot.name }}</div>
+                                            {% if chatbot.description %}
+                                                <small class="text-muted">{{ chatbot.description[:50] }}{% if chatbot.description|length > 50 %}...{% endif %}</small>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="avatar bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-2" 
+                                             style="width: 24px; height: 24px; font-size: 12px;">
+                                            {{ chatbot.owner.username[0].upper() }}
+                                        </div>
+                                        {{ chatbot.owner.username }}
+                                    </div>
+                                </td>
+                                <td>
+                                    {% if chatbot.is_trained %}
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-check me-1"></i>Trained
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-warning">
+                                            <i class="fas fa-clock me-1"></i>Not Trained
+                                        </span>
+                                    {% endif %}
+                                    {% if chatbot.system_prompt %}
+                                        <br><small class="text-info">
+                                            <i class="fas fa-cog me-1"></i>Custom Prompt
+                                        </small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-info">{{ chatbot.documents|length }}</span>
+                                    {% if chatbot.documents %}
+                                        <small class="text-muted d-block">
+                                            {% set processed_count = chatbot.documents|selectattr('processed')|list|length %}
+                                            {{ processed_count }} processed
+                                        </small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ chatbot.conversations|length }}</span>
+                                </td>
+                                <td>
+                                    {{ chatbot.created_at.strftime('%Y-%m-%d') }}<br>
+                                    <small class="text-muted">{{ chatbot.created_at.strftime('%H:%M') }}</small>
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{{ url_for('chatbot_details', chatbot_id=chatbot.id) }}" 
+                                           class="btn btn-outline-primary" target="_blank" title="View Details">
+                                            <i class="fas fa-eye"></i>
+                                        </a>
+                                        {% if chatbot.is_trained %}
+                                            <button class="btn btn-outline-info" 
+                                                    onclick="showEmbedCode('{{ chatbot.embed_code }}')" title="Embed Code">
+                                                <i class="fas fa-code"></i>
+                                            </button>
+                                        {% endif %}
+                                        <button class="btn btn-outline-danger" 
+                                                onclick="confirmDeleteChatbot('{{ chatbot.id }}', '{{ chatbot.name }}', '{{ chatbot.owner.username }}', '{{ chatbot.documents|length }}', '{{ chatbot.conversations|length }}')"
+                                                title="Delete Chatbot">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Pagination -->
+            {% if chatbots.pages > 1 %}
+                <nav aria-label="Chatbot pagination">
+                    <ul class="pagination justify-content-center">
+                        {% if chatbots.has_prev %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('admin_chatbots', page=chatbots.prev_num) }}">Previous</a>
+                            </li>
+                        {% endif %}
+                        
+                        {% for page_num in chatbots.iter_pages() %}
+                            {% if page_num %}
+                                {% if page_num != chatbots.page %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="{{ url_for('admin_chatbots', page=page_num) }}">{{ page_num }}</a>
+                                    </li>
+                                {% else %}
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ page_num }}</span>
+                                    </li>
+                                {% endif %}
+                            {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">...</span>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+                        
+                        {% if chatbots.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('admin_chatbots', page=chatbots.next_num) }}">Next</a>
+                            </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            {% endif %}
+        {% else %}
+            <div class="text-center py-5">
+                <i class="fas fa-robot fa-3x text-muted mb-3"></i>
+                <h5>No chatbots found</h5>
+                <p class="text-muted">Chatbots will appear here when users create them.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteChatbotModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-exclamation-triangle text-danger me-2"></i>
+                    Confirm Chatbot Deletion
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete chatbot <strong id="deleteChatbotName"></strong> owned by <strong id="deleteChatbotOwner"></strong>?</p>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Warning:</strong> This will permanently delete:
+                    <ul class="mb-0 mt-2">
+                        <li>The chatbot and its configuration</li>
+                        <li id="deleteDocumentCount"></li>
+                        <li id="deleteConversationCount"></li>
+                        <li>All training data and embeddings</li>
+                    </ul>
+                </div>
+                <p class="text-muted mb-0">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteChatbotForm" method="POST" style="display: inline;">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash me-2"></i>
+                        Delete Chatbot
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Embed Code Modal -->
+<div class="modal fade" id="embedCodeModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-code me-2"></i>
+                    Embed Code
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Copy this code and paste it into any website to embed the chatbot:</p>
+                <div class="bg-dark text-light p-3 rounded">
+                    <code id="embedCodeContent"></code>
+                </div>
+                <button class="btn btn-primary mt-3" onclick="copyEmbedCode()">
+                    <i class="fas fa-copy me-2"></i>
+                    Copy to Clipboard
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function confirmDeleteChatbot(chatbotId, name, owner, docCount, convCount) {
+    document.getElementById('deleteChatbotName').textContent = name;
+    document.getElementById('deleteChatbotOwner').textContent = owner;
+    document.getElementById('deleteDocumentCount').textContent = docCount + ' document(s)';
+    document.getElementById('deleteConversationCount').textContent = convCount + ' conversation(s)';
+    document.getElementById('deleteChatbotForm').action = `/admin/chatbots/${chatbotId}/delete`;
+    
+    const modal = new bootstrap.Modal(document.getElementById('deleteChatbotModal'));
+    modal.show();
+}
+
+function showEmbedCode(embedCode) {
+    const embedCodeContent = `&lt;div id="chatbot-widget"&gt;&lt;/div&gt;
+&lt;script src="${window.location.origin}/static/js/chatbot-embed.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+ChatbotEmbed.init({
+    embedCode: '${embedCode}',
+    apiUrl: '${window.location.origin}/api/chat/${embedCode}',
+    containerId: 'chatbot-widget'
+});
+&lt;/script&gt;`;
+    
+    document.getElementById('embedCodeContent').innerHTML = embedCodeContent;
+    
+    const modal = new bootstrap.Modal(document.getElementById('embedCodeModal'));
+    modal.show();
+}
+
+function copyEmbedCode() {
+    const embedCodeElement = document.getElementById('embedCodeContent');
+    const textToCopy = embedCodeElement.textContent;
+    
+    navigator.clipboard.writeText(textToCopy).then(function() {
+        // Show success feedback
+        const btn = event.target.closest('button');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check me-2"></i>Copied!';
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-success');
+        
+        setTimeout(function() {
+            btn.innerHTML = originalText;
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-primary');
+        }, 2000);
+    });
+}
+</script>
+{% endblock %}

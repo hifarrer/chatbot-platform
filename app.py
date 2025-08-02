@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from functools import wraps
 import os
 import json
 import uuid
@@ -35,6 +36,7 @@ class Chatbot(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
+    system_prompt = db.Column(db.Text, default="You are a helpful AI assistant. Answer questions based on the provided documents and your general knowledge.")
     embed_code = db.Column(db.String(36), unique=True, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -58,9 +60,44 @@ class Conversation(db.Model):
     bot_response = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
+class Settings(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(100), unique=True, nullable=False)
+    value = db.Column(db.Text)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
+# Admin authentication
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "p@ssword333"
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('admin_logged_in'):
+            return redirect(url_for('admin_login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def get_setting(key, default=None):
+    """Get a setting value from the database"""
+    setting = Settings.query.filter_by(key=key).first()
+    return setting.value if setting else default
+
+def set_setting(key, value):
+    """Set a setting value in the database"""
+    setting = Settings.query.filter_by(key=key).first()
+    if setting:
+        setting.value = value
+        setting.updated_at = datetime.utcnow()
+    else:
+        setting = Settings(key=key, value=value)
+        db.session.add(setting)
+    db.session.commit()
+    return setting
 
 def create_app():
     app = Flask(__name__)
@@ -107,7 +144,24 @@ def create_app():
     # Routes
     @app.route('/')
     def index():
-        return render_template('index.html')
+        # Get homepage chatbot settings
+        homepage_chatbot_id = get_setting('homepage_chatbot_id')
+        homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
+        homepage_chatbot_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+        
+        # Get the chatbot details if configured
+        homepage_chatbot = None
+        if homepage_chatbot_id:
+            homepage_chatbot = Chatbot.query.get(homepage_chatbot_id)
+        
+        # Fallback to demo chatbot if no specific one is configured
+        if not homepage_chatbot:
+            homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
+        
+        return render_template('index.html',
+                             homepage_chatbot=homepage_chatbot,
+                             homepage_chatbot_title=homepage_chatbot_title,
+                             homepage_chatbot_placeholder=homepage_chatbot_placeholder)
 
     @app.route('/health')
     def health_check():
@@ -198,10 +252,16 @@ def create_app():
         if request.method == 'POST':
             name = request.form['name']
             description = request.form['description']
+            system_prompt = request.form.get('system_prompt', '').strip()
+            
+            # Use default prompt if none provided
+            if not system_prompt:
+                system_prompt = "You are a helpful AI assistant. Answer questions based on the provided documents and your general knowledge."
             
             chatbot = Chatbot(
                 name=name,
                 description=description,
+                system_prompt=system_prompt,
                 embed_code=str(uuid.uuid4()),
                 user_id=current_user.id
             )
@@ -222,6 +282,26 @@ def create_app():
         conversations = Conversation.query.filter_by(chatbot_id=chatbot_id).order_by(Conversation.timestamp.desc()).limit(50).all()
         
         return render_template('chatbot_details.html', chatbot=chatbot, documents=documents, conversations=conversations)
+
+    @app.route('/chatbot/<int:chatbot_id>/update', methods=['POST'])
+    @login_required
+    def update_chatbot(chatbot_id):
+        chatbot = Chatbot.query.filter_by(id=chatbot_id, user_id=current_user.id).first_or_404()
+        
+        description = request.form.get('description', '').strip()
+        system_prompt = request.form.get('system_prompt', '').strip()
+        
+        # Update fields
+        chatbot.description = description if description else None
+        if system_prompt:
+            chatbot.system_prompt = system_prompt
+        else:
+            chatbot.system_prompt = "You are a helpful AI assistant. Answer questions based on the provided documents and your general knowledge."
+        
+        db.session.commit()
+        flash('Chatbot updated successfully!')
+        
+        return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
 
     @app.route('/upload_document/<int:chatbot_id>', methods=['POST'])
     @login_required
@@ -320,8 +400,9 @@ def create_app():
             if not chatbot:
                 return jsonify({'error': 'Chatbot not found. Please check the embed code.'}), 404
             
-            if not chatbot.is_trained:
-                return jsonify({'error': 'Chatbot is not trained yet. Please upload documents and train the chatbot first.'}), 400
+            # Allow chatbots with custom prompts to work even without training
+            if not chatbot.is_trained and not chatbot.system_prompt:
+                return jsonify({'error': 'Chatbot is not trained yet. Please upload documents and train the chatbot first, or set a system prompt.'}), 400
             
             data = request.get_json()
             if not data:
@@ -462,6 +543,151 @@ def create_app():
                 'traceback': traceback.format_exc()
             }), 500
 
+    # Admin Routes
+    @app.route('/admin/login', methods=['GET', 'POST'])
+    def admin_login():
+        if request.method == 'POST':
+            username = request.form['username']
+            password = request.form['password']
+            
+            if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+                session['admin_logged_in'] = True
+                flash('Admin login successful!')
+                return redirect(url_for('admin_dashboard'))
+            else:
+                flash('Invalid admin credentials')
+        
+        return render_template('admin/login.html')
+
+    @app.route('/admin/logout')
+    @admin_required
+    def admin_logout():
+        session.pop('admin_logged_in', None)
+        flash('Admin logged out successfully')
+        return redirect(url_for('index'))
+
+    @app.route('/admin')
+    @admin_required
+    def admin_dashboard():
+        # Get statistics
+        total_users = User.query.count()
+        total_chatbots = Chatbot.query.count()
+        trained_chatbots = Chatbot.query.filter_by(is_trained=True).count()
+        total_conversations = Conversation.query.count()
+        
+        # Get recent activity
+        recent_users = User.query.order_by(User.created_at.desc()).limit(5).all()
+        recent_chatbots = Chatbot.query.order_by(Chatbot.created_at.desc()).limit(5).all()
+        recent_conversations = Conversation.query.order_by(Conversation.timestamp.desc()).limit(10).all()
+        
+        return render_template('admin/dashboard.html', 
+                             total_users=total_users,
+                             total_chatbots=total_chatbots,
+                             trained_chatbots=trained_chatbots,
+                             total_conversations=total_conversations,
+                             recent_users=recent_users,
+                             recent_chatbots=recent_chatbots,
+                             recent_conversations=recent_conversations)
+
+    @app.route('/admin/users')
+    @admin_required
+    def admin_users():
+        page = request.args.get('page', 1, type=int)
+        users = User.query.order_by(User.created_at.desc()).paginate(
+            page=page, per_page=20, error_out=False)
+        return render_template('admin/users.html', users=users)
+
+    @app.route('/admin/users/<int:user_id>/delete', methods=['POST'])
+    @admin_required
+    def admin_delete_user(user_id):
+        user = User.query.get_or_404(user_id)
+        
+        # Delete user's chatbots and associated data
+        for chatbot in user.chatbots:
+            # Delete associated files
+            for document in chatbot.documents:
+                try:
+                    if os.path.exists(document.file_path):
+                        os.remove(document.file_path)
+                except Exception as e:
+                    print(f"Error deleting file {document.file_path}: {e}")
+            
+            # Delete chatbot training data
+            try:
+                chatbot_trainer.delete_chatbot_data(chatbot.id)
+            except Exception as e:
+                print(f"Error deleting training data: {e}")
+        
+        db.session.delete(user)
+        db.session.commit()
+        
+        flash(f'User {user.username} and all associated data deleted successfully!')
+        return redirect(url_for('admin_users'))
+
+    @app.route('/admin/chatbots')
+    @admin_required
+    def admin_chatbots():
+        page = request.args.get('page', 1, type=int)
+        chatbots = Chatbot.query.order_by(Chatbot.created_at.desc()).paginate(
+            page=page, per_page=20, error_out=False)
+        return render_template('admin/chatbots.html', chatbots=chatbots)
+
+    @app.route('/admin/chatbots/<int:chatbot_id>/delete', methods=['POST'])
+    @admin_required
+    def admin_delete_chatbot(chatbot_id):
+        chatbot = Chatbot.query.get_or_404(chatbot_id)
+        
+        # Delete associated files
+        for document in chatbot.documents:
+            try:
+                if os.path.exists(document.file_path):
+                    os.remove(document.file_path)
+            except Exception as e:
+                print(f"Error deleting file {document.file_path}: {e}")
+        
+        # Delete chatbot training data
+        try:
+            chatbot_trainer.delete_chatbot_data(chatbot_id)
+        except Exception as e:
+            print(f"Error deleting training data: {e}")
+        
+        db.session.delete(chatbot)
+        db.session.commit()
+        
+        flash(f'Chatbot {chatbot.name} deleted successfully!')
+        return redirect(url_for('admin_chatbots'))
+
+    @app.route('/admin/settings', methods=['GET', 'POST'])
+    @admin_required
+    def admin_settings():
+        if request.method == 'POST':
+            # Update homepage chatbot settings
+            homepage_chatbot_id = request.form.get('homepage_chatbot_id')
+            homepage_chatbot_title = request.form.get('homepage_chatbot_title', 'Platform Assistant')
+            homepage_chatbot_placeholder = request.form.get('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+            
+            # Save settings
+            set_setting('homepage_chatbot_id', homepage_chatbot_id)
+            set_setting('homepage_chatbot_title', homepage_chatbot_title)
+            set_setting('homepage_chatbot_placeholder', homepage_chatbot_placeholder)
+            
+            flash('Settings updated successfully!')
+            return redirect(url_for('admin_settings'))
+        
+        # Get current settings
+        current_chatbot_id = get_setting('homepage_chatbot_id')
+        current_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
+        current_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+        
+        # Get all trained chatbots for selection
+        trained_chatbots = Chatbot.query.filter_by(is_trained=True).all()
+        
+        return render_template('admin/settings.html',
+                             current_chatbot_id=current_chatbot_id,
+                             current_title=current_title,
+                             current_placeholder=current_placeholder,
+                             trained_chatbots=trained_chatbots)
+
     def allowed_file(filename):
         ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx'}
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -490,10 +716,15 @@ def create_app():
         # Create or update demo chatbot
         if existing_chatbot:
             demo_chatbot = existing_chatbot
+            # Update system prompt if it's the default
+            if not demo_chatbot.system_prompt or demo_chatbot.system_prompt == "You are a helpful AI assistant. Answer questions based on the provided documents and your general knowledge.":
+                demo_chatbot.system_prompt = "You are the Platform Assistant for the ChatBot Platform. You are knowledgeable, friendly, and enthusiastic about helping users understand how to create and deploy AI chatbots. You help users with questions about features, setup, training, and deployment. Be encouraging and provide clear, actionable guidance."
+                db.session.commit()
         else:
             demo_chatbot = Chatbot(
                 name='Platform Assistant',
                 description='A helpful assistant that can answer questions about the chatbot platform',
+                system_prompt='You are the Platform Assistant for the ChatBot Platform. You are knowledgeable, friendly, and enthusiastic about helping users understand how to create and deploy AI chatbots. You help users with questions about features, setup, training, and deployment. Be encouraging and provide clear, actionable guidance.',
                 embed_code=demo_embed_code,
                 user_id=demo_user.id,
                 is_trained=False

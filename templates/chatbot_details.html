@@ -28,13 +28,46 @@
     <div class="col-md-8">
         <!-- Chatbot Info -->
         <div class="card mb-4">
-            <div class="card-header">
+            <div class="card-header d-flex justify-content-between align-items-center">
                 <h5><i class="fas fa-info-circle me-2"></i>Chatbot Information</h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="toggleEditMode()">
+                    <i class="fas fa-edit me-1"></i>Edit
+                </button>
             </div>
             <div class="card-body">
-                <p><strong>Description:</strong> {{ chatbot.description or 'No description provided' }}</p>
-                <p><strong>Created:</strong> {{ chatbot.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
-                <p><strong>Embed Code:</strong> <code>{{ chatbot.embed_code }}</code></p>
+                <div id="view-mode">
+                    <p><strong>Description:</strong> {{ chatbot.description or 'No description provided' }}</p>
+                    <p><strong>Created:</strong> {{ chatbot.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                    <p><strong>Embed Code:</strong> <code>{{ chatbot.embed_code }}</code></p>
+                    <div class="mt-3">
+                        <strong>System Prompt:</strong>
+                        <div class="bg-light p-3 rounded mt-2" style="white-space: pre-wrap;">{{ chatbot.system_prompt or 'No system prompt set' }}</div>
+                    </div>
+                </div>
+                <div id="edit-mode" style="display: none;">
+                    <form id="update-chatbot-form" action="{{ url_for('update_chatbot', chatbot_id=chatbot.id) }}" method="POST">
+                        <div class="mb-3">
+                            <label for="edit-description" class="form-label">Description</label>
+                            <textarea class="form-control" id="edit-description" name="description" rows="2">{{ chatbot.description or '' }}</textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit-system-prompt" class="form-label">System Prompt</label>
+                            <textarea class="form-control" id="edit-system-prompt" name="system_prompt" rows="4" required>{{ chatbot.system_prompt or '' }}</textarea>
+                            <div class="form-text">
+                                <i class="fas fa-lightbulb text-warning me-1"></i>
+                                Define your chatbot's personality and role (e.g., "You are a customer support agent...")
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-save me-1"></i>Save Changes
+                            </button>
+                            <button type="button" class="btn btn-secondary" onclick="toggleEditMode()">
+                                <i class="fas fa-times me-1"></i>Cancel
+                            </button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
 
@@ -267,6 +300,21 @@ function copyEmbedCode() {
             btn.classList.add('btn-outline-secondary');
         }, 2000);
     });
+}
+
+function toggleEditMode() {
+    const viewMode = document.getElementById('view-mode');
+    const editMode = document.getElementById('edit-mode');
+    
+    if (viewMode.style.display === 'none') {
+        // Switch to view mode
+        viewMode.style.display = 'block';
+        editMode.style.display = 'none';
+    } else {
+        // Switch to edit mode
+        viewMode.style.display = 'none';
+        editMode.style.display = 'block';
+    }
 }
 
 function confirmDelete() {

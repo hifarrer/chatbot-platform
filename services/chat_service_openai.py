@@ -27,17 +27,27 @@ class ChatServiceOpenAI:
         """
         print(f"🤖 DEBUG: Processing OpenAI request for chatbot {chatbot_id}: '{user_message}'")
         
+        # Get chatbot info for custom system prompt
+        from app import Chatbot
+        chatbot = Chatbot.query.get(chatbot_id)
+        if not chatbot:
+            return "Chatbot not found."
+        
         # Get relevant context from training data
         context = self._get_relevant_context(chatbot_id, user_message)
         
-        if not context:
-            print("❌ DEBUG: No training data found")
+        # Allow chatbot to work even without documents if it has a custom prompt
+        if not context and not chatbot.system_prompt:
+            print("❌ DEBUG: No training data found and no custom prompt")
             return "I haven't been trained yet. Please upload some documents and train me first!"
         
-        print(f"📄 DEBUG: Using context from {len(context)} relevant passages")
+        if context:
+            print(f"📄 DEBUG: Using context from {len(context)} relevant passages")
+        else:
+            print("📄 DEBUG: No document context, using custom prompt only")
         
-        # Create the prompt for OpenAI
-        system_prompt = self._create_system_prompt(context)
+        # Create the prompt for OpenAI using chatbot's custom system prompt
+        system_prompt = self._create_system_prompt(context, chatbot.system_prompt)
         
         try:
             # Call OpenAI API using the new v1.0+ syntax
@@ -122,27 +132,43 @@ class ChatServiceOpenAI:
         
         return context_passages
     
-    def _create_system_prompt(self, context_passages):
+    def _create_system_prompt(self, context_passages, custom_prompt=None):
         """
-        Create a system prompt for OpenAI with the relevant context
+        Create a system prompt for OpenAI with the relevant context and custom prompt
         """
-        context_text = "\n\n".join(context_passages)
+        # Use custom prompt if provided, otherwise use default
+        base_prompt = custom_prompt or "You are a helpful AI assistant trained on specific documents. Your job is to answer questions based on the information provided in the context below."
         
-        system_prompt = f"""You are a helpful AI assistant trained on specific documents. Your job is to answer questions based ONLY on the information provided in the context below.
+        if context_passages:
+            context_text = "\n\n".join(context_passages)
+            
+            system_prompt = f"""{base_prompt}
 
 CONTEXT FROM TRAINING DOCUMENTS:
 {context_text}
 
 INSTRUCTIONS:
-1. Answer questions based ONLY on the information provided in the context above
-2. If the context doesn't contain enough information to answer the question, say so politely
-3. Be conversational and helpful in your tone
-4. Keep your answers concise but complete
-5. If you see Q&A pairs in the context, use them to inform your responses
-6. Don't make up information that's not in the context
+1. Follow your role as defined above
+2. Use the information from the training documents when relevant
+3. If the context doesn't contain enough information to answer the question, you may use your general knowledge while staying in character
+4. Be conversational and helpful in your tone
+5. Keep your answers concise but complete
+6. If you see Q&A pairs in the context, use them to inform your responses
 7. If multiple pieces of context are relevant, synthesize them into a coherent answer
 
-Remember: You can only use information from the context provided above. Do not use your general knowledge beyond what's in the training context."""
+Remember: Stay in character as defined in your role, and prioritize information from the training documents when available."""
+        else:
+            # No documents, just use the custom prompt
+            system_prompt = f"""{base_prompt}
+
+INSTRUCTIONS:
+1. Follow your role as defined above
+2. Be conversational and helpful in your tone
+3. Use your general knowledge to answer questions while staying in character
+4. Keep your answers concise but complete
+5. If you don't know something specific to your role, say so politely
+
+Remember: Stay in character as defined in your role."""
 
         return system_prompt
     
