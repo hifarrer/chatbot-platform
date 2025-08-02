@@ -188,6 +188,10 @@ def create_app():
     def contact():
         return render_template('contact.html')
 
+    @app.route('/plans')
+    def plans():
+        return render_template('plans.html')
+
     @app.route('/register', methods=['GET', 'POST'])
     def register():
         if request.method == 'POST':

@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+
+{% block title %}Pricing Plans - ChatBot Platform{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="text-center mb-5">
+        <h1 class="display-4 fw-bold mb-3">
+            <i class="fas fa-tags me-3 text-primary"></i>Choose Your Plan
+        </h1>
+        <p class="lead text-muted">Select the perfect plan for your chatbot needs</p>
+    </div>
+
+    <div class="row justify-content-center">
+        <!-- Basic Plan -->
+        <div class="col-lg-4 col-md-6 mb-4">
+            <div class="card h-100 shadow-sm border-0">
+                <div class="card-header bg-light text-center py-4 border-0">
+                    <h3 class="card-title mb-0">
+                        <i class="fas fa-seedling me-2 text-success"></i>Basic
+                    </h3>
+                    <div class="mt-3">
+                        <span class="display-4 fw-bold">Free</span>
+                    </div>
+                    <p class="text-muted mt-2">Perfect for getting started</p>
+                </div>
+                <div class="card-body d-flex flex-column">
+                    <ul class="list-unstyled mb-4">
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            <strong>1 Chatbot</strong>
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Unlimited document uploads
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Basic chat functionality
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Embed code generation
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Community support
+                        </li>
+                        <li class="mb-3 text-muted">
+                            <i class="fas fa-times text-muted me-2"></i>
+                            Priority support
+                        </li>
+                        <li class="mb-3 text-muted">
+                            <i class="fas fa-times text-muted me-2"></i>
+                            Advanced analytics
+                        </li>
+                    </ul>
+                    <div class="mt-auto">
+                        {% if current_user.is_authenticated %}
+                            <button class="btn btn-outline-success btn-lg w-100" disabled>
+                                <i class="fas fa-check me-2"></i>Current Plan
+                            </button>
+                        {% else %}
+                            <a href="{{ url_for('register') }}" class="btn btn-success btn-lg w-100">
+                                <i class="fas fa-rocket me-2"></i>Get Started
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Premium Plan -->
+        <div class="col-lg-4 col-md-6 mb-4">
+            <div class="card h-100 shadow border-primary position-relative">
+                <div class="position-absolute top-0 start-50 translate-middle">
+                    <span class="badge bg-primary px-3 py-2 rounded-pill">Most Popular</span>
+                </div>
+                <div class="card-header bg-primary text-white text-center py-4 border-0">
+                    <h3 class="card-title mb-0">
+                        <i class="fas fa-star me-2"></i>Premium
+                    </h3>
+                    <div class="mt-3">
+                        <span class="display-4 fw-bold">$9</span>
+                        <span class="fs-6">/month</span>
+                    </div>
+                    <p class="mt-2 mb-0">Great for small businesses</p>
+                </div>
+                <div class="card-body d-flex flex-column">
+                    <ul class="list-unstyled mb-4">
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            <strong>Up to 3 Chatbots</strong>
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Unlimited document uploads
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Advanced chat functionality
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Custom system prompts
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Priority email support
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Basic analytics
+                        </li>
+                        <li class="mb-3 text-muted">
+                            <i class="fas fa-times text-muted me-2"></i>
+                            Advanced analytics
+                        </li>
+                    </ul>
+                    <div class="mt-auto">
+                        <button class="btn btn-primary btn-lg w-100" onclick="alert('Payment integration coming soon!')">
+                            <i class="fas fa-crown me-2"></i>Upgrade to Premium
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ultra Plan -->
+        <div class="col-lg-4 col-md-6 mb-4">
+            <div class="card h-100 shadow-sm border-0">
+                <div class="card-header bg-dark text-white text-center py-4 border-0">
+                    <h3 class="card-title mb-0">
+                        <i class="fas fa-rocket me-2"></i>Ultra
+                    </h3>
+                    <div class="mt-3">
+                        <span class="display-4 fw-bold">$15</span>
+                        <span class="fs-6">/month</span>
+                    </div>
+                    <p class="mt-2 mb-0">Perfect for enterprises</p>
+                </div>
+                <div class="card-body d-flex flex-column">
+                    <ul class="list-unstyled mb-4">
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            <strong>Up to 10 Chatbots</strong>
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Unlimited document uploads
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Premium chat functionality
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Advanced system prompts
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Priority phone & email support
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Advanced analytics & reporting
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Custom integrations
+                        </li>
+                    </ul>
+                    <div class="mt-auto">
+                        <button class="btn btn-dark btn-lg w-100" onclick="alert('Payment integration coming soon!')">
+                            <i class="fas fa-diamond me-2"></i>Upgrade to Ultra
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- FAQ Section -->
+    <div class="row mt-5">
+        <div class="col-lg-8 mx-auto">
+            <h3 class="text-center mb-4">
+                <i class="fas fa-question-circle me-2 text-primary"></i>Frequently Asked Questions
+            </h3>
+            
+            <div class="accordion" id="faqAccordion">
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
+                            Can I upgrade or downgrade my plan anytime?
+                        </button>
+                    </h2>
+                    <div id="faq1" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                        <div class="accordion-body">
+                            Yes! You can upgrade or downgrade your plan at any time. Changes will be reflected in your next billing cycle.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">
+                            What happens if I exceed my chatbot limit?
+                        </button>
+                    </h2>
+                    <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                        <div class="accordion-body">
+                            If you reach your plan's chatbot limit, you'll need to upgrade to create additional chatbots. Existing chatbots will continue to work normally.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">
+                            Is there a free trial for paid plans?
+                        </button>
+                    </h2>
+                    <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                        <div class="accordion-body">
+                            We offer a 14-day free trial for all paid plans. No credit card required to start your trial.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq4">
+                            Do you offer refunds?
+                        </button>
+                    </h2>
+                    <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                        <div class="accordion-body">
+                            Yes, we offer a 30-day money-back guarantee. If you're not satisfied with our service, contact us for a full refund.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CTA Section -->
+    <div class="row mt-5">
+        <div class="col-lg-8 mx-auto text-center">
+            <div class="bg-light rounded p-5">
+                <h4 class="mb-3">Ready to get started?</h4>
+                <p class="text-muted mb-4">Join thousands of businesses using our chatbot platform to improve customer engagement.</p>
+                {% if not current_user.is_authenticated %}
+                    <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg me-3">
+                        <i class="fas fa-user-plus me-2"></i>Sign Up Free
+                    </a>
+                {% endif %}
+                <a href="{{ url_for('contact') }}" class="btn btn-outline-primary btn-lg">
+                    <i class="fas fa-envelope me-2"></i>Contact Sales
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.card {
+    transition: transform 0.2s ease-in-out;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+}
+
+.border-primary {
+    border-width: 2px !important;
+}
+
+.accordion-button:not(.collapsed) {
+    background-color: var(--bs-primary);
+    color: white;
+}
+
+.accordion-button:focus {
+    box-shadow: none;
+    border-color: var(--bs-primary);
+}
+</style>
+{% endblock %}
