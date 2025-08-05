@@ -9,7 +9,7 @@ import os
 from datetime import datetime
 
 def view_database():
-    db_path = 'chatbot_platform.db'
+    db_path = 'instance/chatbot_platform.db'
     
     if not os.path.exists(db_path):
         print(f"❌ Database file not found: {db_path}")
