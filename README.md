@@ -194,7 +194,6 @@ CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
 
 ## 💰 Costs
 
-- **Platform**: Free and open source
 - **OpenAI API**: ~$0.002 per 1,000 tokens (very affordable)
 - **Hosting**: Free tier available on most platforms
 
