@@ -24,10 +24,6 @@ Try the Platform Assistant chatbot on our [demo site](http://localhost:5000) - i
 - 🚀 **Drag & Drop Upload** - Intuitive file upload interface
 - ⚡ **Fast Training** - Quick document processing and chatbot training
 
-## 🎥 Screenshots
-
-*Coming soon - Add screenshots of your platform here*
-
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -196,36 +192,12 @@ EXPOSE 5000
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
 ```
 
-### Cloud Platforms
-
-- **Heroku**: Add `Procfile` with `web: gunicorn app:app`
-- **Railway**: Automatic deployment from GitHub
-- **DigitalOcean**: Use App Platform
-- **AWS**: Deploy with Elastic Beanstalk
-
 ## 💰 Costs
 
 - **Platform**: Free and open source
 - **OpenAI API**: ~$0.002 per 1,000 tokens (very affordable)
 - **Hosting**: Free tier available on most platforms
 
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🆘 Support
-
-- 📧 Email: support@chatbotplatform.com
-- 💬 Try our Platform Assistant (embedded on the website)
-- 🐛 Report issues on [GitHub Issues](https://github.com/yourusername/chatbot-platform/issues)
 
 ## 🙏 Acknowledgments
 
@@ -233,16 +205,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Sentence Transformers for local AI processing
 - Flask community for the excellent framework
 - Bootstrap for the UI components
-
-## 🔮 Roadmap
-
-- [ ] Custom branding and white-label options
-- [ ] Advanced analytics and reporting
-- [ ] Multi-language support
-- [ ] Voice chat capabilities
-- [ ] Integration with popular CMS platforms
-- [ ] API for third-party integrations
-
----
-
-⭐ **Star this repository if you find it useful!** ⭐ 
