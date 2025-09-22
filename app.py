@@ -8,6 +8,9 @@ from functools import wraps
 import os
 import json
 import uuid
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 from services.document_processor import DocumentProcessor
 from services.chatbot_trainer import ChatbotTrainer
@@ -29,7 +32,8 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(120), nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     chatbots = db.relationship('Chatbot', backref='owner', lazy=True, cascade='all, delete-orphan')
 
@@ -61,24 +65,108 @@ class Conversation(db.Model):
     bot_response = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
+class Plan(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    description = db.Column(db.Text)
+    monthly_price = db.Column(db.Float, nullable=False, default=0.0)
+    yearly_price = db.Column(db.Float, nullable=False, default=0.0)
+    stripe_monthly_price_id = db.Column(db.String(255))
+    stripe_yearly_price_id = db.Column(db.String(255))
+    chatbot_limit = db.Column(db.Integer, nullable=False, default=1)
+    features = db.Column(db.Text)  # JSON string of features
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 class Settings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     key = db.Column(db.String(100), unique=True, nullable=False)
     value = db.Column(db.Text)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+class SMTPSettings(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    smtp_server = db.Column(db.String(255), nullable=False)
+    smtp_port = db.Column(db.Integer, nullable=False, default=587)
+    smtp_username = db.Column(db.String(255), nullable=False)
+    smtp_password = db.Column(db.String(255), nullable=False)
+    smtp_use_tls = db.Column(db.Boolean, default=True, nullable=False)
+    smtp_use_ssl = db.Column(db.Boolean, default=False, nullable=False)
+    from_email = db.Column(db.String(255), nullable=False)
+    from_name = db.Column(db.String(255), nullable=False)
+    admin_email = db.Column(db.String(255), nullable=False)  # Where contact form emails are sent
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# Admin authentication
-ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "p@ssword333"
+def get_user_plan(user):
+    """Get the user's current plan. For now, return the Free plan as default."""
+    # TODO: Implement user subscription logic when payment system is added
+    # For now, all users get the Free plan
+    free_plan = Plan.query.filter_by(name='Free', is_active=True).first()
+    if not free_plan:
+        # Fallback: create a default free plan if none exists
+        free_plan = Plan(
+            name='Free',
+            description='Free plan for all users',
+            monthly_price=0.0,
+            yearly_price=0.0,
+            chatbot_limit=3,
+            features=json.dumps(['Up to 3 chatbots', 'Basic support']),
+            is_active=True
+        )
+        db.session.add(free_plan)
+        db.session.commit()
+    return free_plan
 
+def get_smtp_settings():
+    """Get the active SMTP settings from the database."""
+    return SMTPSettings.query.filter_by(is_active=True).first()
+
+def send_email(to_email, subject, body, is_html=False):
+    """Send an email using the configured SMTP settings."""
+    smtp_settings = get_smtp_settings()
+    if not smtp_settings:
+        raise Exception("No SMTP settings configured")
+    
+    # Create message
+    msg = MIMEMultipart('alternative')
+    msg['From'] = f"{smtp_settings.from_name} <{smtp_settings.from_email}>"
+    msg['To'] = to_email
+    msg['Subject'] = subject
+    
+    # Add body
+    if is_html:
+        msg.attach(MIMEText(body, 'html'))
+    else:
+        msg.attach(MIMEText(body, 'plain'))
+    
+    # Connect to server and send email
+    try:
+        if smtp_settings.smtp_use_ssl:
+            server = smtplib.SMTP_SSL(smtp_settings.smtp_server, smtp_settings.smtp_port)
+        else:
+            server = smtplib.SMTP(smtp_settings.smtp_server, smtp_settings.smtp_port)
+            if smtp_settings.smtp_use_tls:
+                server.starttls()
+        
+        server.login(smtp_settings.smtp_username, smtp_settings.smtp_password)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        raise Exception(f"Failed to send email: {str(e)}")
+
+# Admin authentication
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not session.get('admin_logged_in'):
+        if not current_user.is_authenticated or not current_user.is_admin:
             return redirect(url_for('admin_login'))
         return f(*args, **kwargs)
     return decorated_function
@@ -103,6 +191,14 @@ def set_setting(key, value):
 def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
+    
+    # Add custom Jinja2 filter for JSON parsing
+    @app.template_filter('from_json')
+    def from_json_filter(json_string):
+        try:
+            return json.loads(json_string)
+        except:
+            return []
     
     # Handle PostgreSQL URL for Render.com
     database_url = os.environ.get('DATABASE_URL', 'sqlite:///chatbot_platform.db')
@@ -194,13 +290,79 @@ def create_app():
         
         return jsonify(health_data), 200
 
-    @app.route('/contact')
+    @app.route('/contact', methods=['GET', 'POST'])
     def contact():
+        if request.method == 'POST':
+            name = request.form.get('name', '').strip()
+            email = request.form.get('email', '').strip()
+            subject = request.form.get('subject', '').strip()
+            message = request.form.get('message', '').strip()
+            
+            # Basic validation
+            if not name or not email or not subject or not message:
+                flash('All fields are required.', 'error')
+                return render_template('contact.html')
+            
+            # Email validation
+            if '@' not in email or '.' not in email:
+                flash('Please enter a valid email address.', 'error')
+                return render_template('contact.html')
+            
+            try:
+                # Get SMTP settings
+                smtp_settings = get_smtp_settings()
+                if not smtp_settings:
+                    flash('Email service is not configured. Please contact the administrator.', 'error')
+                    return render_template('contact.html')
+                
+                # Create email content
+                email_subject = f"Contact Form: {subject}"
+                email_body = f"""
+New contact form submission from {name} ({email})
+
+Subject: {subject}
+
+Message:
+{message}
+
+---
+Sent from Chatbot Platform Contact Form
+Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
+                """
+                
+                # Send email to admin
+                send_email(smtp_settings.admin_email, email_subject, email_body)
+                
+                # Send confirmation email to user
+                confirmation_subject = "Thank you for contacting us"
+                confirmation_body = f"""
+Dear {name},
+
+Thank you for contacting us. We have received your message and will get back to you as soon as possible.
+
+Your message:
+Subject: {subject}
+Message: {message}
+
+Best regards,
+{smtp_settings.from_name}
+                """
+                
+                send_email(email, confirmation_subject, confirmation_body)
+                
+                flash('Thank you for your message! We will get back to you soon.', 'success')
+                return redirect(url_for('contact'))
+                
+            except Exception as e:
+                flash(f'Failed to send message. Please try again later. Error: {str(e)}', 'error')
+                return render_template('contact.html')
+        
         return render_template('contact.html')
 
     @app.route('/plans')
     def plans():
-        return render_template('plans.html')
+        plans = Plan.query.filter_by(is_active=True).order_by(Plan.monthly_price.asc()).all()
+        return render_template('plans.html', plans=plans)
 
     @app.route('/register', methods=['GET', 'POST'])
     def register():
@@ -258,12 +420,28 @@ def create_app():
     @login_required
     def dashboard():
         chatbots = Chatbot.query.filter_by(user_id=current_user.id).all()
-        return render_template('dashboard.html', chatbots=chatbots)
+        user_plan = get_user_plan(current_user)
+        current_chatbot_count = len(chatbots)
+        remaining_chatbots = user_plan.chatbot_limit - current_chatbot_count
+        
+        return render_template('dashboard.html', 
+                             chatbots=chatbots,
+                             user_plan=user_plan,
+                             current_chatbot_count=current_chatbot_count,
+                             remaining_chatbots=remaining_chatbots)
 
     @app.route('/create_chatbot', methods=['GET', 'POST'])
     @login_required
     def create_chatbot():
         if request.method == 'POST':
+            # Check chatbot limit for user's plan
+            user_plan = get_user_plan(current_user)
+            current_chatbot_count = Chatbot.query.filter_by(user_id=current_user.id).count()
+            
+            if current_chatbot_count >= user_plan.chatbot_limit:
+                flash(f'You have reached your plan limit of {user_plan.chatbot_limit} chatbots. Please upgrade your plan to create more chatbots.', 'warning')
+                return redirect(url_for('create_chatbot'))
+            
             name = request.form['name']
             description = request.form['description']
             system_prompt = request.form.get('system_prompt', '').strip()
@@ -286,7 +464,15 @@ def create_app():
             flash('Chatbot created successfully!')
             return redirect(url_for('chatbot_details', chatbot_id=chatbot.id))
         
-        return render_template('create_chatbot.html')
+        # Get user's plan info for display
+        user_plan = get_user_plan(current_user)
+        current_chatbot_count = Chatbot.query.filter_by(user_id=current_user.id).count()
+        remaining_chatbots = user_plan.chatbot_limit - current_chatbot_count
+        
+        return render_template('create_chatbot.html', 
+                             user_plan=user_plan, 
+                             current_chatbot_count=current_chatbot_count,
+                             remaining_chatbots=remaining_chatbots)
 
     @app.route('/chatbot/<int:chatbot_id>')
     @login_required
@@ -564,8 +750,10 @@ def create_app():
             username = request.form['username']
             password = request.form['password']
             
-            if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-                session['admin_logged_in'] = True
+            user = User.query.filter_by(username=username).first()
+            
+            if user and user.is_admin and check_password_hash(user.password_hash, password):
+                login_user(user)
                 flash('Admin login successful!')
                 return redirect(url_for('admin_dashboard'))
             else:
@@ -576,7 +764,7 @@ def create_app():
     @app.route('/admin/logout')
     @admin_required
     def admin_logout():
-        session.pop('admin_logged_in', None)
+        logout_user()
         flash('Admin logged out successfully')
         return redirect(url_for('index'))
 
@@ -611,10 +799,74 @@ def create_app():
             page=page, per_page=20, error_out=False)
         return render_template('admin/users.html', users=users)
 
+    @app.route('/admin/users/<int:user_id>/edit', methods=['GET', 'POST'])
+    @admin_required
+    def admin_edit_user(user_id):
+        user = User.query.get_or_404(user_id)
+        
+        if request.method == 'POST':
+            # Update user information
+            user.username = request.form['username']
+            user.email = request.form['email']
+            
+            # Handle password update (only if provided)
+            new_password = request.form.get('password', '').strip()
+            if new_password:
+                user.password_hash = generate_password_hash(new_password)
+            
+            # Handle admin status
+            user.is_admin = 'is_admin' in request.form
+            
+            # Check for username/email conflicts
+            existing_user = User.query.filter(
+                User.username == user.username,
+                User.id != user.id
+            ).first()
+            if existing_user:
+                flash('Username already exists!')
+                return render_template('admin/edit_user.html', user=user)
+            
+            existing_email = User.query.filter(
+                User.email == user.email,
+                User.id != user.id
+            ).first()
+            if existing_email:
+                flash('Email already exists!')
+                return render_template('admin/edit_user.html', user=user)
+            
+            db.session.commit()
+            flash(f'User {user.username} updated successfully!')
+            return redirect(url_for('admin_users'))
+        
+        return render_template('admin/edit_user.html', user=user)
+
+    @app.route('/admin/users/<int:user_id>/toggle-admin', methods=['POST'])
+    @admin_required
+    def admin_toggle_user_admin(user_id):
+        user = User.query.get_or_404(user_id)
+        
+        # Prevent admin from demoting themselves
+        if user.id == current_user.id:
+            flash('You cannot change your own admin status!')
+            return redirect(url_for('admin_users'))
+        
+        # Toggle admin status
+        user.is_admin = not user.is_admin
+        db.session.commit()
+        
+        status = "promoted to admin" if user.is_admin else "demoted from admin"
+        flash(f'User {user.username} has been {status}!')
+        return redirect(url_for('admin_users'))
+
     @app.route('/admin/users/<int:user_id>/delete', methods=['POST'])
     @admin_required
     def admin_delete_user(user_id):
         user = User.query.get_or_404(user_id)
+        
+        # Prevent admin from deleting themselves
+        if user.id == current_user.id:
+            flash('You cannot delete your own account!')
+            return redirect(url_for('admin_users'))
         
         # Delete user's chatbots and associated data
         for chatbot in user.chatbots:
@@ -865,6 +1117,173 @@ The platform is designed to be user-friendly while providing powerful AI capabil
             traceback.print_exc()
         
         return demo_chatbot
+
+    @app.route('/admin/plans')
+    @admin_required
+    def admin_plans():
+        page = request.args.get('page', 1, type=int)
+        plans = Plan.query.order_by(Plan.monthly_price.asc()).paginate(
+            page=page, per_page=20, error_out=False)
+        return render_template('admin/plans.html', plans=plans)
+
+    @app.route('/admin/plans/create', methods=['GET', 'POST'])
+    @admin_required
+    def admin_create_plan():
+        if request.method == 'POST':
+            name = request.form['name']
+            description = request.form['description']
+            monthly_price = float(request.form['monthly_price'])
+            yearly_price = float(request.form['yearly_price'])
+            chatbot_limit = int(request.form['chatbot_limit'])
+            stripe_monthly_price_id = request.form.get('stripe_monthly_price_id', '').strip()
+            stripe_yearly_price_id = request.form.get('stripe_yearly_price_id', '').strip()
+            features_text = request.form.get('features', '')
+            is_active = 'is_active' in request.form
+            
+            # Convert features text to JSON
+            features_list = [feature.strip() for feature in features_text.split('\n') if feature.strip()]
+            features_json = json.dumps(features_list)
+            
+            plan = Plan(
+                name=name,
+                description=description,
+                monthly_price=monthly_price,
+                yearly_price=yearly_price,
+                chatbot_limit=chatbot_limit,
+                stripe_monthly_price_id=stripe_monthly_price_id if stripe_monthly_price_id else None,
+                stripe_yearly_price_id=stripe_yearly_price_id if stripe_yearly_price_id else None,
+                features=features_json,
+                is_active=is_active
+            )
+            
+            db.session.add(plan)
+            db.session.commit()
+            
+            flash(f'Plan "{name}" created successfully!')
+            return redirect(url_for('admin_plans'))
+        
+        return render_template('admin/create_plan.html')
+
+    @app.route('/admin/plans/<int:plan_id>/edit', methods=['GET', 'POST'])
+    @admin_required
+    def admin_edit_plan(plan_id):
+        plan = Plan.query.get_or_404(plan_id)
+        
+        if request.method == 'POST':
+            plan.name = request.form['name']
+            plan.description = request.form['description']
+            plan.monthly_price = float(request.form['monthly_price'])
+            plan.yearly_price = float(request.form['yearly_price'])
+            plan.chatbot_limit = int(request.form['chatbot_limit'])
+            plan.stripe_monthly_price_id = request.form.get('stripe_monthly_price_id', '').strip()
+            plan.stripe_yearly_price_id = request.form.get('stripe_yearly_price_id', '').strip()
+            features_text = request.form.get('features', '')
+            plan.is_active = 'is_active' in request.form
+            
+            # Convert features text to JSON
+            features_list = [feature.strip() for feature in features_text.split('\n') if feature.strip()]
+            plan.features = json.dumps(features_list)
+            
+            # Check for name conflicts
+            existing_plan = Plan.query.filter(
+                Plan.name == plan.name,
+                Plan.id != plan.id
+            ).first()
+            if existing_plan:
+                flash('Plan name already exists!')
+                return render_template('admin/edit_plan.html', plan=plan)
+            
+            db.session.commit()
+            flash(f'Plan "{plan.name}" updated successfully!')
+            return redirect(url_for('admin_plans'))
+        
+        return render_template('admin/edit_plan.html', plan=plan)
+
+    @app.route('/admin/plans/<int:plan_id>/delete', methods=['POST'])
+    @admin_required
+    def admin_delete_plan(plan_id):
+        plan = Plan.query.get_or_404(plan_id)
+        
+        db.session.delete(plan)
+        db.session.commit()
+        
+        flash(f'Plan "{plan.name}" deleted successfully!')
+        return redirect(url_for('admin_plans'))
+
+    @app.route('/admin/smtp-settings', methods=['GET', 'POST'])
+    @admin_required
+    def admin_smtp_settings():
+        if request.method == 'POST':
+            smtp_server = request.form['smtp_server']
+            smtp_port = int(request.form['smtp_port'])
+            smtp_username = request.form['smtp_username']
+            smtp_password = request.form['smtp_password']
+            smtp_use_tls = 'smtp_use_tls' in request.form
+            smtp_use_ssl = 'smtp_use_ssl' in request.form
+            from_email = request.form['from_email']
+            from_name = request.form['from_name']
+            admin_email = request.form['admin_email']
+            
+            # Get existing SMTP settings or create new
+            smtp_settings = SMTPSettings.query.filter_by(is_active=True).first()
+            if not smtp_settings:
+                smtp_settings = SMTPSettings()
+                db.session.add(smtp_settings)
+            
+            # Update settings
+            smtp_settings.smtp_server = smtp_server
+            smtp_settings.smtp_port = smtp_port
+            smtp_settings.smtp_username = smtp_username
+            smtp_settings.smtp_password = smtp_password
+            smtp_settings.smtp_use_tls = smtp_use_tls
+            smtp_settings.smtp_use_ssl = smtp_use_ssl
+            smtp_settings.from_email = from_email
+            smtp_settings.from_name = from_name
+            smtp_settings.admin_email = admin_email
+            smtp_settings.is_active = True
+            
+            db.session.commit()
+            
+            flash('SMTP settings updated successfully!')
+            return redirect(url_for('admin_smtp_settings'))
+        
+        # Get current SMTP settings
+        smtp_settings = SMTPSettings.query.filter_by(is_active=True).first()
+        
+        return render_template('admin/smtp_settings.html', smtp_settings=smtp_settings)
+
+    @app.route('/admin/smtp-settings/test', methods=['POST'])
+    @admin_required
+    def admin_test_smtp():
+        try:
+            # Get current SMTP settings
+            smtp_settings = SMTPSettings.query.filter_by(is_active=True).first()
+            if not smtp_settings:
+                return jsonify({'success': False, 'message': 'No SMTP settings configured'})
+            
+            # Send test email to admin email
+            test_subject = "SMTP Test Email"
+            test_body = f"""
+This is a test email from your Chatbot Platform.
+
+SMTP Settings:
+- Server: {smtp_settings.smtp_server}
+- Port: {smtp_settings.smtp_port}
+- Username: {smtp_settings.smtp_username}
+- Use TLS: {smtp_settings.smtp_use_tls}
+- Use SSL: {smtp_settings.smtp_use_ssl}
+- From: {smtp_settings.from_name} <{smtp_settings.from_email}>
+
+If you receive this email, your SMTP settings are working correctly!
+
+Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
+            """
+            
+            send_email(smtp_settings.admin_email, test_subject, test_body)
+            return jsonify({'success': True, 'message': 'Test email sent successfully!'})
+            
+        except Exception as e:
+            return jsonify({'success': False, 'message': f'Failed to send test email: {str(e)}'})
 
     with app.app_context():
         db.create_all()

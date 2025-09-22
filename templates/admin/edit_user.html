@@ -1,0 +1,97 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Edit User - Admin Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-user-edit"></i> Edit User: {{ user.username }}
+                    </h3>
+                    <div class="card-tools">
+                        <a href="{{ url_for('admin_users') }}" class="btn btn-secondary btn-sm">
+                            <i class="fas fa-arrow-left"></i> Back to Users
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="username">Username</label>
+                                    <input type="text" class="form-control" id="username" name="username" 
+                                           value="{{ user.username }}" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="email">Email</label>
+                                    <input type="email" class="form-control" id="email" name="email" 
+                                           value="{{ user.email }}" required>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="password">New Password</label>
+                                    <input type="password" class="form-control" id="password" name="password" 
+                                           placeholder="Leave blank to keep current password">
+                                    <small class="form-text text-muted">
+                                        Only enter a new password if you want to change it.
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label>User Information</label>
+                                    <div class="form-control-plaintext">
+                                        <strong>User ID:</strong> {{ user.id }}<br>
+                                        <strong>Created:</strong> {{ user.created_at.strftime('%Y-%m-%d %H:%M:%S') }}<br>
+                                        <strong>Chatbots:</strong> {{ user.chatbots|length }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="form-group">
+                                    <div class="form-check">
+                                        <input type="checkbox" class="form-check-input" id="is_admin" name="is_admin" 
+                                               {% if user.is_admin %}checked{% endif %}>
+                                        <label class="form-check-label" for="is_admin">
+                                            <strong>Admin User</strong>
+                                        </label>
+                                        <small class="form-text text-muted">
+                                            Check this box to give this user admin privileges.
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="form-group">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-save"></i> Update User
+                                    </button>
+                                    <a href="{{ url_for('admin_users') }}" class="btn btn-secondary">
+                                        <i class="fas fa-times"></i> Cancel
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -23,6 +23,7 @@
                             <th>ID</th>
                             <th>Username</th>
                             <th>Email</th>
+                            <th>Role</th>
                             <th>Chatbots</th>
                             <th>Created</th>
                             <th>Actions</th>
@@ -43,6 +44,29 @@
                                 </td>
                                 <td>{{ user.email }}</td>
                                 <td>
+                                    {% if user.is_admin %}
+                                        <span class="badge bg-danger">
+                                            <i class="fas fa-crown me-1"></i>Admin
+                                        </span>
+                                        {% if user.id != current_user.id %}
+                                            <form method="POST" action="{{ url_for('admin_toggle_user_admin', user_id=user.id) }}" style="display: inline;">
+                                                <button type="submit" class="btn btn-sm btn-outline-warning ms-1" 
+                                                        title="Demote from admin" onclick="return confirm('Demote {{ user.username }} from admin?')">
+                                                    <i class="fas fa-arrow-down"></i>
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="badge bg-secondary">User</span>
+                                        <form method="POST" action="{{ url_for('admin_toggle_user_admin', user_id=user.id) }}" style="display: inline;">
+                                            <button type="submit" class="btn btn-sm btn-outline-success ms-1" 
+                                                    title="Promote to admin" onclick="return confirm('Promote {{ user.username }} to admin?')">
+                                                <i class="fas fa-arrow-up"></i>
+                                            </button>
+                                        </form>
+                                    {% endif %}
+                                </td>
+                                <td>
                                     <span class="badge bg-info">{{ user.chatbots|length }}</span>
                                     {% if user.chatbots %}
                                         <small class="text-muted d-block">
@@ -57,9 +81,13 @@
                                 </td>
                                 <td>
                                     <div class="btn-group btn-group-sm">
+                                        <a href="{{ url_for('admin_edit_user', user_id=user.id) }}" 
+                                           class="btn btn-outline-primary" title="Edit User">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
                                         <button class="btn btn-outline-danger" 
                                                 onclick="confirmDeleteUser('{{ user.id }}', '{{ user.username }}', '{{ user.chatbots|length }}')"
-                                                {% if user.username == 'demo' %}disabled title="Cannot delete demo user"{% endif %}>
+                                                {% if user.id == current_user.id %}disabled title="Cannot delete your own account"{% endif %}>
                                             <i class="fas fa-trash"></i>
                                         </button>
                                     </div>

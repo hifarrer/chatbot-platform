@@ -12,172 +12,73 @@
     </div>
 
     <div class="row justify-content-center">
-        <!-- Basic Plan -->
+        {% for plan in plans %}
         <div class="col-lg-4 col-md-6 mb-4">
-            <div class="card h-100 shadow-sm border-0">
-                <div class="card-header bg-light text-center py-4 border-0">
+            <div class="card h-100 shadow-sm border-0 {% if plan.name == 'Premium' %}border-primary position-relative{% endif %}">
+                {% if plan.name == 'Premium' %}
+                <div class="position-absolute top-0 start-50 translate-middle">
+                    <span class="badge bg-primary px-3 py-2 rounded-pill">Most Popular</span>
+                </div>
+                {% endif %}
+                
+                <div class="card-header {% if plan.name == 'Free' %}bg-light{% elif plan.name == 'Premium' %}bg-primary text-white{% else %}bg-dark text-white{% endif %} text-center py-4 border-0">
                     <h3 class="card-title mb-0">
-                        <i class="fas fa-seedling me-2 text-success"></i>Basic
+                        {% if plan.name == 'Free' %}
+                            <i class="fas fa-seedling me-2 text-success"></i>
+                        {% elif plan.name == 'Premium' %}
+                            <i class="fas fa-star me-2"></i>
+                        {% else %}
+                            <i class="fas fa-rocket me-2"></i>
+                        {% endif %}
+                        {{ plan.name }}
                     </h3>
                     <div class="mt-3">
-                        <span class="display-4 fw-bold">Free</span>
-                    </div>
-                    <p class="text-muted mt-2">Perfect for getting started</p>
-                </div>
-                <div class="card-body d-flex flex-column">
-                    <ul class="list-unstyled mb-4">
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            <strong>1 Chatbot</strong>
-                        </li>
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Unlimited document uploads
-                        </li>
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Basic chat functionality
-                        </li>
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Embed code generation
-                        </li>
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Community support
-                        </li>
-                        <li class="mb-3 text-muted">
-                            <i class="fas fa-times text-muted me-2"></i>
-                            Priority support
-                        </li>
-                        <li class="mb-3 text-muted">
-                            <i class="fas fa-times text-muted me-2"></i>
-                            Advanced analytics
-                        </li>
-                    </ul>
-                    <div class="mt-auto">
-                        {% if current_user.is_authenticated %}
-                            <button class="btn btn-outline-success btn-lg w-100" disabled>
-                                <i class="fas fa-check me-2"></i>Current Plan
-                            </button>
+                        {% if plan.monthly_price == 0 %}
+                            <span class="display-4 fw-bold">Free</span>
                         {% else %}
-                            <a href="{{ url_for('register') }}" class="btn btn-success btn-lg w-100">
-                                <i class="fas fa-rocket me-2"></i>Get Started
-                            </a>
+                            <span class="display-4 fw-bold">${{ "%.0f"|format(plan.monthly_price) }}</span>
+                            <span class="fs-6">/month</span>
+                        {% endif %}
+                    </div>
+                    {% if plan.description %}
+                        <p class="{% if plan.name == 'Premium' %}mt-2 mb-0{% else %}text-muted mt-2{% endif %}">{{ plan.description }}</p>
+                    {% endif %}
+                </div>
+                
+                <div class="card-body d-flex flex-column">
+                    {% set features = plan.features|from_json %}
+                    <ul class="list-unstyled mb-4">
+                        {% for feature in features %}
+                        <li class="mb-3">
+                            <i class="fas fa-check text-success me-2"></i>
+                            {{ feature }}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    
+                    <div class="mt-auto">
+                        {% if plan.monthly_price == 0 %}
+                            {% if current_user.is_authenticated %}
+                                <button class="btn btn-outline-success btn-lg w-100" disabled>
+                                    <i class="fas fa-check me-2"></i>Current Plan
+                                </button>
+                            {% else %}
+                                <a href="{{ url_for('register') }}" class="btn btn-success btn-lg w-100">
+                                    <i class="fas fa-rocket me-2"></i>Get Started
+                                </a>
+                            {% endif %}
+                        {% else %}
+                            <button class="btn {% if plan.name == 'Premium' %}btn-primary{% else %}btn-dark{% endif %} btn-lg w-100" 
+                                    onclick="alert('Payment integration coming soon!')">
+                                <i class="fas {% if plan.name == 'Premium' %}fa-crown{% else %}fa-diamond{% endif %} me-2"></i>
+                                Upgrade to {{ plan.name }}
+                            </button>
                         {% endif %}
                     </div>
                 </div>
             </div>
         </div>
-
-        <!-- Premium Plan -->
-        <div class="col-lg-4 col-md-6 mb-4">
-            <div class="card h-100 shadow border-primary position-relative">
-                <div class="position-absolute top-0 start-50 translate-middle">
-                    <span class="badge bg-primary px-3 py-2 rounded-pill">Most Popular</span>
-                </div>
-                <div class="card-header bg-primary text-white text-center py-4 border-0">
-                    <h3 class="card-title mb-0">
-                        <i class="fas fa-star me-2"></i>Premium
-                    </h3>
-                    <div class="mt-3">
-                        <span class="display-4 fw-bold">$9</span>
-                        <span class="fs-6">/month</span>
-                    </div>
-                    <p class="mt-2 mb-0">Great for small businesses</p>
-                </div>
-                <div class="card-body d-flex flex-column">
-                    <ul class="list-unstyled mb-4">
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            <strong>Up to 3 Chatbots</strong>
-                        </li>
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Unlimited document uploads
-                        </li>
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Advanced chat functionality
-                        </li>
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Custom system prompts
-                        </li>
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Priority email support
-                        </li>
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Basic analytics
-                        </li>
-                        <li class="mb-3 text-muted">
-                            <i class="fas fa-times text-muted me-2"></i>
-                            Advanced analytics
-                        </li>
-                    </ul>
-                    <div class="mt-auto">
-                        <button class="btn btn-primary btn-lg w-100" onclick="alert('Payment integration coming soon!')">
-                            <i class="fas fa-crown me-2"></i>Upgrade to Premium
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Ultra Plan -->
-        <div class="col-lg-4 col-md-6 mb-4">
-            <div class="card h-100 shadow-sm border-0">
-                <div class="card-header bg-dark text-white text-center py-4 border-0">
-                    <h3 class="card-title mb-0">
-                        <i class="fas fa-rocket me-2"></i>Ultra
-                    </h3>
-                    <div class="mt-3">
-                        <span class="display-4 fw-bold">$15</span>
-                        <span class="fs-6">/month</span>
-                    </div>
-                    <p class="mt-2 mb-0">Perfect for enterprises</p>
-                </div>
-                <div class="card-body d-flex flex-column">
-                    <ul class="list-unstyled mb-4">
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            <strong>Up to 10 Chatbots</strong>
-                        </li>
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Unlimited document uploads
-                        </li>
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Premium chat functionality
-                        </li>
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Advanced system prompts
-                        </li>
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Priority phone & email support
-                        </li>
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Advanced analytics & reporting
-                        </li>
-                        <li class="mb-3">
-                            <i class="fas fa-check text-success me-2"></i>
-                            Custom integrations
-                        </li>
-                    </ul>
-                    <div class="mt-auto">
-                        <button class="btn btn-dark btn-lg w-100" onclick="alert('Payment integration coming soon!')">
-                            <i class="fas fa-diamond me-2"></i>Upgrade to Ultra
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
+        {% endfor %}
     </div>
 
     <!-- FAQ Section -->

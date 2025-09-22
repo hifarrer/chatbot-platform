@@ -1,0 +1,197 @@
+{% extends "admin/base.html" %}
+
+{% block page_title %}Plan Management{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">
+        <i class="fas fa-credit-card me-2"></i>
+        Plan Management
+    </h4>
+    <div class="d-flex align-items-center">
+        <div class="text-muted me-3">
+            Total: {{ plans.total }} plans
+        </div>
+        <a href="{{ url_for('admin_create_plan') }}" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>Create New Plan
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        {% if plans.items %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Monthly Price</th>
+                            <th>Yearly Price</th>
+                            <th>Chatbot Limit</th>
+                            <th>Status</th>
+                            <th>Features</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for plan in plans.items %}
+                            <tr>
+                                <td>{{ plan.id }}</td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="avatar bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-2" 
+                                             style="width: 32px; height: 32px; font-size: 14px;">
+                                            {{ plan.name[0].upper() }}
+                                        </div>
+                                        <strong>{{ plan.name }}</strong>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="text-muted">{{ plan.description[:50] }}{% if plan.description|length > 50 %}...{% endif %}</span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-info">${{ "%.2f"|format(plan.monthly_price) }}/mo</span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-success">${{ "%.2f"|format(plan.yearly_price) }}/yr</span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-info">
+                                        <i class="fas fa-robot me-1"></i>{{ plan.chatbot_limit }} chatbot{{ 's' if plan.chatbot_limit != 1 else '' }}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if plan.is_active %}
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-check me-1"></i>Active
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">
+                                            <i class="fas fa-pause me-1"></i>Inactive
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% set features = plan.features|from_json %}
+                                    <span class="badge bg-light text-dark">{{ features|length }} features</span>
+                                </td>
+                                <td>
+                                    {{ plan.created_at.strftime('%Y-%m-%d') }}<br>
+                                    <small class="text-muted">{{ plan.created_at.strftime('%H:%M') }}</small>
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{{ url_for('admin_edit_plan', plan_id=plan.id) }}" 
+                                           class="btn btn-outline-primary" title="Edit Plan">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
+                                        <button class="btn btn-outline-danger" 
+                                                onclick="confirmDeletePlan('{{ plan.id }}', '{{ plan.name }}')"
+                                                title="Delete Plan">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Pagination -->
+            {% if plans.pages > 1 %}
+                <nav aria-label="Plan pagination">
+                    <ul class="pagination justify-content-center">
+                        {% if plans.has_prev %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('admin_plans', page=plans.prev_num) }}">Previous</a>
+                            </li>
+                        {% endif %}
+                        
+                        {% for page_num in plans.iter_pages() %}
+                            {% if page_num %}
+                                {% if page_num != plans.page %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="{{ url_for('admin_plans', page=page_num) }}">{{ page_num }}</a>
+                                    </li>
+                                {% else %}
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ page_num }}</span>
+                                    </li>
+                                {% endif %}
+                            {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">...</span>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+                        
+                        {% if plans.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('admin_plans', page=plans.next_num) }}">Next</a>
+                            </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            {% endif %}
+        {% else %}
+            <div class="text-center py-5">
+                <i class="fas fa-credit-card fa-3x text-muted mb-3"></i>
+                <h5>No plans found</h5>
+                <p class="text-muted">Create your first plan to get started.</p>
+                <a href="{{ url_for('admin_create_plan') }}" class="btn btn-primary">
+                    <i class="fas fa-plus me-2"></i>Create First Plan
+                </a>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deletePlanModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-exclamation-triangle text-danger me-2"></i>
+                    Confirm Plan Deletion
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete plan <strong id="deletePlanName"></strong>?</p>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Warning:</strong> This will permanently delete the plan and all its data.
+                </div>
+                <p class="text-muted mb-0">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deletePlanForm" method="POST" style="display: inline;">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash me-2"></i>
+                        Delete Plan
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function confirmDeletePlan(planId, planName) {
+    document.getElementById('deletePlanName').textContent = planName;
+    document.getElementById('deletePlanForm').action = `/admin/plans/${planId}/delete`;
+    
+    const modal = new bootstrap.Modal(document.getElementById('deletePlanModal'));
+    modal.show();
+}
+</script>
+{% endblock %}

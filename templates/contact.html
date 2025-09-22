@@ -15,50 +15,43 @@
             </p>
         </div>
 
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }} alert-dismissible fade show" role="alert">
+                        <i class="fas fa-{{ 'check-circle' if category == 'success' else 'exclamation-triangle' }} me-2"></i>{{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
         <div class="row g-5">
             <!-- Contact Form -->
             <div class="col-md-8">
                 <div class="card shadow-sm border-0">
                     <div class="card-body p-4">
                         <h3 class="mb-4">Send us a Message</h3>
-                        <form id="contactForm">
+                        <form method="POST">
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <label for="name" class="form-label">Full Name *</label>
-                                    <input type="text" class="form-control" id="name" required>
+                                    <input type="text" class="form-control" id="name" name="name" required>
                                 </div>
                                 <div class="col-md-6">
                                     <label for="email" class="form-label">Email Address *</label>
-                                    <input type="email" class="form-control" id="email" required>
-                                </div>
-                                <div class="col-12">
-                                    <label for="company" class="form-label">Company/Organization</label>
-                                    <input type="text" class="form-control" id="company">
+                                    <input type="email" class="form-control" id="email" name="email" required>
                                 </div>
                                 <div class="col-12">
                                     <label for="subject" class="form-label">Subject *</label>
-                                    <select class="form-control" id="subject" required>
-                                        <option value="">Select a topic...</option>
-                                        <option value="general">General Inquiry</option>
-                                        <option value="support">Technical Support</option>
-                                        <option value="sales">Sales & Pricing</option>
-                                        <option value="partnership">Partnership Opportunities</option>
-                                        <option value="feedback">Feedback & Suggestions</option>
-                                        <option value="other">Other</option>
-                                    </select>
+                                    <input type="text" class="form-control" id="subject" name="subject" 
+                                           placeholder="Brief description of your inquiry" required>
                                 </div>
                                 <div class="col-12">
                                     <label for="message" class="form-label">Message *</label>
-                                    <textarea class="form-control" id="message" rows="6" required 
+                                    <textarea class="form-control" id="message" name="message" rows="6" required 
                                             placeholder="Tell us more about your inquiry..."></textarea>
-                                </div>
-                                <div class="col-12">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" id="newsletter">
-                                        <label class="form-check-label" for="newsletter">
-                                            Subscribe to our newsletter for updates and tips
-                                        </label>
-                                    </div>
                                 </div>
                                 <div class="col-12">
                                     <button type="submit" class="btn btn-primary btn-lg">
@@ -213,26 +206,6 @@
 </div>
 
 <script>
-document.getElementById('contactForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    
-    // Get form data
-    const formData = {
-        name: document.getElementById('name').value,
-        email: document.getElementById('email').value,
-        company: document.getElementById('company').value,
-        subject: document.getElementById('subject').value,
-        message: document.getElementById('message').value,
-        newsletter: document.getElementById('newsletter').checked
-    };
-    
-    // Show success message (in a real app, you'd send this to your server)
-    alert('Thank you for your message! We\'ll get back to you within 24 hours.');
-    
-    // Reset form
-    this.reset();
-});
-
 function openChatbot() {
     // Try to click the chatbot toggle
     const chatbotToggle = document.querySelector('.chatbot-toggle');

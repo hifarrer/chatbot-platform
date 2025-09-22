@@ -1,0 +1,150 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Edit Plan - Admin Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-edit"></i> Edit Plan: {{ plan.name }}
+                    </h3>
+                    <div class="card-tools">
+                        <a href="{{ url_for('admin_plans') }}" class="btn btn-secondary btn-sm">
+                            <i class="fas fa-arrow-left"></i> Back to Plans
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="name">Plan Name *</label>
+                                    <input type="text" class="form-control" id="name" name="name" 
+                                           value="{{ plan.name }}" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="description">Description</label>
+                                    <input type="text" class="form-control" id="description" name="description" 
+                                           value="{{ plan.description or '' }}">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="form-group">
+                                    <label for="monthly_price">Monthly Price ($) *</label>
+                                    <input type="number" class="form-control" id="monthly_price" name="monthly_price" 
+                                           step="0.01" min="0" value="{{ plan.monthly_price }}" required>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-group">
+                                    <label for="yearly_price">Yearly Price ($) *</label>
+                                    <input type="number" class="form-control" id="yearly_price" name="yearly_price" 
+                                           step="0.01" min="0" value="{{ plan.yearly_price }}" required>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-group">
+                                    <label for="chatbot_limit">Chatbot Limit *</label>
+                                    <input type="number" class="form-control" id="chatbot_limit" name="chatbot_limit" 
+                                           min="1" value="{{ plan.chatbot_limit }}" required>
+                                    <small class="form-text text-muted">
+                                        Maximum number of chatbots users can create
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="stripe_monthly_price_id">Stripe Monthly Price ID</label>
+                                    <input type="text" class="form-control" id="stripe_monthly_price_id" name="stripe_monthly_price_id" 
+                                           value="{{ plan.stripe_monthly_price_id or '' }}" placeholder="price_xxxxxxxxxxxxx">
+                                    <small class="form-text text-muted">
+                                        Stripe price ID for monthly billing
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="stripe_yearly_price_id">Stripe Yearly Price ID</label>
+                                    <input type="text" class="form-control" id="stripe_yearly_price_id" name="stripe_yearly_price_id" 
+                                           value="{{ plan.stripe_yearly_price_id or '' }}" placeholder="price_xxxxxxxxxxxxx">
+                                    <small class="form-text text-muted">
+                                        Stripe price ID for yearly billing
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="form-group">
+                                    <label for="features">Features (one per line) *</label>
+                                    <textarea class="form-control" id="features" name="features" rows="8" required>{% if plan.features %}{% set features = plan.features|from_json %}{% for feature in features %}{{ feature }}
+{% endfor %}{% endif %}</textarea>
+                                    <small class="form-text text-muted">
+                                        Each line will become a bullet point. Use • or - for bullet points.
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="form-group">
+                                    <div class="form-check">
+                                        <input type="checkbox" class="form-check-input" id="is_active" name="is_active" 
+                                               {% if plan.is_active %}checked{% endif %}>
+                                        <label class="form-check-label" for="is_active">
+                                            <strong>Active Plan</strong>
+                                        </label>
+                                        <small class="form-text text-muted">
+                                            Uncheck to hide this plan from the public plans page.
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="form-group">
+                                    <label>Plan Information</label>
+                                    <div class="form-control-plaintext">
+                                        <strong>Plan ID:</strong> {{ plan.id }}<br>
+                                        <strong>Created:</strong> {{ plan.created_at.strftime('%Y-%m-%d %H:%M:%S') }}<br>
+                                        <strong>Last Updated:</strong> {{ plan.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="form-group">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-save"></i> Update Plan
+                                    </button>
+                                    <a href="{{ url_for('admin_plans') }}" class="btn btn-secondary">
+                                        <i class="fas fa-times"></i> Cancel
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

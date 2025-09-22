@@ -1,0 +1,140 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Create Plan - Admin Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-plus"></i> Create New Plan
+                    </h3>
+                    <div class="card-tools">
+                        <a href="{{ url_for('admin_plans') }}" class="btn btn-secondary btn-sm">
+                            <i class="fas fa-arrow-left"></i> Back to Plans
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="name">Plan Name *</label>
+                                    <input type="text" class="form-control" id="name" name="name" 
+                                           placeholder="e.g., Free, Premium, Ultra" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="description">Description</label>
+                                    <input type="text" class="form-control" id="description" name="description" 
+                                           placeholder="Brief description of the plan">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="form-group">
+                                    <label for="monthly_price">Monthly Price ($) *</label>
+                                    <input type="number" class="form-control" id="monthly_price" name="monthly_price" 
+                                           step="0.01" min="0" value="0" required>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-group">
+                                    <label for="yearly_price">Yearly Price ($) *</label>
+                                    <input type="number" class="form-control" id="yearly_price" name="yearly_price" 
+                                           step="0.01" min="0" value="0" required>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-group">
+                                    <label for="chatbot_limit">Chatbot Limit *</label>
+                                    <input type="number" class="form-control" id="chatbot_limit" name="chatbot_limit" 
+                                           min="1" value="1" required>
+                                    <small class="form-text text-muted">
+                                        Maximum number of chatbots users can create
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="stripe_monthly_price_id">Stripe Monthly Price ID</label>
+                                    <input type="text" class="form-control" id="stripe_monthly_price_id" name="stripe_monthly_price_id" 
+                                           placeholder="price_xxxxxxxxxxxxx">
+                                    <small class="form-text text-muted">
+                                        Stripe price ID for monthly billing
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="stripe_yearly_price_id">Stripe Yearly Price ID</label>
+                                    <input type="text" class="form-control" id="stripe_yearly_price_id" name="stripe_yearly_price_id" 
+                                           placeholder="price_xxxxxxxxxxxxx">
+                                    <small class="form-text text-muted">
+                                        Stripe price ID for yearly billing
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="form-group">
+                                    <label for="features">Features (one per line) *</label>
+                                    <textarea class="form-control" id="features" name="features" rows="8" 
+                                              placeholder="Enter each feature on a new line:
+• Unlimited chatbots
+• 10GB storage
+• Priority support
+• Advanced analytics" required></textarea>
+                                    <small class="form-text text-muted">
+                                        Each line will become a bullet point. Use • or - for bullet points.
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="form-group">
+                                    <div class="form-check">
+                                        <input type="checkbox" class="form-check-input" id="is_active" name="is_active" checked>
+                                        <label class="form-check-label" for="is_active">
+                                            <strong>Active Plan</strong>
+                                        </label>
+                                        <small class="form-text text-muted">
+                                            Uncheck to hide this plan from the public plans page.
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="form-group">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-save"></i> Create Plan
+                                    </button>
+                                    <a href="{{ url_for('admin_plans') }}" class="btn btn-secondary">
+                                        <i class="fas fa-times"></i> Cancel
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

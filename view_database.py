@@ -1,37 +1,43 @@
 #!/usr/bin/env python3
 """
 Database viewer script for the Chatbot Platform
-Shows all data in the SQLite database in a readable format
+Shows all data in the PostgreSQL database in a readable format
 """
 
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import os
 from datetime import datetime
+from dotenv import load_dotenv
 
 def view_database():
-    db_path = 'instance/chatbot_platform.db'
-    
-    if not os.path.exists(db_path):
-        print(f"❌ Database file not found: {db_path}")
-        print("Make sure you've run the application at least once to create the database.")
-        return
-    
-    print("🗄️  Chatbot Platform Database Viewer")
+    print("🗄️  Chatbot Platform PostgreSQL Database Viewer")
     print("=" * 50)
     
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
     try:
+        # Load environment variables
+        load_dotenv()
+        
+        # Connect to PostgreSQL
+        conn = psycopg2.connect(
+            host=os.environ.get('PGHOST'),
+            database=os.environ.get('PGDATABASE'),
+            user=os.environ.get('PGUSER'),
+            password=os.environ.get('PGPASSWORD'),
+            port=os.environ.get('PGPORT', 5432)
+        )
+        
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+    
         # Users table
         print("\n👥 USERS:")
         print("-" * 30)
-        cursor.execute("SELECT id, username, email, created_at FROM user")
+        cursor.execute('SELECT id, username, email, created_at FROM "user"')
         users = cursor.fetchall()
         
         if users:
             for user in users:
-                print(f"ID: {user[0]} | Username: {user[1]} | Email: {user[2]} | Created: {user[3]}")
+                print(f"ID: {user['id']} | Username: {user['username']} | Email: {user['email']} | Created: {user['created_at']}")
         else:
             print("No users found")
         
@@ -41,17 +47,17 @@ def view_database():
         cursor.execute("""
             SELECT c.id, c.name, c.description, c.embed_code, c.is_trained, c.created_at, u.username 
             FROM chatbot c 
-            LEFT JOIN user u ON c.user_id = u.id
+            LEFT JOIN "user" u ON c.user_id = u.id
         """)
         chatbots = cursor.fetchall()
         
         if chatbots:
             for bot in chatbots:
-                trained_status = "✅ Trained" if bot[4] else "❌ Not Trained"
-                print(f"ID: {bot[0]} | Name: {bot[1]} | Owner: {bot[6]} | {trained_status}")
-                print(f"   Description: {bot[2]}")
-                print(f"   Embed Code: {bot[3]}")
-                print(f"   Created: {bot[5]}")
+                trained_status = "✅ Trained" if bot['is_trained'] else "❌ Not Trained"
+                print(f"ID: {bot['id']} | Name: {bot['name']} | Owner: {bot['username']} | {trained_status}")
+                print(f"   Description: {bot['description']}")
+                print(f"   Embed Code: {bot['embed_code']}")
+                print(f"   Created: {bot['created_at']}")
                 print()
         else:
             print("No chatbots found")
@@ -68,9 +74,9 @@ def view_database():
         
         if documents:
             for doc in documents:
-                processed_status = "✅ Processed" if doc[2] else "⏳ Pending"
-                print(f"ID: {doc[0]} | File: {doc[1]} | Chatbot: {doc[4]} | {processed_status}")
-                print(f"   Uploaded: {doc[3]}")
+                processed_status = "✅ Processed" if doc['processed'] else "⏳ Pending"
+                print(f"ID: {doc['id']} | File: {doc['original_filename']} | Chatbot: {doc['name']} | {processed_status}")
+                print(f"   Uploaded: {doc['uploaded_at']}")
                 print()
         else:
             print("No documents found")
@@ -89,9 +95,9 @@ def view_database():
         
         if conversations:
             for conv in conversations:
-                print(f"Chatbot: {conv[3]} | Time: {conv[2]}")
-                print(f"   User: {conv[0][:100]}{'...' if len(conv[0]) > 100 else ''}")
-                print(f"   Bot:  {conv[1][:100]}{'...' if len(conv[1]) > 100 else ''}")
+                print(f"Chatbot: {conv['name']} | Time: {conv['timestamp']}")
+                print(f"   User: {conv['user_message'][:100]}{'...' if len(conv['user_message']) > 100 else ''}")
+                print(f"   Bot:  {conv['bot_response'][:100]}{'...' if len(conv['bot_response']) > 100 else ''}")
                 print()
         else:
             print("No conversations found")
@@ -100,31 +106,34 @@ def view_database():
         print("\n📊 STATISTICS:")
         print("-" * 30)
         
-        cursor.execute("SELECT COUNT(*) FROM user")
-        user_count = cursor.fetchone()[0]
+        cursor.execute('SELECT COUNT(*) FROM "user"')
+        user_count = cursor.fetchone()['count']
         
         cursor.execute("SELECT COUNT(*) FROM chatbot")
-        chatbot_count = cursor.fetchone()[0]
+        chatbot_count = cursor.fetchone()['count']
         
-        cursor.execute("SELECT COUNT(*) FROM chatbot WHERE is_trained = 1")
-        trained_count = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM chatbot WHERE is_trained = true")
+        trained_count = cursor.fetchone()['count']
         
         cursor.execute("SELECT COUNT(*) FROM document")
-        document_count = cursor.fetchone()[0]
+        document_count = cursor.fetchone()['count']
         
         cursor.execute("SELECT COUNT(*) FROM conversation")
-        conversation_count = cursor.fetchone()[0]
+        conversation_count = cursor.fetchone()['count']
         
         print(f"Users: {user_count}")
         print(f"Chatbots: {chatbot_count} ({trained_count} trained)")
         print(f"Documents: {document_count}")
         print(f"Conversations: {conversation_count}")
         
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         print(f"❌ Database error: {e}")
+    except Exception as e:
+        print(f"❌ Connection error: {e}")
     
     finally:
-        conn.close()
+        if 'conn' in locals():
+            conn.close()
 
 if __name__ == "__main__":
     view_database()
