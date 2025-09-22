@@ -9,9 +9,10 @@ import os
 import json
 import uuid
 import smtplib
+import secrets
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime
+from datetime import datetime, timedelta
 from services.document_processor import DocumentProcessor
 from services.chatbot_trainer import ChatbotTrainer
 from services.chat_service_openai import ChatServiceOpenAI
@@ -100,6 +101,15 @@ class SMTPSettings(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+class PasswordResetToken(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    token = db.Column(db.String(255), unique=True, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    user = db.relationship('User', backref='password_reset_tokens')
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -161,6 +171,55 @@ def send_email(to_email, subject, body, is_html=False):
         return True
     except Exception as e:
         raise Exception(f"Failed to send email: {str(e)}")
+
+def generate_password_reset_token(user):
+    """Generate a password reset token for a user"""
+    # Create a secure random token
+    token = secrets.token_urlsafe(32)
+    
+    # Set expiration time (1 hour from now)
+    expires_at = datetime.utcnow() + timedelta(hours=1)
+    
+    # Create the token record
+    reset_token = PasswordResetToken(
+        user_id=user.id,
+        token=token,
+        expires_at=expires_at
+    )
+    
+    db.session.add(reset_token)
+    db.session.commit()
+    
+    return token
+
+def send_password_reset_email(user, token):
+    """Send password reset email to user"""
+    smtp_settings = get_smtp_settings()
+    if not smtp_settings:
+        raise Exception("No SMTP settings configured")
+    
+    # Create reset URL
+    reset_url = f"{request.url_root}reset-password/{token}"
+    
+    # Create email content
+    subject = "Password Reset Request"
+    body = f"""
+Dear {user.username},
+
+You have requested to reset your password for your Chatbot Platform account.
+
+To reset your password, please click the link below:
+{reset_url}
+
+This link will expire in 1 hour for security reasons.
+
+If you did not request this password reset, please ignore this email and your password will remain unchanged.
+
+Best regards,
+{smtp_settings.from_name}
+    """
+    
+    send_email(user.email, subject, body)
 
 # Admin authentication
 def admin_required(f):
@@ -415,6 +474,89 @@ Best regards,
     def logout():
         logout_user()
         return redirect(url_for('index'))
+
+    @app.route('/forgot-password', methods=['GET', 'POST'])
+    def forgot_password():
+        if request.method == 'POST':
+            email = request.form.get('email', '').strip()
+            
+            if not email:
+                flash('Please enter your email address.', 'error')
+                return render_template('forgot_password.html')
+            
+            # Find user by email
+            user = User.query.filter_by(email=email).first()
+            
+            if user:
+                try:
+                    # Generate reset token
+                    token = generate_password_reset_token(user)
+                    
+                    # Send reset email
+                    send_password_reset_email(user, token)
+                    
+                    flash('Password reset instructions have been sent to your email address.', 'success')
+                    return redirect(url_for('login'))
+                    
+                except Exception as e:
+                    flash(f'Failed to send reset email. Please try again later. Error: {str(e)}', 'error')
+                    return render_template('forgot_password.html')
+            else:
+                # Don't reveal if email exists or not for security
+                flash('If an account with that email exists, password reset instructions have been sent.', 'info')
+                return redirect(url_for('login'))
+        
+        return render_template('forgot_password.html')
+
+    @app.route('/reset-password/<token>', methods=['GET', 'POST'])
+    def reset_password(token):
+        # Find the token
+        reset_token = PasswordResetToken.query.filter_by(token=token, used=False).first()
+        
+        if not reset_token:
+            flash('Invalid or expired reset token.', 'error')
+            return redirect(url_for('login'))
+        
+        # Check if token is expired
+        if datetime.utcnow() > reset_token.expires_at:
+            flash('Reset token has expired. Please request a new password reset.', 'error')
+            return redirect(url_for('forgot_password'))
+        
+        if request.method == 'POST':
+            password = request.form.get('password', '').strip()
+            confirm_password = request.form.get('confirm_password', '').strip()
+            
+            # Validate passwords
+            if not password or not confirm_password:
+                flash('Please fill in all fields.', 'error')
+                return render_template('reset_password.html', token=token)
+            
+            if password != confirm_password:
+                flash('Passwords do not match.', 'error')
+                return render_template('reset_password.html', token=token)
+            
+            if len(password) < 6:
+                flash('Password must be at least 6 characters long.', 'error')
+                return render_template('reset_password.html', token=token)
+            
+            try:
+                # Update user password
+                user = reset_token.user
+                user.password_hash = generate_password_hash(password)
+                
+                # Mark token as used
+                reset_token.used = True
+                
+                db.session.commit()
+                
+                flash('Your password has been reset successfully. You can now log in with your new password.', 'success')
+                return redirect(url_for('login'))
+                
+            except Exception as e:
+                flash(f'Failed to reset password. Please try again later. Error: {str(e)}', 'error')
+                return render_template('reset_password.html', token=token)
+        
+        return render_template('reset_password.html', token=token)
 
     @app.route('/dashboard')
     @login_required
