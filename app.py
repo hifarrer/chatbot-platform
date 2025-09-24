@@ -226,6 +226,11 @@ def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated or not current_user.is_admin:
+            # For AJAX requests, return JSON error instead of redirect
+            if (request.headers.get('Content-Type') == 'application/json' or 
+                request.is_json or 
+                request.headers.get('X-Requested-With') == 'XMLHttpRequest'):
+                return jsonify({'success': False, 'message': 'Authentication required'}), 401
             return redirect(url_for('admin_login'))
         return f(*args, **kwargs)
     return decorated_function
