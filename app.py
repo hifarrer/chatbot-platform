@@ -45,6 +45,8 @@ class Chatbot(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_trained = db.Column(db.Boolean, default=False)
+    avatar_filename = db.Column(db.String(255), nullable=True)  # Custom avatar image
+    greeting_message = db.Column(db.String(500), nullable=True)  # Custom greeting message
     documents = db.relationship('Document', backref='chatbot', lazy=True, cascade='all, delete-orphan')
     conversations = db.relationship('Conversation', backref='chatbot', lazy=True, cascade='all, delete-orphan')
 
@@ -281,6 +283,19 @@ def create_app():
             return json.loads(json_string)
         except:
             return []
+    
+    # Add custom Jinja2 function for avatar URL
+    @app.template_global()
+    def get_avatar_url(avatar_filename):
+        if not avatar_filename:
+            return None
+        
+        # Check if it's a predefined avatar
+        allowed_predefined = ['1.png', '2.png', '3.png', '4.png', '5.png', '6.png']
+        if avatar_filename in allowed_predefined:
+            return url_for('static', filename='avatars/' + avatar_filename)
+        else:
+            return url_for('static', filename='uploads/' + avatar_filename)
     
     # Handle PostgreSQL URL for Render.com
     database_url = os.environ.get('DATABASE_URL', 'sqlite:///chatbot_platform.db')
@@ -610,17 +625,61 @@ Best regards,
             name = request.form['name']
             description = request.form['description']
             system_prompt = request.form.get('system_prompt', '').strip()
+            greeting_message = request.form.get('greeting_message', '').strip()
             
             # Use default prompt if none provided
             if not system_prompt:
                 system_prompt = "You are a helpful AI assistant. Answer questions based on the provided documents and your general knowledge."
+            
+            # Handle avatar selection (custom upload or predefined)
+            avatar_filename = None
+            
+            # Check for predefined avatar selection first
+            selected_avatar = request.form.get('selected_avatar')
+            if selected_avatar:
+                # Validate that the selected avatar exists in our predefined avatars
+                allowed_predefined = ['1.png', '2.png', '3.png', '4.png', '5.png', '6.png']
+                if selected_avatar in allowed_predefined:
+                    avatar_filename = selected_avatar
+                else:
+                    flash('Invalid predefined avatar selection.', 'error')
+                    return redirect(url_for('create_chatbot'))
+            
+            # If no predefined avatar selected, check for custom upload
+            elif 'avatar' in request.files:
+                avatar_file = request.files['avatar']
+                if avatar_file and avatar_file.filename:
+                    # Check if file is allowed
+                    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'svg'}
+                    if '.' in avatar_file.filename and \
+                       avatar_file.filename.rsplit('.', 1)[1].lower() in allowed_extensions:
+                        
+                        # Create uploads directory if it doesn't exist
+                        upload_dir = os.path.join(app.root_path, 'static', 'uploads')
+                        os.makedirs(upload_dir, exist_ok=True)
+                        
+                        # Generate secure filename
+                        filename = secure_filename(avatar_file.filename)
+                        # Add timestamp to avoid conflicts
+                        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                        name_part, ext = os.path.splitext(filename)
+                        avatar_filename = f"avatar_{name_part}_{timestamp}{ext}"
+                        
+                        # Save file
+                        avatar_path = os.path.join(upload_dir, avatar_filename)
+                        avatar_file.save(avatar_path)
+                    else:
+                        flash('Invalid avatar file type. Please upload PNG, JPG, GIF, or SVG files.', 'error')
+                        return redirect(url_for('create_chatbot'))
             
             chatbot = Chatbot(
                 name=name,
                 description=description,
                 system_prompt=system_prompt,
                 embed_code=str(uuid.uuid4()),
-                user_id=current_user.id
+                user_id=current_user.id,
+                avatar_filename=avatar_filename,
+                greeting_message=greeting_message if greeting_message else None
             )
             
             db.session.add(chatbot)
@@ -655,13 +714,69 @@ Best regards,
         
         description = request.form.get('description', '').strip()
         system_prompt = request.form.get('system_prompt', '').strip()
+        greeting_message = request.form.get('greeting_message', '').strip()
         
         # Update fields
         chatbot.description = description if description else None
+        chatbot.greeting_message = greeting_message if greeting_message else None
+        
         if system_prompt:
             chatbot.system_prompt = system_prompt
         else:
             chatbot.system_prompt = "You are a helpful AI assistant. Answer questions based on the provided documents and your general knowledge."
+        
+        # Handle avatar selection (custom upload or predefined)
+        selected_avatar = request.form.get('selected_avatar')
+        if selected_avatar:
+            # Validate that the selected avatar exists in our predefined avatars
+            allowed_predefined = ['1.png', '2.png', '3.png', '4.png', '5.png', '6.png']
+            if selected_avatar in allowed_predefined:
+                # Delete old custom avatar if exists (only if it's not a predefined one)
+                if chatbot.avatar_filename and not chatbot.avatar_filename in allowed_predefined:
+                    upload_dir = os.path.join(app.root_path, 'static', 'uploads')
+                    old_avatar_path = os.path.join(upload_dir, chatbot.avatar_filename)
+                    if os.path.exists(old_avatar_path):
+                        os.remove(old_avatar_path)
+                
+                chatbot.avatar_filename = selected_avatar
+            else:
+                flash('Invalid predefined avatar selection.', 'error')
+                return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+        
+        elif 'avatar' in request.files:
+            avatar_file = request.files['avatar']
+            if avatar_file and avatar_file.filename:
+                # Check if file is allowed
+                allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'svg'}
+                if '.' in avatar_file.filename and \
+                   avatar_file.filename.rsplit('.', 1)[1].lower() in allowed_extensions:
+                    
+                    # Create uploads directory if it doesn't exist
+                    upload_dir = os.path.join(app.root_path, 'static', 'uploads')
+                    os.makedirs(upload_dir, exist_ok=True)
+                    
+                    # Delete old avatar if exists (only if it's a custom upload, not predefined)
+                    if chatbot.avatar_filename:
+                        allowed_predefined = ['1.png', '2.png', '3.png', '4.png', '5.png', '6.png']
+                        if chatbot.avatar_filename not in allowed_predefined:
+                            old_avatar_path = os.path.join(upload_dir, chatbot.avatar_filename)
+                            if os.path.exists(old_avatar_path):
+                                os.remove(old_avatar_path)
+                    
+                    # Generate secure filename
+                    filename = secure_filename(avatar_file.filename)
+                    # Add timestamp to avoid conflicts
+                    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                    name_part, ext = os.path.splitext(filename)
+                    avatar_filename = f"avatar_{name_part}_{timestamp}{ext}"
+                    
+                    # Save file
+                    avatar_path = os.path.join(upload_dir, avatar_filename)
+                    avatar_file.save(avatar_path)
+                    chatbot.avatar_filename = avatar_filename
+                else:
+                    flash('Invalid avatar file type. Please upload PNG, JPG, GIF, or SVG files.', 'error')
+                    return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
         
         db.session.commit()
         flash('Chatbot updated successfully!')
@@ -703,6 +818,35 @@ Best regards,
             flash('Invalid file type. Please upload PDF, DOCX, or TXT files.')
         
         return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+
+    @app.route('/delete_document/<int:document_id>', methods=['POST'])
+    @login_required
+    def delete_document(document_id):
+        # Get the document and verify ownership
+        document = Document.query.get_or_404(document_id)
+        chatbot = Chatbot.query.filter_by(id=document.chatbot_id, user_id=current_user.id).first_or_404()
+        
+        try:
+            # Delete the physical file if it exists
+            if os.path.exists(document.file_path):
+                os.remove(document.file_path)
+            
+            # Delete the document record from database
+            db.session.delete(document)
+            db.session.commit()
+            
+            # If chatbot was trained, mark it as needing retraining
+            if chatbot.is_trained:
+                chatbot.is_trained = False
+                db.session.commit()
+                flash('Document deleted successfully! The chatbot will need to be retrained.')
+            else:
+                flash('Document deleted successfully!')
+                
+        except Exception as e:
+            flash(f'Error deleting document: {str(e)}')
+        
+        return redirect(url_for('chatbot_details', chatbot_id=chatbot.id))
 
     @app.route('/train_chatbot/<int:chatbot_id>', methods=['POST'])
     @login_required
@@ -851,15 +995,31 @@ Best regards,
 
     @app.route('/embed/<embed_code>')
     def embed_code(embed_code):
-        return render_template('embed.html', embed_code=embed_code)
+        chatbot = Chatbot.query.filter_by(embed_code=embed_code).first()
+        if not chatbot:
+            return "Chatbot not found", 404
+        return render_template('embed.html', embed_code=embed_code, chatbot=chatbot)
 
     @app.route('/test-embed')
     def test_embed():
         # Get the first available chatbot for testing
         chatbot = Chatbot.query.first()
         if chatbot:
-            return render_template('embed.html', embed_code=chatbot.embed_code)
+            return render_template('embed.html', embed_code=chatbot.embed_code, chatbot=chatbot)
         return "No chatbots available for testing"
+    
+    @app.route('/uploads/<filename>')
+    def uploaded_file(filename):
+        """Serve uploaded avatar images"""
+        return send_from_directory(os.path.join(app.root_path, 'static', 'uploads'), filename)
+    
+    @app.route('/preview/<embed_code>')
+    def preview_chatbot(embed_code):
+        """Preview chatbot on a sample business website"""
+        chatbot = Chatbot.query.filter_by(embed_code=embed_code).first()
+        if not chatbot:
+            return "Chatbot not found", 404
+        return render_template('preview.html', embed_code=embed_code, chatbot=chatbot)
     
     @app.route('/create-demo-chatbot')
     def create_demo_route():

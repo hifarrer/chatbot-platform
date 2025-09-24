@@ -15,6 +15,8 @@
                 placeholder: config.placeholder || 'Type your message...',
                 width: config.width || '400px',
                 height: config.height || '500px',
+                avatarUrl: config.avatarUrl || null,
+                greetingMessage: config.greetingMessage || "Hi! I'm here to help you. Feel free to ask me anything!",
                 ...config
             };
 
@@ -36,10 +38,22 @@
             const widgetHTML = `
                 <div class="chatbot-widget" id="chatbot-${this.config.embedCode}">
                     <div class="chatbot-toggle" id="chatbot-toggle-${this.config.embedCode}">
-                        <div class="chatbot-toggle-icon">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h4l4 4 4-4h4c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/>
-                            </svg>
+                        <div class="chatbot-toggle-content">
+                            <div class="chatbot-toggle-avatar">
+                                ${this.config.avatarUrl ? 
+                                    `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
+                                    '🤖'
+                                }
+                            </div>
+                            <div class="chatbot-toggle-greeting">
+                                ${this.config.greetingMessage || "Need help?"}
+                            </div>
+                            <div class="chatbot-toggle-button">
+                                <span>Ask anything</span>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                                </svg>
+                            </div>
                         </div>
                         <div class="chatbot-toggle-close" style="display: none;">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
@@ -51,7 +65,12 @@
                     <div class="chatbot-window" id="chatbot-window-${this.config.embedCode}" style="display: none;">
                         <div class="chatbot-header">
                             <div class="chatbot-title">
-                                <div class="chatbot-avatar">🤖</div>
+                                <div class="chatbot-avatar">
+                                    ${this.config.avatarUrl ? 
+                                        `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
+                                        '🤖'
+                                    }
+                                </div>
                                 <span>${this.config.title}</span>
                             </div>
                             <div class="chatbot-status">
@@ -62,10 +81,15 @@
                         
                         <div class="chatbot-messages" id="chatbot-messages-${this.config.embedCode}">
                             <div class="message bot-message">
-                                <div class="message-avatar">🤖</div>
+                                <div class="message-avatar">
+                                    ${this.config.avatarUrl ? 
+                                        `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
+                                        '🤖'
+                                    }
+                                </div>
                                 <div class="message-content">
                                     <div class="message-bubble">
-                                        Hi! I'm here to help you. Feel free to ask me anything!
+                                        ${this.config.greetingMessage}
                                     </div>
                                 </div>
                             </div>
@@ -108,22 +132,73 @@
                 }
 
                 .chatbot-toggle {
-                    width: 60px;
-                    height: 60px;
-                    background: #007bff;
+                    background: white;
+                    border-radius: 12px;
+                    display: flex;
+                    align-items: center;
+                    cursor: pointer;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                    transition: all 0.3s ease;
+                    color: #333;
+                    padding: 16px;
+                    min-width: 280px;
+                    max-width: 320px;
+                }
+
+                .chatbot-toggle:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+                }
+
+                .chatbot-toggle-content {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    width: 100%;
+                }
+
+                .chatbot-toggle-avatar {
+                    width: 40px;
+                    height: 40px;
                     border-radius: 50%;
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    cursor: pointer;
-                    box-shadow: 0 4px 12px rgba(0, 123, 255, 0.4);
-                    transition: all 0.3s ease;
-                    color: white;
+                    overflow: hidden;
+                    flex-shrink: 0;
+                    background: #f0f0f0;
                 }
 
-                .chatbot-toggle:hover {
-                    transform: scale(1.05);
-                    box-shadow: 0 6px 20px rgba(0, 123, 255, 0.6);
+                .chatbot-toggle-avatar img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    border-radius: 50%;
+                }
+
+                .chatbot-toggle-greeting {
+                    flex: 1;
+                    font-weight: 500;
+                    color: #333;
+                    font-size: 14px;
+                }
+
+                .chatbot-toggle-button {
+                    background: #333;
+                    color: white;
+                    border-radius: 8px;
+                    padding: 8px 12px;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-size: 12px;
+                    font-weight: 500;
+                    flex-shrink: 0;
+                }
+
+                .chatbot-toggle-button svg {
+                    width: 14px;
+                    height: 14px;
                 }
 
                 .chatbot-window {
@@ -170,6 +245,19 @@
                 .chatbot-avatar {
                     margin-right: 8px;
                     font-size: 20px;
+                    width: 20px;
+                    height: 20px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    overflow: hidden;
+                }
+                
+                .chatbot-avatar img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    border-radius: 50%;
                 }
 
                 .chatbot-status {
@@ -217,6 +305,14 @@
                     font-size: 16px;
                     margin: 0 8px;
                     flex-shrink: 0;
+                    overflow: hidden;
+                }
+                
+                .message-avatar img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    border-radius: 50%;
                 }
 
                 .user-message .message-avatar {
@@ -361,6 +457,26 @@
 
                 /* Mobile responsive */
                 @media (max-width: 480px) {
+                    .chatbot-toggle {
+                        min-width: 260px;
+                        max-width: calc(100vw - 40px);
+                        padding: 12px;
+                    }
+                    
+                    .chatbot-toggle-avatar {
+                        width: 32px;
+                        height: 32px;
+                    }
+                    
+                    .chatbot-toggle-greeting {
+                        font-size: 13px;
+                    }
+                    
+                    .chatbot-toggle-button {
+                        padding: 6px 10px;
+                        font-size: 11px;
+                    }
+                    
                     .chatbot-window {
                         width: calc(100vw - 40px);
                         height: calc(100vh - 100px);
@@ -387,14 +503,14 @@
                 const isVisible = window.style.display !== 'none';
                 window.style.display = isVisible ? 'none' : 'flex';
                 
-                const icon = toggle.querySelector('.chatbot-toggle-icon');
+                const content = toggle.querySelector('.chatbot-toggle-content');
                 const closeIcon = toggle.querySelector('.chatbot-toggle-close');
                 
                 if (isVisible) {
-                    icon.style.display = 'block';
+                    content.style.display = 'flex';
                     closeIcon.style.display = 'none';
                 } else {
-                    icon.style.display = 'none';
+                    content.style.display = 'none';
                     closeIcon.style.display = 'block';
                     input.focus();
                 }
@@ -454,7 +570,10 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${sender}-message`;
 
-            const avatar = sender === 'user' ? '👤' : '🤖';
+            const avatar = sender === 'user' ? '👤' : 
+                          (this.config.avatarUrl ? 
+                            `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
+                            '🤖');
             const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
             messageDiv.innerHTML = `
@@ -473,8 +592,13 @@
             const messagesContainer = document.getElementById(`chatbot-messages-${this.config.embedCode}`);
             const typingDiv = document.createElement('div');
             typingDiv.className = 'message bot-message typing-message';
+            
+            const avatar = this.config.avatarUrl ? 
+                          `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
+                          '🤖';
+            
             typingDiv.innerHTML = `
-                <div class="message-avatar">🤖</div>
+                <div class="message-avatar">${avatar}</div>
                 <div class="message-content">
                     <div class="typing-indicator">
                         <div class="typing-dots">
