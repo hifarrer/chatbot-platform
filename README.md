@@ -23,6 +23,30 @@ Try the Platform Assistant chatbot on our [demo site](http://localhost:5000) - i
 - 📱 **Responsive Design** - Works perfectly on desktop and mobile devices
 - 🚀 **Drag & Drop Upload** - Intuitive file upload interface
 - ⚡ **Fast Training** - Quick document processing and chatbot training
+- 🔧 **User Controls** - Minimize, close, and restore chatbot functionality
+- 🔗 **Auto-Link Detection** - Automatically converts URLs and emails to clickable links
+
+## 🎯 Embed Features
+
+The chatbot embed widget includes several user-friendly controls:
+
+- **Minimize Button** (📉) - Hides the chat window while keeping the toggle button visible
+- **Close Button** (❌) - Completely hides the chatbot widget
+- **Restore Button** - Appears after closing, allowing users to reopen the chatbot
+- **Responsive Design** - Automatically adapts to mobile and desktop screens
+- **Smooth Animations** - Professional transitions for all interactions
+
+All controls work seamlessly across all embedded chatbots created by users.
+
+### 🔗 **Smart Link Detection**
+
+The chatbot automatically detects and converts URLs and email addresses to clickable links:
+
+- **URLs**: `https://example.com`, `www.example.com`, `example.com` → Clickable links
+- **Emails**: `user@example.com` → Clickable mailto links
+- **Smart Protocol**: Automatically adds `https://` to URLs without protocols
+- **Security**: External links open in new tabs with `rel="noopener noreferrer"`
+- **Styling**: Links have hover effects and proper contrast for both light and dark message bubbles
 
 ## 🚀 Quick Start
 

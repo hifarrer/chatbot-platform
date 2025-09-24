@@ -66,198 +66,139 @@
 </div>
 
 <div class="container">
-    <!-- Features Preview Section -->
-    <div class="row mb-5">
-        <div class="col-lg-12 text-center">
-            <h2 class="mb-4">See It In Action</h2>
-            <div class="demo-stats">
+    <!-- Dynamic Stats Section -->
+    {% for section in homepage_sections %}
+        {% if section.section_type == 'stats' %}
+        <div class="row mb-5">
+            <div class="col-lg-12 text-center">
+                <h2 class="mb-4">{{ section.title or 'See It In Action' }}</h2>
+                {% if section.subtitle %}
+                    <p class="text-muted mb-4">{{ section.subtitle }}</p>
+                {% endif %}
+                <div class="demo-stats">
+                    <div class="row g-4">
+                        {% set stats = section.content|from_json %}
+                        {% for stat in stats %}
+                        <div class="col-md-3">
+                            <div class="stat-card">
+                                <div class="stat-icon">
+                                    <i class="{{ stat.icon }} fa-2x text-{{ stat.color }}"></i>
+                                </div>
+                                <h3 class="counter" data-target="{{ stat.value }}">0</h3>
+                                <p>{{ stat.title }}</p>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    {% endfor %}
+
+    <!-- Dynamic Homepage Sections -->
+    {% for section in homepage_sections %}
+        {% if section.section_type == 'how_it_works' %}
+        <div class="row">
+            <div class="col-lg-8 mx-auto">
+                <h2 class="text-center mb-5">{{ section.title or 'How It Works' }}</h2>
+                {% if section.subtitle %}
+                    <p class="text-center text-muted mb-5">{{ section.subtitle }}</p>
+                {% endif %}
+                
+                {% set steps = section.content|from_json %}
                 <div class="row g-4">
-                    <div class="col-md-3">
-                        <div class="stat-card">
-                            <div class="stat-icon">
-                                <i class="fas fa-robot fa-2x text-primary"></i>
+                    {% for step in steps[:3] %}
+                    <div class="col-md-4">
+                        <div class="card h-100 text-center feature-card">
+                            <div class="card-body">
+                                <div class="feature-icon mb-3">
+                                    <i class="{{ step.icon }} fa-3x text-{{ step.color }}"></i>
+                                </div>
+                                <h5 class="card-title">{{ step.title }}</h5>
+                                <p class="card-text">{{ step.description }}</p>
                             </div>
-                            <h3 class="counter" data-target="1000">0</h3>
-                            <p>Chatbots Created</p>
                         </div>
                     </div>
-                    <div class="col-md-3">
-                        <div class="stat-card">
-                            <div class="stat-icon">
-                                <i class="fas fa-file-upload fa-2x text-success"></i>
-                            </div>
-                            <h3 class="counter" data-target="5000">0</h3>
-                            <p>Documents Processed</p>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="stat-card">
-                            <div class="stat-icon">
-                                <i class="fas fa-comments fa-2x text-info"></i>
-                            </div>
-                            <h3 class="counter" data-target="50000">0</h3>
-                            <p>Conversations</p>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="stat-card">
-                            <div class="stat-icon">
-                                <i class="fas fa-globe fa-2x text-warning"></i>
-                            </div>
-                            <h3 class="counter" data-target="100">0</h3>
-                            <p>Websites Powered</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="row">
-        <div class="col-lg-8 mx-auto">
-            <h2 class="text-center mb-5">How It Works</h2>
-            
-            <div class="row g-4">
-                <div class="col-md-4">
-                    <div class="card h-100 text-center feature-card">
-                        <div class="card-body">
-                            <div class="feature-icon mb-3">
-                                <i class="fas fa-plus-circle fa-3x text-primary"></i>
-                            </div>
-                            <h5 class="card-title">1. Create Your Chatbot</h5>
-                            <p class="card-text">
-                                Start by creating a new chatbot and giving it a name and description.
-                            </p>
-                        </div>
-                    </div>
+                    {% endfor %}
                 </div>
                 
-                <div class="col-md-4">
-                    <div class="card h-100 text-center feature-card">
-                        <div class="card-body">
-                            <div class="feature-icon mb-3">
-                                <i class="fas fa-upload fa-3x text-success"></i>
+                {% if steps|length > 3 %}
+                <div class="row g-4 mt-4">
+                    {% for step in steps[3:] %}
+                    <div class="col-md-6">
+                        <div class="card h-100 text-center feature-card">
+                            <div class="card-body">
+                                <div class="feature-icon mb-3">
+                                    <i class="{{ step.icon }} fa-3x text-{{ step.color }}"></i>
+                                </div>
+                                <h5 class="card-title">{{ step.title }}</h5>
+                                <p class="card-text">{{ step.description }}</p>
                             </div>
-                            <h5 class="card-title">2. Upload Documents</h5>
-                            <p class="card-text">
-                                Upload PDF, DOCX, or TXT files to train your chatbot with your content.
-                            </p>
                         </div>
                     </div>
+                    {% endfor %}
                 </div>
-                
-                <div class="col-md-4">
-                    <div class="card h-100 text-center feature-card">
-                        <div class="card-body">
-                            <div class="feature-icon mb-3">
-                                <i class="fas fa-brain fa-3x text-warning"></i>
-                            </div>
-                            <h5 class="card-title">3. Train Your Bot</h5>
-                            <p class="card-text">
-                                Click train to process your documents and make your chatbot intelligent.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="row g-4 mt-4">
-                <div class="col-md-6">
-                    <div class="card h-100 text-center feature-card">
-                        <div class="card-body">
-                            <div class="feature-icon mb-3">
-                                <i class="fas fa-code fa-3x text-info"></i>
-                            </div>
-                            <h5 class="card-title">4. Get Embed Code</h5>
-                            <p class="card-text">
-                                Copy the embed code and paste it into your website to add the chatbot.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="col-md-6">
-                    <div class="card h-100 text-center feature-card">
-                        <div class="card-body">
-                            <div class="feature-icon mb-3">
-                                <i class="fas fa-rocket fa-3x text-danger"></i>
-                            </div>
-                            <h5 class="card-title">5. Go Live!</h5>
-                            <p class="card-text">
-                                Your chatbot is now live and ready to help your website visitors.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="row mt-5">
-        <div class="col-lg-8 mx-auto">
-            <h2 class="text-center mb-4">Powerful Features</h2>
-            <div class="row g-4">
-                <div class="col-md-6">
-                    <div class="d-flex align-items-start feature-item">
-                        <i class="fas fa-check-circle text-success me-3 mt-1"></i>
-                        <div>
-                            <h5>Easy Document Upload</h5>
-                            <p>Support for PDF, DOCX, and TXT file formats with drag-and-drop interface</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-6">
-                    <div class="d-flex align-items-start feature-item">
-                        <i class="fas fa-check-circle text-success me-3 mt-1"></i>
-                        <div>
-                            <h5>AI-Powered Responses</h5>
-                            <p>Uses OpenAI GPT technology to understand and respond naturally</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-6">
-                    <div class="d-flex align-items-start feature-item">
-                        <i class="fas fa-check-circle text-success me-3 mt-1"></i>
-                        <div>
-                            <h5>Multiple Chatbots</h5>
-                            <p>Create unlimited chatbots for different purposes and websites</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-6">
-                    <div class="d-flex align-items-start feature-item">
-                        <i class="fas fa-check-circle text-success me-3 mt-1"></i>
-                        <div>
-                            <h5>Easy Embedding</h5>
-                            <p>Simple code snippet to embed on any website with customizable styling</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Call to Action Section -->
-    <div class="row mt-5">
-        <div class="col-lg-8 mx-auto text-center">
-            <div class="cta-section">
-                <h2 class="mb-3">Ready to Get Started?</h2>
-                <p class="lead mb-4">Join thousands of businesses using AI chatbots to improve customer engagement</p>
-                {% if not current_user.is_authenticated %}
-                    <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg me-3">
-                        <i class="fas fa-rocket me-2"></i>Start Building Now
-                    </a>
-                    <a href="{{ url_for('contact') }}" class="btn btn-outline-primary btn-lg">
-                        <i class="fas fa-envelope me-2"></i>Contact Us
-                    </a>
-                {% else %}
-                    <a href="{{ url_for('create_chatbot') }}" class="btn btn-success btn-lg">
-                        <i class="fas fa-plus me-2"></i>Create Your First Chatbot
-                    </a>
                 {% endif %}
             </div>
         </div>
-    </div>
+        {% endif %}
+    {% endfor %}
+    
+    <!-- Dynamic Features Section -->
+    {% for section in homepage_sections %}
+        {% if section.section_type == 'features' %}
+        <div class="row mt-5">
+            <div class="col-lg-8 mx-auto">
+                <h2 class="text-center mb-4">{{ section.title or 'Powerful Features' }}</h2>
+                {% if section.subtitle %}
+                    <p class="text-center text-muted mb-5">{{ section.subtitle }}</p>
+                {% endif %}
+                <div class="row g-4">
+                    {% set features = section.content|from_json %}
+                    {% for feature in features %}
+                    <div class="col-md-6">
+                        <div class="d-flex align-items-start feature-item">
+                            <i class="{{ feature.icon }} text-{{ feature.color }} me-3 mt-1"></i>
+                            <div>
+                                <h5>{{ feature.title }}</h5>
+                                <p>{{ feature.description }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    {% endfor %}
+
+    <!-- Dynamic Call to Action Section -->
+    {% for section in homepage_sections %}
+        {% if section.section_type == 'cta' %}
+        <div class="row mt-5">
+            <div class="col-lg-8 mx-auto text-center">
+                <div class="cta-section">
+                    <h2 class="mb-3">{{ section.title or 'Ready to Get Started?' }}</h2>
+                    <p class="lead mb-4">{{ section.subtitle or 'Join thousands of businesses using AI chatbots to improve customer engagement' }}</p>
+                    {% set cta_data = section.content|from_json %}
+                    {% if not current_user.is_authenticated %}
+                        <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg me-3">
+                            <i class="{{ cta_data.primary_button.icon }} me-2"></i>{{ cta_data.primary_button.text }}
+                        </a>
+                        <a href="{{ url_for('contact') }}" class="btn btn-outline-primary btn-lg">
+                            <i class="{{ cta_data.secondary_button.icon }} me-2"></i>{{ cta_data.secondary_button.text }}
+                        </a>
+                    {% else %}
+                        <a href="{{ url_for('create_chatbot') }}" class="btn btn-success btn-lg">
+                            <i class="fas fa-plus me-2"></i>Create Your First Chatbot
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    {% endfor %}
 </div>
 
 <!-- Homepage Chatbot -->

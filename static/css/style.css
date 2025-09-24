@@ -440,6 +440,41 @@ footer {
     margin-top: auto;
 }
 
+/* Chatbot link styles */
+.chatbot-link {
+    color: #007bff;
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: all 0.2s ease;
+    word-break: break-all;
+}
+
+.chatbot-link:hover {
+    color: #0056b3;
+    border-bottom-color: #0056b3;
+    text-decoration: none;
+}
+
+.chatbot-email-link {
+    color: #28a745;
+}
+
+.chatbot-email-link:hover {
+    color: #1e7e34;
+    border-bottom-color: #1e7e34;
+}
+
+/* Links in user messages (white text on blue background) */
+.message-bubble.user .chatbot-link {
+    color: #ffffff;
+    border-bottom-color: rgba(255, 255, 255, 0.5);
+}
+
+.message-bubble.user .chatbot-link:hover {
+    color: #ffffff;
+    border-bottom-color: #ffffff;
+}
+
 /* Utility classes */
 .shadow-sm {
     box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;

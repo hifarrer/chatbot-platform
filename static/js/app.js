@@ -273,9 +273,41 @@ const Chat = {
         const bubbleClass = isError ? 'message-bubble bot error' : `message-bubble ${sender}`;
         const icon = sender === 'bot' ? '<i class="fas fa-robot me-2"></i>' : '';
         
-        messageDiv.innerHTML = `<div class="${bubbleClass}">${icon}${message}</div>`;
+        // Convert URLs and emails to clickable links
+        const processedMessage = this.convertLinksToHtml(message);
+        
+        messageDiv.innerHTML = `<div class="${bubbleClass}">${icon}${processedMessage}</div>`;
         messagesContainer.appendChild(messageDiv);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    },
+
+    convertLinksToHtml: function(text) {
+        if (!text) return text;
+        
+        // URL regex pattern (matches http, https, www, and domain patterns)
+        const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/gi;
+        
+        // Email regex pattern
+        const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi;
+        
+        let processedText = text;
+        
+        // Convert URLs to clickable links
+        processedText = processedText.replace(urlRegex, (match) => {
+            let url = match;
+            // Add https:// if the URL doesn't have a protocol
+            if (!url.match(/^https?:\/\//i)) {
+                url = 'https://' + url;
+            }
+            return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${match}</a>`;
+        });
+        
+        // Convert emails to clickable mailto links
+        processedText = processedText.replace(emailRegex, (match) => {
+            return `<a href="mailto:${match}" class="chatbot-link chatbot-email-link">${match}</a>`;
+        });
+        
+        return processedText;
     },
     
     showTyping: function() {

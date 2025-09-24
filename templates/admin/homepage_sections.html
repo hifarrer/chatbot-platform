@@ -1,0 +1,168 @@
+{% extends "admin/base.html" %}
+
+{% block page_title %}Homepage CMS{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2><i class="fas fa-home me-2"></i>Homepage Content Management</h2>
+            <a href="{{ url_for('index') }}" target="_blank" class="btn btn-outline-primary">
+                <i class="fas fa-external-link-alt me-2"></i>Preview Homepage
+            </a>
+        </div>
+        
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            <strong>Homepage CMS:</strong> Manage the content sections on your homepage including "How It Works", "Powerful Features", and other sections. 
+            You can edit titles, descriptions, and toggle sections on/off.
+        </div>
+        
+        {% if sections %}
+            <div class="row">
+                {% for section in sections %}
+                <div class="col-lg-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-{{ 'cogs' if section.section_type == 'how_it_works' else 'star' if section.section_type == 'features' else 'chart-bar' if section.section_type == 'stats' else 'bullhorn' }} me-2"></i>
+                                {{ section.title or section.section_type.replace('_', ' ').title() }}
+                            </h5>
+                            <div class="d-flex gap-2">
+                                {% if section.is_active %}
+                                    <span class="badge bg-success">Active</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Inactive</span>
+                                {% endif %}
+                                <span class="badge bg-info">{{ section.section_type.replace('_', ' ').title() }}</span>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            {% if section.subtitle %}
+                                <p class="text-muted mb-3">{{ section.subtitle[:100] }}{% if section.subtitle|length > 100 %}...{% endif %}</p>
+                            {% endif %}
+                            
+                            {% if section.content %}
+                                <div class="content-preview mb-3">
+                                    <small class="text-muted">Content preview:</small>
+                                    <div class="bg-light p-2 rounded small">
+                                        {{ section.content[:150] }}{% if section.content|length > 150 %}...{% endif %}
+                                    </div>
+                                </div>
+                            {% endif %}
+                            
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted">
+                                    Updated: {{ section.updated_at.strftime('%Y-%m-%d %H:%M') }}
+                                </small>
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-primary" 
+                                            onclick="editSection({{ section.id }}, '{{ section.title|e }}', '{{ section.subtitle|e }}', '{{ section.content|e }}')"
+                                            title="Edit">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <form method="POST" style="display: inline;" 
+                                          onsubmit="return confirm('Are you sure you want to {{ 'deactivate' if section.is_active else 'activate' }} this section?')">
+                                        <input type="hidden" name="action" value="toggle">
+                                        <input type="hidden" name="section_id" value="{{ section.id }}">
+                                        <button type="submit" class="btn btn-outline-{{ 'warning' if section.is_active else 'success' }}" 
+                                                title="{{ 'Deactivate' if section.is_active else 'Activate' }}">
+                                            <i class="fas fa-{{ 'eye-slash' if section.is_active else 'eye' }}"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <i class="fas fa-home fa-3x text-muted mb-3"></i>
+                    <h4 class="text-muted">No Homepage Sections</h4>
+                    <p class="text-muted">Homepage sections will be created automatically when you run the migration.</p>
+                    <a href="{{ url_for('index') }}" target="_blank" class="btn btn-primary">
+                        <i class="fas fa-external-link-alt me-2"></i>View Homepage
+                    </a>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Edit Section Modal -->
+<div class="modal fade" id="editSectionModal" tabindex="-1" aria-labelledby="editSectionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="POST">
+                <input type="hidden" name="action" value="update">
+                <input type="hidden" name="section_id" id="edit_section_id">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editSectionModalLabel">
+                        <i class="fas fa-edit me-2"></i>Edit Homepage Section
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="edit_title" class="form-label">Section Title</label>
+                        <input type="text" class="form-control" id="edit_title" name="title" 
+                               placeholder="e.g., How It Works">
+                        <div class="form-text">The main title for this section.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="edit_subtitle" class="form-label">Section Subtitle</label>
+                        <textarea class="form-control" id="edit_subtitle" name="subtitle" rows="2" 
+                                  placeholder="Brief description of this section..."></textarea>
+                        <div class="form-text">Optional subtitle or description for this section.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="edit_content" class="form-label">Section Content</label>
+                        <textarea class="form-control" id="edit_content" name="content" rows="6" 
+                                  placeholder="Detailed content for this section..."></textarea>
+                        <div class="form-text">
+                            For complex sections, you can use JSON format or plain text. 
+                            This content will be processed based on the section type.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-2"></i>Update Section
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function editSection(id, title, subtitle, content) {
+    document.getElementById('edit_section_id').value = id;
+    document.getElementById('edit_title').value = title;
+    document.getElementById('edit_subtitle').value = subtitle;
+    document.getElementById('edit_content').value = content;
+    
+    const editModal = new bootstrap.Modal(document.getElementById('editSectionModal'));
+    editModal.show();
+}
+
+// Auto-dismiss alerts after 5 seconds
+document.addEventListener('DOMContentLoaded', function() {
+    const alerts = document.querySelectorAll('.alert');
+    alerts.forEach(function(alert) {
+        setTimeout(function() {
+            const bsAlert = new bootstrap.Alert(alert);
+            bsAlert.close();
+        }, 5000);
+    });
+});
+</script>
+{% endblock %}

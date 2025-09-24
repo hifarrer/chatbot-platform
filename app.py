@@ -108,6 +108,26 @@ class SiteSettings(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+class FAQ(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    question = db.Column(db.String(500), nullable=False)
+    answer = db.Column(db.Text, nullable=False)
+    order = db.Column(db.Integer, default=0, nullable=False)  # For ordering FAQ items
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class HomepageSection(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    section_type = db.Column(db.String(50), nullable=False)  # 'how_it_works', 'features', 'stats', 'cta'
+    title = db.Column(db.String(255), nullable=True)
+    subtitle = db.Column(db.Text, nullable=True)
+    content = db.Column(db.Text, nullable=True)  # JSON content for complex sections
+    order = db.Column(db.Integer, default=0, nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -255,11 +275,6 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-def get_setting(key, default=None):
-    """Get a setting value from the database"""
-    setting = Settings.query.filter_by(key=key).first()
-    return setting.value if setting else default
-
 def set_setting(key, value):
     """Set a setting value in the database"""
     setting = Settings.query.filter_by(key=key).first()
@@ -296,6 +311,13 @@ def create_app():
             return url_for('static', filename='avatars/' + avatar_filename)
         else:
             return url_for('static', filename='uploads/' + avatar_filename)
+    
+    # Add custom Jinja2 function for getting settings
+    @app.template_global()
+    def get_setting(key, default=None):
+        """Get a setting value from the database"""
+        setting = Settings.query.filter_by(key=key).first()
+        return setting.value if setting else default
     
     # Handle PostgreSQL URL for Render.com
     database_url = os.environ.get('DATABASE_URL', 'sqlite:///chatbot_platform.db')
@@ -361,10 +383,14 @@ def create_app():
         if not homepage_chatbot:
             homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
         
+        # Get active homepage sections ordered by order field
+        homepage_sections = HomepageSection.query.filter_by(is_active=True).order_by(HomepageSection.order.asc(), HomepageSection.created_at.asc()).all()
+        
         return render_template('index.html',
                              homepage_chatbot=homepage_chatbot,
                              homepage_chatbot_title=homepage_chatbot_title,
-                             homepage_chatbot_placeholder=homepage_chatbot_placeholder)
+                             homepage_chatbot_placeholder=homepage_chatbot_placeholder,
+                             homepage_sections=homepage_sections)
 
     @app.route('/health')
     def health_check():
@@ -398,12 +424,16 @@ def create_app():
             # Basic validation
             if not name or not email or not subject or not message:
                 flash('All fields are required.', 'error')
-                return render_template('contact.html')
+                # Get active FAQ items for error case
+                faqs = FAQ.query.filter_by(is_active=True).order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
+                return render_template('contact.html', faqs=faqs)
             
             # Email validation
             if '@' not in email or '.' not in email:
                 flash('Please enter a valid email address.', 'error')
-                return render_template('contact.html')
+                # Get active FAQ items for error case
+                faqs = FAQ.query.filter_by(is_active=True).order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
+                return render_template('contact.html', faqs=faqs)
             
             try:
                 # Create email content
@@ -452,9 +482,13 @@ Best regards,
                 
             except Exception as e:
                 flash(f'Failed to send message. Please try again later. Error: {str(e)}', 'error')
-                return render_template('contact.html')
+                # Get active FAQ items for error case
+                faqs = FAQ.query.filter_by(is_active=True).order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
+                return render_template('contact.html', faqs=faqs)
         
-        return render_template('contact.html')
+        # Get active FAQ items ordered by order field
+        faqs = FAQ.query.filter_by(is_active=True).order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
+        return render_template('contact.html', faqs=faqs)
 
     @app.route('/plans')
     def plans():
@@ -1257,18 +1291,51 @@ Best regards,
             homepage_chatbot_title = request.form.get('homepage_chatbot_title', 'Platform Assistant')
             homepage_chatbot_placeholder = request.form.get('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
             
-            # Save settings
+            # Update contact page settings
+            contact_email = request.form.get('contact_email', 'support@chatbotplatform.com')
+            contact_response_time = request.form.get('contact_response_time', 'We typically respond within 24 hours')
+            contact_support_hours = request.form.get('contact_support_hours', 'Monday - Friday\n9:00 AM - 6:00 PM (EST)')
+            contact_live_chat_text = request.form.get('contact_live_chat_text', 'Try our Platform Assistant chatbot in the bottom-right corner for instant help!')
+            
+            # Update Stripe settings
+            stripe_publishable_key = request.form.get('stripe_publishable_key', '').strip()
+            stripe_secret_key = request.form.get('stripe_secret_key', '').strip()
+            stripe_webhook_secret = request.form.get('stripe_webhook_secret', '').strip()
+            
+            # Save homepage settings
             set_setting('homepage_chatbot_id', homepage_chatbot_id)
             set_setting('homepage_chatbot_title', homepage_chatbot_title)
             set_setting('homepage_chatbot_placeholder', homepage_chatbot_placeholder)
             
+            # Save contact page settings
+            set_setting('contact_email', contact_email)
+            set_setting('contact_response_time', contact_response_time)
+            set_setting('contact_support_hours', contact_support_hours)
+            set_setting('contact_live_chat_text', contact_live_chat_text)
+            
+            # Save Stripe settings
+            set_setting('stripe_publishable_key', stripe_publishable_key)
+            set_setting('stripe_secret_key', stripe_secret_key)
+            set_setting('stripe_webhook_secret', stripe_webhook_secret)
+            
             flash('Settings updated successfully!')
             return redirect(url_for('admin_settings'))
         
-        # Get current settings
+        # Get current homepage settings
         current_chatbot_id = get_setting('homepage_chatbot_id')
         current_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
         current_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+        
+        # Get current contact page settings
+        current_contact_email = get_setting('contact_email', 'support@chatbotplatform.com')
+        current_contact_response_time = get_setting('contact_response_time', 'We typically respond within 24 hours')
+        current_contact_support_hours = get_setting('contact_support_hours', 'Monday - Friday\n9:00 AM - 6:00 PM (EST)')
+        current_contact_live_chat_text = get_setting('contact_live_chat_text', 'Try our Platform Assistant chatbot in the bottom-right corner for instant help!')
+        
+        # Get current Stripe settings
+        current_stripe_publishable_key = get_setting('stripe_publishable_key', '')
+        current_stripe_secret_key = get_setting('stripe_secret_key', '')
+        current_stripe_webhook_secret = get_setting('stripe_webhook_secret', '')
         
         # Get all trained chatbots for selection
         trained_chatbots = Chatbot.query.filter_by(is_trained=True).all()
@@ -1277,6 +1344,13 @@ Best regards,
                              current_chatbot_id=current_chatbot_id,
                              current_title=current_title,
                              current_placeholder=current_placeholder,
+                             current_contact_email=current_contact_email,
+                             current_contact_response_time=current_contact_response_time,
+                             current_contact_support_hours=current_contact_support_hours,
+                             current_contact_live_chat_text=current_contact_live_chat_text,
+                             current_stripe_publishable_key=current_stripe_publishable_key,
+                             current_stripe_secret_key=current_stripe_secret_key,
+                             current_stripe_webhook_secret=current_stripe_webhook_secret,
                              trained_chatbots=trained_chatbots)
 
     def allowed_file(filename):
@@ -1701,6 +1775,139 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
                 
         except Exception as e:
             return jsonify({'success': False, 'message': f'Failed to delete hero icon: {str(e)}'})
+
+    # FAQ Management Routes
+    @app.route('/admin/faq', methods=['GET', 'POST'])
+    @admin_required
+    def admin_faq():
+        if request.method == 'POST':
+            action = request.form.get('action')
+            
+            if action == 'add':
+                question = request.form.get('question', '').strip()
+                answer = request.form.get('answer', '').strip()
+                order = request.form.get('order', 0, type=int)
+                
+                if question and answer:
+                    # Get the next order number if not specified
+                    if order == 0:
+                        max_order = db.session.query(db.func.max(FAQ.order)).scalar() or 0
+                        order = max_order + 1
+                    
+                    faq = FAQ(question=question, answer=answer, order=order)
+                    db.session.add(faq)
+                    db.session.commit()
+                    flash('FAQ question added successfully!')
+                else:
+                    flash('Both question and answer are required.', 'error')
+            
+            elif action == 'edit':
+                faq_id = request.form.get('faq_id', type=int)
+                question = request.form.get('question', '').strip()
+                answer = request.form.get('answer', '').strip()
+                order = request.form.get('order', 0, type=int)
+                
+                if faq_id and question and answer:
+                    faq = FAQ.query.get_or_404(faq_id)
+                    faq.question = question
+                    faq.answer = answer
+                    faq.order = order
+                    faq.updated_at = datetime.utcnow()
+                    db.session.commit()
+                    flash('FAQ question updated successfully!')
+                else:
+                    flash('Invalid data provided.', 'error')
+            
+            elif action == 'delete':
+                faq_id = request.form.get('faq_id', type=int)
+                if faq_id:
+                    faq = FAQ.query.get_or_404(faq_id)
+                    db.session.delete(faq)
+                    db.session.commit()
+                    flash('FAQ question deleted successfully!')
+                else:
+                    flash('Invalid FAQ ID.', 'error')
+            
+            elif action == 'toggle':
+                faq_id = request.form.get('faq_id', type=int)
+                if faq_id:
+                    faq = FAQ.query.get_or_404(faq_id)
+                    faq.is_active = not faq.is_active
+                    faq.updated_at = datetime.utcnow()
+                    db.session.commit()
+                    status = 'activated' if faq.is_active else 'deactivated'
+                    flash(f'FAQ question {status} successfully!')
+                else:
+                    flash('Invalid FAQ ID.', 'error')
+            
+            return redirect(url_for('admin_faq'))
+        
+        # Get all FAQ items ordered by order field
+        faqs = FAQ.query.order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
+        return render_template('admin/faq.html', faqs=faqs)
+
+    @app.route('/admin/faq/<int:faq_id>/edit', methods=['GET'])
+    @admin_required
+    def admin_faq_edit(faq_id):
+        faq = FAQ.query.get_or_404(faq_id)
+        return render_template('admin/faq_edit.html', faq=faq)
+
+    @app.route('/admin/faq/<int:faq_id>/delete', methods=['POST'])
+    @admin_required
+    def admin_faq_delete(faq_id):
+        faq = FAQ.query.get_or_404(faq_id)
+        db.session.delete(faq)
+        db.session.commit()
+        flash('FAQ question deleted successfully!')
+        return redirect(url_for('admin_faq'))
+
+    # Homepage Section Management Routes
+    @app.route('/admin/homepage-sections', methods=['GET', 'POST'])
+    @admin_required
+    def admin_homepage_sections():
+        if request.method == 'POST':
+            action = request.form.get('action')
+            
+            if action == 'update':
+                section_id = request.form.get('section_id', type=int)
+                title = request.form.get('title', '').strip()
+                subtitle = request.form.get('subtitle', '').strip()
+                content = request.form.get('content', '').strip()
+                
+                if section_id:
+                    section = HomepageSection.query.get_or_404(section_id)
+                    section.title = title
+                    section.subtitle = subtitle
+                    section.content = content
+                    section.updated_at = datetime.utcnow()
+                    db.session.commit()
+                    flash('Homepage section updated successfully!')
+                else:
+                    flash('Invalid section ID.', 'error')
+            
+            elif action == 'toggle':
+                section_id = request.form.get('section_id', type=int)
+                if section_id:
+                    section = HomepageSection.query.get_or_404(section_id)
+                    section.is_active = not section.is_active
+                    section.updated_at = datetime.utcnow()
+                    db.session.commit()
+                    status = 'activated' if section.is_active else 'deactivated'
+                    flash(f'Homepage section {status} successfully!')
+                else:
+                    flash('Invalid section ID.', 'error')
+            
+            return redirect(url_for('admin_homepage_sections'))
+        
+        # Get all homepage sections ordered by order field
+        sections = HomepageSection.query.order_by(HomepageSection.order.asc(), HomepageSection.created_at.asc()).all()
+        return render_template('admin/homepage_sections.html', sections=sections)
+
+    @app.route('/admin/homepage-sections/<int:section_id>/edit', methods=['GET'])
+    @admin_required
+    def admin_homepage_section_edit(section_id):
+        section = HomepageSection.query.get_or_404(section_id)
+        return render_template('admin/homepage_section_edit.html', section=section)
 
     @app.context_processor
     def inject_site_settings():

@@ -66,6 +66,134 @@
                 </form>
             </div>
         </div>
+        
+        <!-- Contact Page Settings -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-envelope me-2"></i>
+                    Contact Page Settings
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Customize the "Get in Touch" section on the contact page.</p>
+                
+                <form method="POST">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="contact_email" class="form-label">Contact Email</label>
+                                <input type="email" class="form-control" id="contact_email" 
+                                       name="contact_email" value="{{ current_contact_email }}" 
+                                       placeholder="support@chatbotplatform.com">
+                                <div class="form-text">
+                                    The email address displayed in the contact information.
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="contact_response_time" class="form-label">Response Time</label>
+                                <input type="text" class="form-control" id="contact_response_time" 
+                                       name="contact_response_time" value="{{ current_contact_response_time }}" 
+                                       placeholder="We typically respond within 24 hours">
+                                <div class="form-text">
+                                    Text describing your typical response time.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="contact_support_hours" class="form-label">Support Hours</label>
+                        <textarea class="form-control" id="contact_support_hours" 
+                                  name="contact_support_hours" rows="3" 
+                                  placeholder="Monday - Friday&#10;9:00 AM - 6:00 PM (EST)">{{ current_contact_support_hours }}</textarea>
+                        <div class="form-text">
+                            Support hours information. Use line breaks to separate days and times.
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="contact_live_chat_text" class="form-label">Live Chat Text</label>
+                        <textarea class="form-control" id="contact_live_chat_text" 
+                                  name="contact_live_chat_text" rows="2" 
+                                  placeholder="Try our Platform Assistant chatbot in the bottom-right corner for instant help!">{{ current_contact_live_chat_text }}</textarea>
+                        <div class="form-text">
+                            Description text for the live chat section.
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-2"></i>
+                            Save All Settings
+                        </button>
+                        <a href="{{ url_for('contact') }}" target="_blank" class="btn btn-outline-secondary">
+                            <i class="fas fa-external-link-alt me-2"></i>
+                            Preview Contact Page
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Stripe Settings -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-credit-card me-2"></i>
+                    Stripe Payment Settings
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Configure Stripe payment integration for future payment processing.</p>
+                
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="stripe_publishable_key" class="form-label">Stripe Publishable Key</label>
+                        <input type="text" class="form-control" id="stripe_publishable_key" 
+                               name="stripe_publishable_key" value="{{ current_stripe_publishable_key }}" 
+                               placeholder="pk_test_... or pk_live_...">
+                        <div class="form-text">
+                            Your Stripe publishable key (starts with pk_test_ or pk_live_).
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="stripe_secret_key" class="form-label">Stripe Secret Key</label>
+                        <input type="password" class="form-control" id="stripe_secret_key" 
+                               name="stripe_secret_key" value="{{ current_stripe_secret_key }}" 
+                               placeholder="sk_test_... or sk_live_...">
+                        <div class="form-text">
+                            Your Stripe secret key (starts with sk_test_ or sk_live_). Keep this secure!
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="stripe_webhook_secret" class="form-label">Stripe Webhook Secret</label>
+                        <input type="password" class="form-control" id="stripe_webhook_secret" 
+                               name="stripe_webhook_secret" value="{{ current_stripe_webhook_secret }}" 
+                               placeholder="whsec_...">
+                        <div class="form-text">
+                            Your Stripe webhook endpoint secret (starts with whsec_). Used to verify webhook signatures.
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-2"></i>
+                            Save All Settings
+                        </button>
+                        <button type="button" class="btn btn-outline-info" onclick="toggleStripeKeyVisibility()">
+                            <i class="fas fa-eye me-2"></i>
+                            Show/Hide Keys
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
     
     <div class="col-md-4">
@@ -242,6 +370,22 @@ function testChatbot() {
         btn.classList.remove('btn-success');
         btn.classList.add('btn-outline-info');
     }, 2000);
+}
+
+function toggleStripeKeyVisibility() {
+    const secretKeyInput = document.getElementById('stripe_secret_key');
+    const webhookSecretInput = document.getElementById('stripe_webhook_secret');
+    const toggleBtn = event.target;
+    
+    if (secretKeyInput.type === 'password') {
+        secretKeyInput.type = 'text';
+        webhookSecretInput.type = 'text';
+        toggleBtn.innerHTML = '<i class="fas fa-eye-slash me-2"></i>Hide Keys';
+    } else {
+        secretKeyInput.type = 'password';
+        webhookSecretInput.type = 'password';
+        toggleBtn.innerHTML = '<i class="fas fa-eye me-2"></i>Show Keys';
+    }
 }
 </script>
 {% endblock %}

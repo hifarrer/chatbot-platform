@@ -60,6 +60,35 @@
                                 <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                             </svg>
                         </div>
+                        <div class="chatbot-toggle-minimize" title="Minimize">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M6 19h12v2H6z"/>
+                            </svg>
+                        </div>
+                        <div class="chatbot-toggle-close-btn" title="Close">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                            </svg>
+                        </div>
+                    </div>
+                    
+                    <div class="chatbot-restore" id="chatbot-restore-${this.config.embedCode}" style="display: none;">
+                        <div class="chatbot-restore-content">
+                            <div class="chatbot-restore-avatar">
+                                ${this.config.avatarUrl ? 
+                                    `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
+                                    '🤖'
+                                }
+                            </div>
+                            <div class="chatbot-restore-text">
+                                <span>Chat closed</span>
+                            </div>
+                            <button class="chatbot-restore-btn" title="Restore Chat">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                     
                     <div class="chatbot-window" id="chatbot-window-${this.config.embedCode}" style="display: none;">
@@ -73,9 +102,23 @@
                                 </div>
                                 <span>${this.config.title}</span>
                             </div>
-                            <div class="chatbot-status">
-                                <div class="status-indicator online"></div>
-                                <span>Online</span>
+                            <div class="chatbot-header-controls">
+                                <div class="chatbot-status">
+                                    <div class="status-indicator online"></div>
+                                    <span>Online</span>
+                                </div>
+                                <div class="chatbot-control-buttons">
+                                    <button class="chatbot-minimize-btn" title="Minimize">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M6 19h12v2H6z"/>
+                                        </svg>
+                                    </button>
+                                    <button class="chatbot-close-btn" title="Close">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                         
@@ -131,6 +174,100 @@
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                 }
 
+                .chatbot-widget.minimized .chatbot-window {
+                    display: none !important;
+                }
+
+                .chatbot-widget.closed {
+                    display: none !important;
+                }
+
+                .chatbot-widget.closed .chatbot-toggle {
+                    display: none !important;
+                }
+
+                .chatbot-restore {
+                    background: #28a745;
+                    border-radius: 12px;
+                    display: flex;
+                    align-items: center;
+                    cursor: pointer;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                    transition: all 0.3s ease;
+                    color: white;
+                    padding: 12px 16px;
+                    min-width: 200px;
+                    max-width: 250px;
+                    animation: slideInRestore 0.3s ease-out;
+                }
+
+                .chatbot-restore:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+                }
+
+                .chatbot-restore-content {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    width: 100%;
+                }
+
+                .chatbot-restore-avatar {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    overflow: hidden;
+                    flex-shrink: 0;
+                    background: rgba(255, 255, 255, 0.2);
+                }
+
+                .chatbot-restore-avatar img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    border-radius: 50%;
+                }
+
+                .chatbot-restore-text {
+                    flex: 1;
+                    font-weight: 500;
+                    font-size: 14px;
+                }
+
+                .chatbot-restore-btn {
+                    background: rgba(255, 255, 255, 0.2);
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 6px;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: all 0.2s ease;
+                    flex-shrink: 0;
+                }
+
+                .chatbot-restore-btn:hover {
+                    background: rgba(255, 255, 255, 0.3);
+                    transform: scale(1.05);
+                }
+
+                @keyframes slideInRestore {
+                    from {
+                        opacity: 0;
+                        transform: translateX(20px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateX(0);
+                    }
+                }
+
                 .chatbot-toggle {
                     background: white;
                     border-radius: 12px;
@@ -143,6 +280,7 @@
                     padding: 16px;
                     min-width: 280px;
                     max-width: 320px;
+                    position: relative;
                 }
 
                 .chatbot-toggle:hover {
@@ -201,6 +339,42 @@
                     height: 14px;
                 }
 
+                .chatbot-toggle-minimize,
+                .chatbot-toggle-close-btn {
+                    position: absolute;
+                    top: 8px;
+                    right: 8px;
+                    width: 24px;
+                    height: 24px;
+                    background: rgba(0, 0, 0, 0.1);
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    opacity: 0.7;
+                    color: #666;
+                }
+
+                .chatbot-toggle-minimize:hover {
+                    background: rgba(0, 123, 255, 0.2);
+                    color: #007bff;
+                    opacity: 1;
+                }
+
+                .chatbot-toggle-close-btn:hover {
+                    background: rgba(220, 53, 69, 0.2);
+                    color: #dc3545;
+                    opacity: 1;
+                }
+
+                .chatbot-toggle-minimize svg,
+                .chatbot-toggle-close-btn svg {
+                    width: 14px;
+                    height: 14px;
+                }
+
                 .chatbot-window {
                     width: ${this.config.width};
                     height: ${this.config.height};
@@ -234,6 +408,43 @@
                     display: flex;
                     align-items: center;
                     justify-content: space-between;
+                }
+
+                .chatbot-header-controls {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                }
+
+                .chatbot-control-buttons {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+
+                .chatbot-minimize-btn,
+                .chatbot-close-btn {
+                    background: none;
+                    border: none;
+                    color: white;
+                    cursor: pointer;
+                    padding: 4px;
+                    border-radius: 4px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: all 0.2s ease;
+                    opacity: 0.8;
+                }
+
+                .chatbot-minimize-btn:hover,
+                .chatbot-close-btn:hover {
+                    background: rgba(255, 255, 255, 0.2);
+                    opacity: 1;
+                }
+
+                .chatbot-close-btn:hover {
+                    background: rgba(220, 53, 69, 0.8);
                 }
 
                 .chatbot-title {
@@ -340,10 +551,43 @@
                     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
                 }
 
+                .chatbot-link {
+                    color: #007bff;
+                    text-decoration: none;
+                    border-bottom: 1px solid transparent;
+                    transition: all 0.2s ease;
+                    word-break: break-all;
+                }
+
+                .chatbot-link:hover {
+                    color: #0056b3;
+                    border-bottom-color: #0056b3;
+                    text-decoration: none;
+                }
+
+                .chatbot-email-link {
+                    color: #28a745;
+                }
+
+                .chatbot-email-link:hover {
+                    color: #1e7e34;
+                    border-bottom-color: #1e7e34;
+                }
+
                 .user-message .message-bubble {
                     background: #007bff;
                     color: white;
                     margin-left: auto;
+                }
+
+                .user-message .chatbot-link {
+                    color: #ffffff;
+                    border-bottom-color: rgba(255, 255, 255, 0.5);
+                }
+
+                .user-message .chatbot-link:hover {
+                    color: #ffffff;
+                    border-bottom-color: #ffffff;
                 }
 
                 .message-time {
@@ -483,6 +727,44 @@
                         bottom: 80px;
                         right: 20px;
                     }
+
+                    .chatbot-restore {
+                        min-width: 200px;
+                        max-width: calc(100vw - 40px);
+                        padding: 10px 12px;
+                    }
+
+                    .chatbot-restore-avatar {
+                        width: 28px;
+                        height: 28px;
+                    }
+
+                    .chatbot-restore-text {
+                        font-size: 13px;
+                    }
+
+                    .chatbot-control-buttons {
+                        gap: 6px;
+                    }
+
+                    .chatbot-minimize-btn,
+                    .chatbot-close-btn {
+                        padding: 3px;
+                    }
+
+                    .chatbot-toggle-minimize,
+                    .chatbot-toggle-close-btn {
+                        width: 20px;
+                        height: 20px;
+                        top: 6px;
+                        right: 6px;
+                    }
+
+                    .chatbot-toggle-minimize svg,
+                    .chatbot-toggle-close-btn svg {
+                        width: 12px;
+                        height: 12px;
+                    }
                 }
             `;
 
@@ -497,9 +779,20 @@
             const window = document.getElementById(`chatbot-window-${this.config.embedCode}`);
             const input = document.getElementById(`chatbot-input-${this.config.embedCode}`);
             const sendBtn = document.getElementById(`chatbot-send-${this.config.embedCode}`);
+            const minimizeBtn = document.querySelector(`#chatbot-window-${this.config.embedCode} .chatbot-minimize-btn`);
+            const closeBtn = document.querySelector(`#chatbot-window-${this.config.embedCode} .chatbot-close-btn`);
+            const toggleMinimizeBtn = document.querySelector(`#chatbot-toggle-${this.config.embedCode} .chatbot-toggle-minimize`);
+            const toggleCloseBtn = document.querySelector(`#chatbot-toggle-${this.config.embedCode} .chatbot-toggle-close-btn`);
+            const restoreBtn = document.getElementById(`chatbot-restore-${this.config.embedCode}`);
+            const widget = document.getElementById(`chatbot-${this.config.embedCode}`);
 
             // Toggle chat window
-            toggle.addEventListener('click', () => {
+            toggle.addEventListener('click', (e) => {
+                // Don't toggle if clicking on control buttons
+                if (e.target.closest('.chatbot-toggle-minimize') || e.target.closest('.chatbot-toggle-close-btn')) {
+                    return;
+                }
+                
                 const isVisible = window.style.display !== 'none';
                 window.style.display = isVisible ? 'none' : 'flex';
                 
@@ -509,12 +802,52 @@
                 if (isVisible) {
                     content.style.display = 'flex';
                     closeIcon.style.display = 'none';
+                    widget.classList.remove('minimized');
                 } else {
                     content.style.display = 'none';
                     closeIcon.style.display = 'block';
                     input.focus();
                 }
             });
+
+            // Minimize button
+            if (minimizeBtn) {
+                minimizeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.minimizeChat();
+                });
+            }
+
+            // Close button
+            if (closeBtn) {
+                closeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.closeChat();
+                });
+            }
+
+            // Toggle minimize button
+            if (toggleMinimizeBtn) {
+                toggleMinimizeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.minimizeChat();
+                });
+            }
+
+            // Toggle close button
+            if (toggleCloseBtn) {
+                toggleCloseBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.closeChat();
+                });
+            }
+
+            // Restore button
+            if (restoreBtn) {
+                restoreBtn.addEventListener('click', () => {
+                    this.restoreChat();
+                });
+            }
 
             // Send message on Enter
             input.addEventListener('keypress', (e) => {
@@ -576,16 +909,48 @@
                             '🤖');
             const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+            // Convert URLs and emails to clickable links
+            const processedText = this.convertLinksToHtml(text);
+
             messageDiv.innerHTML = `
                 <div class="message-avatar">${avatar}</div>
                 <div class="message-content">
-                    <div class="message-bubble">${text}</div>
+                    <div class="message-bubble">${processedText}</div>
                     <div class="message-time">${time}</div>
                 </div>
             `;
 
             messagesContainer.appendChild(messageDiv);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        },
+
+        convertLinksToHtml: function(text) {
+            if (!text) return text;
+            
+            // URL regex pattern (matches http, https, www, and domain patterns)
+            const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/gi;
+            
+            // Email regex pattern
+            const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi;
+            
+            let processedText = text;
+            
+            // Convert URLs to clickable links
+            processedText = processedText.replace(urlRegex, (match) => {
+                let url = match;
+                // Add https:// if the URL doesn't have a protocol
+                if (!url.match(/^https?:\/\//i)) {
+                    url = 'https://' + url;
+                }
+                return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${match}</a>`;
+            });
+            
+            // Convert emails to clickable mailto links
+            processedText = processedText.replace(emailRegex, (match) => {
+                return `<a href="mailto:${match}" class="chatbot-link chatbot-email-link">${match}</a>`;
+            });
+            
+            return processedText;
         },
 
         showTyping: function() {
@@ -619,6 +984,56 @@
             if (typingMessage) {
                 typingMessage.remove();
             }
+        },
+
+        minimizeChat: function() {
+            const widget = document.getElementById(`chatbot-${this.config.embedCode}`);
+            const window = document.getElementById(`chatbot-window-${this.config.embedCode}`);
+            const toggle = document.getElementById(`chatbot-toggle-${this.config.embedCode}`);
+            
+            widget.classList.add('minimized');
+            window.style.display = 'none';
+            
+            // Show toggle content
+            const content = toggle.querySelector('.chatbot-toggle-content');
+            const closeIcon = toggle.querySelector('.chatbot-toggle-close');
+            content.style.display = 'flex';
+            closeIcon.style.display = 'none';
+        },
+
+        closeChat: function() {
+            const widget = document.getElementById(`chatbot-${this.config.embedCode}`);
+            const restore = document.getElementById(`chatbot-restore-${this.config.embedCode}`);
+            
+            widget.classList.add('closed');
+            
+            // Show restore button after a short delay
+            setTimeout(() => {
+                restore.style.display = 'block';
+            }, 500);
+        },
+
+        restoreChat: function() {
+            const widget = document.getElementById(`chatbot-${this.config.embedCode}`);
+            const restore = document.getElementById(`chatbot-restore-${this.config.embedCode}`);
+            const toggle = document.getElementById(`chatbot-toggle-${this.config.embedCode}`);
+            const restoreText = restore.querySelector('.chatbot-restore-text span');
+            
+            // Update text to show it's being restored
+            if (restoreText) {
+                restoreText.textContent = 'Chat reopened';
+            }
+            
+            widget.classList.remove('closed');
+            restore.style.display = 'none';
+            toggle.style.display = 'flex';
+            
+            // Reset text back to "Chat closed" after a delay
+            setTimeout(() => {
+                if (restoreText) {
+                    restoreText.textContent = 'Chat closed';
+                }
+            }, 2000);
         }
     };
 })(); 

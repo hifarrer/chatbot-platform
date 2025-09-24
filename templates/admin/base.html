@@ -113,6 +113,14 @@
                             <i class="fas fa-cog"></i>
                             Settings
                         </a>
+                        <a class="nav-link {% if request.endpoint == 'admin_faq' %}active{% endif %}" href="{{ url_for('admin_faq') }}">
+                            <i class="fas fa-question-circle"></i>
+                            FAQ Management
+                        </a>
+                        <a class="nav-link {% if request.endpoint == 'admin_homepage_sections' %}active{% endif %}" href="{{ url_for('admin_homepage_sections') }}">
+                            <i class="fas fa-home"></i>
+                            Homepage CMS
+                        </a>
                         <a class="nav-link {% if request.endpoint == 'admin_site_settings' %}active{% endif %}" href="{{ url_for('admin_site_settings') }}">
                             <i class="fas fa-globe"></i>
                             Site Settings
