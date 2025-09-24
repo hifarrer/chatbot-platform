@@ -8,10 +8,8 @@ from functools import wraps
 import os
 import json
 import uuid
-import smtplib
 import secrets
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import resend
 from datetime import datetime, timedelta
 from services.document_processor import DocumentProcessor
 from services.chatbot_trainer import ChatbotTrainer
@@ -86,20 +84,6 @@ class Settings(db.Model):
     value = db.Column(db.Text)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-class SMTPSettings(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    smtp_server = db.Column(db.String(255), nullable=False)
-    smtp_port = db.Column(db.Integer, nullable=False, default=587)
-    smtp_username = db.Column(db.String(255), nullable=False)
-    smtp_password = db.Column(db.String(255), nullable=False)
-    smtp_use_tls = db.Column(db.Boolean, default=True, nullable=False)
-    smtp_use_ssl = db.Column(db.Boolean, default=False, nullable=False)
-    from_email = db.Column(db.String(255), nullable=False)
-    from_name = db.Column(db.String(255), nullable=False)
-    admin_email = db.Column(db.String(255), nullable=False)  # Where contact form emails are sent
-    is_active = db.Column(db.Boolean, default=True, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class PasswordResetToken(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -146,9 +130,6 @@ def get_user_plan(user):
         db.session.commit()
     return free_plan
 
-def get_smtp_settings():
-    """Get the active SMTP settings from the database."""
-    return SMTPSettings.query.filter_by(is_active=True).first()
 
 def get_site_settings():
     """Get the active site settings from the database."""
@@ -166,37 +147,47 @@ def get_site_settings():
     return site_settings
 
 def send_email(to_email, subject, body, is_html=False):
-    """Send an email using the configured SMTP settings."""
-    smtp_settings = get_smtp_settings()
-    if not smtp_settings:
-        raise Exception("No SMTP settings configured")
-    
-    # Create message
-    msg = MIMEMultipart('alternative')
-    msg['From'] = f"{smtp_settings.from_name} <{smtp_settings.from_email}>"
-    msg['To'] = to_email
-    msg['Subject'] = subject
-    
-    # Add body
-    if is_html:
-        msg.attach(MIMEText(body, 'html'))
-    else:
-        msg.attach(MIMEText(body, 'plain'))
-    
-    # Connect to server and send email
+    """Send an email using Resend API."""
     try:
-        if smtp_settings.smtp_use_ssl:
-            server = smtplib.SMTP_SSL(smtp_settings.smtp_server, smtp_settings.smtp_port)
-        else:
-            server = smtplib.SMTP(smtp_settings.smtp_server, smtp_settings.smtp_port)
-            if smtp_settings.smtp_use_tls:
-                server.starttls()
+        # Set Resend API key
+        resend.api_key = os.getenv('RESEND_API_KEY')
+        if not resend.api_key:
+            raise Exception("RESEND_API_KEY not configured")
         
-        server.login(smtp_settings.smtp_username, smtp_settings.smtp_password)
-        server.send_message(msg)
-        server.quit()
-        return True
+        # Get sender information from environment variables
+        from_email = os.getenv('RESEND_FROM_EMAIL')
+        from_name = os.getenv('RESEND_FROM_NAME', 'ChatBot Platform')
+        
+        if not from_email:
+            raise Exception("RESEND_FROM_EMAIL not configured")
+        
+        # Prepare email data
+        email_data = {
+            "from": f"{from_name} <{from_email}>",
+            "to": [to_email],
+            "subject": subject
+        }
+        
+        # Add content based on type
+        if is_html:
+            email_data["html"] = body
+        else:
+            email_data["text"] = body
+        
+        print(f"DEBUG: Sending email with data: {email_data}")  # Debug log
+        
+        # Send email using Resend
+        response = resend.Emails.send(email_data)
+        
+        print(f"DEBUG: Resend response: {response}")  # Debug log
+        
+        if response and (hasattr(response, 'id') or (isinstance(response, dict) and 'id' in response)):
+            return True
+        else:
+            raise Exception(f"Invalid response from Resend: {response}")
+            
     except Exception as e:
+        print(f"DEBUG: Email error: {str(e)}")  # Debug log
         raise Exception(f"Failed to send email: {str(e)}")
 
 def generate_password_reset_token(user):
@@ -221,12 +212,11 @@ def generate_password_reset_token(user):
 
 def send_password_reset_email(user, token):
     """Send password reset email to user"""
-    smtp_settings = get_smtp_settings()
-    if not smtp_settings:
-        raise Exception("No SMTP settings configured")
-    
     # Create reset URL
     reset_url = f"{request.url_root}reset-password/{token}"
+    
+    # Get sender name from environment
+    from_name = os.getenv('RESEND_FROM_NAME', 'ChatBot Platform')
     
     # Create email content
     subject = "Password Reset Request"
@@ -243,9 +233,10 @@ This link will expire in 1 hour for security reasons.
 If you did not request this password reset, please ignore this email and your password will remain unchanged.
 
 Best regards,
-{smtp_settings.from_name}
+{from_name}
     """
     
+    # Send email using Resend
     send_email(user.email, subject, body)
 
 # Admin authentication
@@ -400,12 +391,6 @@ def create_app():
                 return render_template('contact.html')
             
             try:
-                # Get SMTP settings
-                smtp_settings = get_smtp_settings()
-                if not smtp_settings:
-                    flash('Email service is not configured. Please contact the administrator.', 'error')
-                    return render_template('contact.html')
-                
                 # Create email content
                 email_subject = f"Contact Form: {subject}"
                 email_body = f"""
@@ -422,9 +407,15 @@ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
                 """
                 
                 # Send email to admin
-                send_email(smtp_settings.admin_email, email_subject, email_body)
+                admin_email = os.getenv('RESEND_ADMIN_EMAIL')
+                if not admin_email:
+                    flash('Admin email not configured. Please contact the administrator.', 'error')
+                    return render_template('contact.html')
+                
+                send_email(admin_email, email_subject, email_body)
                 
                 # Send confirmation email to user
+                from_name = os.getenv('RESEND_FROM_NAME', 'ChatBot Platform')
                 confirmation_subject = "Thank you for contacting us"
                 confirmation_body = f"""
 Dear {name},
@@ -436,7 +427,7 @@ Subject: {subject}
 Message: {message}
 
 Best regards,
-{smtp_settings.from_name}
+{from_name}
                 """
                 
                 send_email(email, confirmation_subject, confirmation_body)
@@ -1384,76 +1375,29 @@ The platform is designed to be user-friendly while providing powerful AI capabil
         flash(f'Plan "{plan.name}" deleted successfully!')
         return redirect(url_for('admin_plans'))
 
-    @app.route('/admin/smtp-settings', methods=['GET', 'POST'])
+    @app.route('/admin/resend-settings/test', methods=['POST'])
     @admin_required
-    def admin_smtp_settings():
-        if request.method == 'POST':
-            smtp_server = request.form['smtp_server']
-            smtp_port = int(request.form['smtp_port'])
-            smtp_username = request.form['smtp_username']
-            smtp_password = request.form['smtp_password']
-            smtp_use_tls = 'smtp_use_tls' in request.form
-            smtp_use_ssl = 'smtp_use_ssl' in request.form
-            from_email = request.form['from_email']
-            from_name = request.form['from_name']
-            admin_email = request.form['admin_email']
-            
-            # Get existing SMTP settings or create new
-            smtp_settings = SMTPSettings.query.filter_by(is_active=True).first()
-            if not smtp_settings:
-                smtp_settings = SMTPSettings()
-                db.session.add(smtp_settings)
-            
-            # Update settings
-            smtp_settings.smtp_server = smtp_server
-            smtp_settings.smtp_port = smtp_port
-            smtp_settings.smtp_username = smtp_username
-            smtp_settings.smtp_password = smtp_password
-            smtp_settings.smtp_use_tls = smtp_use_tls
-            smtp_settings.smtp_use_ssl = smtp_use_ssl
-            smtp_settings.from_email = from_email
-            smtp_settings.from_name = from_name
-            smtp_settings.admin_email = admin_email
-            smtp_settings.is_active = True
-            
-            db.session.commit()
-            
-            flash('SMTP settings updated successfully!')
-            return redirect(url_for('admin_smtp_settings'))
-        
-        # Get current SMTP settings
-        smtp_settings = SMTPSettings.query.filter_by(is_active=True).first()
-        
-        return render_template('admin/smtp_settings.html', smtp_settings=smtp_settings)
-
-    @app.route('/admin/smtp-settings/test', methods=['POST'])
-    @admin_required
-    def admin_test_smtp():
+    def admin_test_resend():
         try:
-            # Get current SMTP settings
-            smtp_settings = SMTPSettings.query.filter_by(is_active=True).first()
-            if not smtp_settings:
-                return jsonify({'success': False, 'message': 'No SMTP settings configured'})
-            
-            # Send test email to admin email
-            test_subject = "SMTP Test Email"
+            # Send test email using Resend
+            test_subject = "Resend Test Email"
             test_body = f"""
-This is a test email from your Chatbot Platform.
+This is a test email from your Chatbot Platform using Resend.
 
-SMTP Settings:
-- Server: {smtp_settings.smtp_server}
-- Port: {smtp_settings.smtp_port}
-- Username: {smtp_settings.smtp_username}
-- Use TLS: {smtp_settings.smtp_use_tls}
-- Use SSL: {smtp_settings.smtp_use_ssl}
-- From: {smtp_settings.from_name} <{smtp_settings.from_email}>
+Resend Configuration:
+- From: {os.getenv('RESEND_FROM_NAME', 'ChatBot Platform')} <{os.getenv('RESEND_FROM_EMAIL')}>
+- To: {os.getenv('RESEND_ADMIN_EMAIL')}
 
-If you receive this email, your SMTP settings are working correctly!
+If you receive this email, your Resend configuration is working correctly!
 
 Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
             """
             
-            send_email(smtp_settings.admin_email, test_subject, test_body)
+            admin_email = os.getenv('RESEND_ADMIN_EMAIL')
+            if not admin_email:
+                return jsonify({'success': False, 'message': 'RESEND_ADMIN_EMAIL not configured'})
+            
+            send_email(admin_email, test_subject, test_body)
             return jsonify({'success': True, 'message': 'Test email sent successfully!'})
             
         except Exception as e:

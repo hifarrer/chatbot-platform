@@ -1,0 +1,112 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Email Settings - Admin Panel{% endblock %}
+
+{% block page_title %}Email Settings (Resend){% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-envelope me-2"></i>
+                    Resend Email Configuration
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-info-circle me-2"></i>Resend Email Service</h6>
+                    <p class="mb-0">This platform uses Resend for reliable email delivery. Configuration is done through environment variables.</p>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h6 class="card-title">Current Configuration</h6>
+                                <div class="mb-2">
+                                    <strong>API Key:</strong> 
+                                    <span class="badge bg-success">Configured</span>
+                                </div>
+                                <div class="mb-2">
+                                    <strong>From Email:</strong> 
+                                    <code>{{ env.RESEND_FROM_EMAIL if env.RESEND_FROM_EMAIL else 'Not configured' }}</code>
+                                </div>
+                                <div class="mb-2">
+                                    <strong>From Name:</strong> 
+                                    <code>{{ env.RESEND_FROM_NAME if env.RESEND_FROM_NAME else 'ChatBot Platform' }}</code>
+                                </div>
+                                <div class="mb-0">
+                                    <strong>Admin Email:</strong> 
+                                    <code>{{ env.RESEND_ADMIN_EMAIL if env.RESEND_ADMIN_EMAIL else 'Not configured' }}</code>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h6 class="card-title">Environment Variables</h6>
+                                <p class="small mb-2">Configure these in your hosting environment:</p>
+                                <ul class="small mb-0">
+                                    <li><code>RESEND_API_KEY</code> - Your Resend API key</li>
+                                    <li><code>RESEND_FROM_EMAIL</code> - Sender email address</li>
+                                    <li><code>RESEND_FROM_NAME</code> - Sender name</li>
+                                    <li><code>RESEND_ADMIN_EMAIL</code> - Admin email for contact forms</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mt-4">
+                    <div class="col-12 text-center">
+                        <button type="button" class="btn btn-primary" onclick="testResend()">
+                            <i class="fas fa-paper-plane me-2"></i>Test Email
+                        </button>
+                        <a href="https://resend.com/docs" target="_blank" class="btn btn-outline-info ms-2">
+                            <i class="fas fa-external-link-alt me-2"></i>Resend Documentation
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function testResend() {
+    const button = event.target;
+    const originalText = button.innerHTML;
+    
+    button.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Testing...';
+    button.disabled = true;
+    
+    fetch('/admin/resend-settings/test', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('✅ ' + data.message);
+        } else {
+            alert('❌ ' + data.message);
+        }
+    })
+    .catch(error => {
+        alert('❌ Error testing Resend: ' + error.message);
+    })
+    .finally(() => {
+        button.innerHTML = originalText;
+        button.disabled = false;
+    });
+}
+</script>
+{% endblock %}

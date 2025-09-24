@@ -26,6 +26,9 @@ openai>=1.0.0,<2.0.0
 # CORS support for embedded chatbots
 Flask-CORS>=4.0.0,<5.0.0
 
+# Email service
+resend>=0.8.0,<1.0.0
+
 # Basic utilities (lightweight)
 requests>=2.31.0,<3.0.0
 setuptools>=65.0.0
