@@ -6,13 +6,24 @@
 <div class="hero-section text-center py-5 mb-5">
     <div class="container">
         <h1 class="display-4 fw-bold mb-4 animate-fade-in">
-            <i class="fas fa-robot text-primary me-3"></i>
-            Build Your Own AI Chatbot
+            {% if site_settings and site_settings.hero_icon_filename %}
+                <img src="{{ url_for('static', filename='uploads/' + site_settings.hero_icon_filename) }}" 
+                     alt="{{ site_settings.hero_title }}" class="me-3" style="max-height: 60px;">
+            {% else %}
+                <i class="fas fa-robot text-primary me-3"></i>
+            {% endif %}
+            {{ site_settings.hero_title if site_settings else 'Build Your Own AI Chatbot' }}
         </h1>
-        <p class="lead mb-4 animate-fade-in-delay">
-            Create, train, and deploy intelligent chatbots for your website in minutes.
-            Upload your documents, train your bot, and embed it anywhere.
-        </p>
+        {% if site_settings and site_settings.hero_subtitle %}
+            <p class="lead mb-4 animate-fade-in-delay">
+                {{ site_settings.hero_subtitle }}
+            </p>
+        {% else %}
+            <p class="lead mb-4 animate-fade-in-delay">
+                Create, train, and deploy intelligent chatbots for your website in minutes.
+                Upload your documents, train your bot, and embed it anywhere.
+            </p>
+        {% endif %}
         
         <!-- Try It Now Highlight Box -->
         <div class="try-now-highlight mb-4 animate-bounce-subtle">

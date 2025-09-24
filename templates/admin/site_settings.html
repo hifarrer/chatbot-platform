@@ -1,0 +1,275 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Site Settings - Admin{% endblock %}
+
+{% block page_title %}
+    <i class="fas fa-cog me-2"></i>Site Settings
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Configure Site Settings</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('admin_site_settings') }}" enctype="multipart/form-data">
+                    <div class="row g-3">
+                        <!-- Site Title -->
+                        <div class="col-12">
+                            <label for="site_title" class="form-label">Site Title *</label>
+                            <input type="text" class="form-control" id="site_title" name="site_title" 
+                                value="{{ site_settings.site_title if site_settings else 'ChatBot Platform' }}" 
+                                placeholder="Your Site Title" required>
+                            <small class="form-text text-muted">
+                                This will be used as the page title (&lt;title&gt;) and site name
+                            </small>
+                        </div>
+
+                        <!-- Logo Upload -->
+                        <div class="col-12">
+                            <label for="logo" class="form-label">Logo</label>
+                            <div class="mb-3">
+                                {% if site_settings and site_settings.logo_filename %}
+                                    <div class="current-logo mb-3">
+                                        <p class="text-muted mb-2">Current Logo:</p>
+                                        <img src="{{ url_for('static', filename='uploads/' + site_settings.logo_filename) }}" 
+                                             alt="Current Logo" class="img-thumbnail" style="max-height: 100px;">
+                                        <div class="mt-2">
+                                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteLogo()">
+                                                <i class="fas fa-trash me-1"></i>Delete Current Logo
+                                            </button>
+                                        </div>
+                                    </div>
+                                {% endif %}
+                                
+                                <input type="file" class="form-control" id="logo" name="logo" 
+                                       accept=".png,.jpg,.jpeg,.gif,.svg">
+                                <small class="form-text text-muted">
+                                    Upload a logo image (PNG, JPG, JPEG, GIF, SVG). If uploaded, the logo will be used instead of the site title.
+                                </small>
+                            </div>
+                        </div>
+
+                        <!-- Hero Section -->
+                        <div class="col-12">
+                            <hr class="my-4">
+                            <h5 class="text-primary mb-3">Homepage Hero Section</h5>
+                        </div>
+                        
+                        <div class="col-12">
+                            <label for="hero_title" class="form-label">Hero Title *</label>
+                            <input type="text" class="form-control" id="hero_title" name="hero_title" 
+                                value="{{ site_settings.hero_title if site_settings else 'Build your own AI chatbot' }}" 
+                                placeholder="Build your own AI chatbot" required>
+                            <small class="form-text text-muted">
+                                Main headline text displayed on the homepage
+                            </small>
+                        </div>
+                        
+                        <div class="col-12">
+                            <label for="hero_subtitle" class="form-label">Hero Subtitle</label>
+                            <textarea class="form-control" id="hero_subtitle" name="hero_subtitle" rows="2" 
+                                placeholder="Create intelligent chatbots for your business in minutes">{{ site_settings.hero_subtitle if site_settings else '' }}</textarea>
+                            <small class="form-text text-muted">
+                                Optional subtitle text below the main headline
+                            </small>
+                        </div>
+                        
+                        <div class="col-12">
+                            <label for="hero_icon" class="form-label">Hero Icon</label>
+                            <div class="mb-3">
+                                {% if site_settings and site_settings.hero_icon_filename %}
+                                    <div class="current-hero-icon mb-3">
+                                        <p class="text-muted mb-2">Current Hero Icon:</p>
+                                        <img src="{{ url_for('static', filename='uploads/' + site_settings.hero_icon_filename) }}" 
+                                             alt="Current Hero Icon" class="img-thumbnail" style="max-height: 100px;">
+                                        <div class="mt-2">
+                                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteHeroIcon()">
+                                                <i class="fas fa-trash me-1"></i>Delete Current Hero Icon
+                                            </button>
+                                        </div>
+                                    </div>
+                                {% endif %}
+                                
+                                <input type="file" class="form-control" id="hero_icon" name="hero_icon" 
+                                       accept=".png,.jpg,.jpeg,.gif,.svg">
+                                <small class="form-text text-muted">
+                                    Upload a custom icon for the hero section (PNG, JPG, JPEG, GIF, SVG). If not uploaded, the default robot icon will be used.
+                                </small>
+                            </div>
+                        </div>
+
+                        <!-- Meta Tags -->
+                        <div class="col-12">
+                            <hr class="my-4">
+                            <h5 class="text-primary mb-3">SEO Settings</h5>
+                            <label for="meta_tags" class="form-label">Meta Tags (SEO)</label>
+                            <textarea class="form-control" id="meta_tags" name="meta_tags" rows="3" 
+                                placeholder="chatbot, AI, customer service, automation">{{ site_settings.meta_tags if site_settings else '' }}</textarea>
+                            <small class="form-text text-muted">
+                                Comma-separated meta tags for SEO (e.g., "chatbot, AI, customer service, automation")
+                            </small>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="col-12 d-flex justify-content-end">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-2"></i>Save Settings
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Preview Section -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">Preview</h5>
+            </div>
+            <div class="card-body">
+                <div class="preview-section">
+                    <h6>Page Title Preview:</h6>
+                    <div class="border rounded p-2 bg-light">
+                        <code id="title-preview">{{ site_settings.site_title if site_settings else 'ChatBot Platform' }}</code>
+                    </div>
+                    
+                    <h6 class="mt-3">Logo Preview:</h6>
+                    <div class="border rounded p-3 bg-light text-center" id="logo-preview">
+                        {% if site_settings and site_settings.logo_filename %}
+                            <img src="{{ url_for('static', filename='uploads/' + site_settings.logo_filename) }}" 
+                                 alt="Logo Preview" class="img-fluid" style="max-height: 80px;">
+                        {% else %}
+                            <span class="text-muted">No logo uploaded</span>
+                        {% endif %}
+                    </div>
+                    
+                    <h6 class="mt-3">Hero Section Preview:</h6>
+                    <div class="border rounded p-3 bg-light text-center">
+                        <div class="d-flex align-items-center justify-content-center mb-2">
+                            <div id="hero-icon-preview" class="me-3">
+                                {% if site_settings and site_settings.hero_icon_filename %}
+                                    <img src="{{ url_for('static', filename='uploads/' + site_settings.hero_icon_filename) }}" 
+                                         alt="Hero Icon Preview" style="max-height: 40px;">
+                                {% else %}
+                                    <i class="fas fa-robot text-primary" style="font-size: 2rem;"></i>
+                                {% endif %}
+                            </div>
+                            <div class="text-start">
+                                <h4 class="mb-1" id="hero-title-preview">{{ site_settings.hero_title if site_settings else 'Build your own AI chatbot' }}</h4>
+                                <p class="text-muted mb-0" id="hero-subtitle-preview">{{ site_settings.hero_subtitle if site_settings else 'No subtitle set' }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h6 class="mt-3">Meta Tags Preview:</h6>
+                    <div class="border rounded p-2 bg-light">
+                        <code id="meta-preview">{{ site_settings.meta_tags if site_settings else 'No meta tags set' }}</code>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Update preview when form fields change
+document.getElementById('site_title').addEventListener('input', function() {
+    document.getElementById('title-preview').textContent = this.value || 'ChatBot Platform';
+});
+
+document.getElementById('hero_title').addEventListener('input', function() {
+    document.getElementById('hero-title-preview').textContent = this.value || 'Build your own AI chatbot';
+});
+
+document.getElementById('hero_subtitle').addEventListener('input', function() {
+    document.getElementById('hero-subtitle-preview').textContent = this.value || 'No subtitle set';
+});
+
+document.getElementById('meta_tags').addEventListener('input', function() {
+    document.getElementById('meta-preview').textContent = this.value || 'No meta tags set';
+});
+
+document.getElementById('logo').addEventListener('change', function() {
+    const file = this.files[0];
+    const preview = document.getElementById('logo-preview');
+    
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            preview.innerHTML = `<img src="${e.target.result}" alt="Logo Preview" class="img-fluid" style="max-height: 80px;">`;
+        };
+        reader.readAsDataURL(file);
+    } else {
+        preview.innerHTML = '<span class="text-muted">No logo uploaded</span>';
+    }
+});
+
+document.getElementById('hero_icon').addEventListener('change', function() {
+    const file = this.files[0];
+    const preview = document.getElementById('hero-icon-preview');
+    
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            preview.innerHTML = `<img src="${e.target.result}" alt="Hero Icon Preview" style="max-height: 40px;">`;
+        };
+        reader.readAsDataURL(file);
+    } else {
+        preview.innerHTML = '<i class="fas fa-robot text-primary" style="font-size: 2rem;"></i>';
+    }
+});
+
+function deleteLogo() {
+    if (confirm('Are you sure you want to delete the current logo?')) {
+        fetch("{{ url_for('admin_delete_logo') }}", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('✅ ' + data.message);
+                location.reload(); // Reload to show updated state
+            } else {
+                alert('❌ ' + data.message);
+            }
+        })
+        .catch(error => {
+            alert('❌ Error deleting logo: ' + error.message);
+        });
+    }
+}
+
+function deleteHeroIcon() {
+    if (confirm('Are you sure you want to delete the current hero icon?')) {
+        fetch("{{ url_for('admin_delete_hero_icon') }}", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('✅ ' + data.message);
+                location.reload(); // Reload to show updated state
+            } else {
+                alert('❌ ' + data.message);
+            }
+        })
+        .catch(error => {
+            alert('❌ Error deleting hero icon: ' + error.message);
+        });
+    }
+}
+</script>
+{% endblock %}

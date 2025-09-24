@@ -110,6 +110,18 @@ class PasswordResetToken(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     user = db.relationship('User', backref='password_reset_tokens')
 
+class SiteSettings(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    site_title = db.Column(db.String(255), nullable=False, default='ChatBot Platform')
+    logo_filename = db.Column(db.String(255), nullable=True)
+    meta_tags = db.Column(db.Text, nullable=True)  # Comma-separated meta tags
+    hero_title = db.Column(db.String(255), nullable=False, default='Build your own AI chatbot')
+    hero_subtitle = db.Column(db.Text, nullable=True)
+    hero_icon_filename = db.Column(db.String(255), nullable=True)  # Custom hero icon
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -137,6 +149,21 @@ def get_user_plan(user):
 def get_smtp_settings():
     """Get the active SMTP settings from the database."""
     return SMTPSettings.query.filter_by(is_active=True).first()
+
+def get_site_settings():
+    """Get the active site settings from the database."""
+    site_settings = SiteSettings.query.filter_by(is_active=True).first()
+    if not site_settings:
+        # Create default site settings if none exist
+        site_settings = SiteSettings(
+            site_title='ChatBot Platform',
+            meta_tags='chatbot, AI, customer service, automation',
+            hero_title='Build your own AI chatbot',
+            hero_subtitle='Create intelligent chatbots for your business in minutes'
+        )
+        db.session.add(site_settings)
+        db.session.commit()
+    return site_settings
 
 def send_email(to_email, subject, body, is_html=False):
     """Send an email using the configured SMTP settings."""
@@ -1431,6 +1458,150 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
             
         except Exception as e:
             return jsonify({'success': False, 'message': f'Failed to send test email: {str(e)}'})
+
+    @app.route('/admin/site-settings', methods=['GET', 'POST'])
+    @admin_required
+    def admin_site_settings():
+        if request.method == 'POST':
+            site_title = request.form['site_title']
+            meta_tags = request.form.get('meta_tags', '').strip()
+            hero_title = request.form.get('hero_title', '').strip()
+            hero_subtitle = request.form.get('hero_subtitle', '').strip()
+            
+            # Handle logo upload
+            logo_file = request.files.get('logo')
+            logo_filename = None
+            
+            # Handle hero icon upload
+            hero_icon_file = request.files.get('hero_icon')
+            hero_icon_filename = None
+            
+            if logo_file and logo_file.filename:
+                # Check if file is allowed
+                allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'svg'}
+                if '.' in logo_file.filename and \
+                   logo_file.filename.rsplit('.', 1)[1].lower() in allowed_extensions:
+                    
+                    # Create uploads directory if it doesn't exist
+                    upload_dir = os.path.join(app.root_path, 'static', 'uploads')
+                    os.makedirs(upload_dir, exist_ok=True)
+                    
+                    # Generate secure filename
+                    filename = secure_filename(logo_file.filename)
+                    # Add timestamp to avoid conflicts
+                    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                    name, ext = os.path.splitext(filename)
+                    logo_filename = f"{name}_{timestamp}{ext}"
+                    
+                    # Save file
+                    logo_path = os.path.join(upload_dir, logo_filename)
+                    logo_file.save(logo_path)
+            
+            if hero_icon_file and hero_icon_file.filename:
+                # Check if file is allowed
+                allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'svg'}
+                if '.' in hero_icon_file.filename and \
+                   hero_icon_file.filename.rsplit('.', 1)[1].lower() in allowed_extensions:
+                    
+                    # Create uploads directory if it doesn't exist
+                    upload_dir = os.path.join(app.root_path, 'static', 'uploads')
+                    os.makedirs(upload_dir, exist_ok=True)
+                    
+                    # Generate secure filename
+                    filename = secure_filename(hero_icon_file.filename)
+                    # Add timestamp to avoid conflicts
+                    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                    name, ext = os.path.splitext(filename)
+                    hero_icon_filename = f"hero_{name}_{timestamp}{ext}"
+                    
+                    # Save file
+                    hero_icon_path = os.path.join(upload_dir, hero_icon_filename)
+                    hero_icon_file.save(hero_icon_path)
+            
+            # Get or create site settings
+            site_settings = SiteSettings.query.filter_by(is_active=True).first()
+            if not site_settings:
+                site_settings = SiteSettings()
+                db.session.add(site_settings)
+            
+            # Update settings
+            site_settings.site_title = site_title
+            site_settings.meta_tags = meta_tags
+            site_settings.hero_title = hero_title
+            site_settings.hero_subtitle = hero_subtitle
+            
+            if logo_filename:
+                # Delete old logo if exists
+                if site_settings.logo_filename:
+                    old_logo_path = os.path.join(app.root_path, 'static', 'uploads', site_settings.logo_filename)
+                    if os.path.exists(old_logo_path):
+                        os.remove(old_logo_path)
+                site_settings.logo_filename = logo_filename
+            
+            if hero_icon_filename:
+                # Delete old hero icon if exists
+                if site_settings.hero_icon_filename:
+                    old_hero_icon_path = os.path.join(app.root_path, 'static', 'uploads', site_settings.hero_icon_filename)
+                    if os.path.exists(old_hero_icon_path):
+                        os.remove(old_hero_icon_path)
+                site_settings.hero_icon_filename = hero_icon_filename
+            
+            db.session.commit()
+            
+            flash('Site settings updated successfully!')
+            return redirect(url_for('admin_site_settings'))
+        
+        site_settings = get_site_settings()
+        return render_template('admin/site_settings.html', site_settings=site_settings)
+
+    @app.route('/admin/site-settings/delete-logo', methods=['POST'])
+    @admin_required
+    def admin_delete_logo():
+        try:
+            site_settings = SiteSettings.query.filter_by(is_active=True).first()
+            if site_settings and site_settings.logo_filename:
+                # Delete file from filesystem
+                logo_path = os.path.join(app.root_path, 'static', 'uploads', site_settings.logo_filename)
+                if os.path.exists(logo_path):
+                    os.remove(logo_path)
+                
+                # Update database
+                site_settings.logo_filename = None
+                db.session.commit()
+                
+                return jsonify({'success': True, 'message': 'Logo deleted successfully!'})
+            else:
+                return jsonify({'success': False, 'message': 'No logo to delete'})
+                
+        except Exception as e:
+            return jsonify({'success': False, 'message': f'Failed to delete logo: {str(e)}'})
+
+    @app.route('/admin/site-settings/delete-hero-icon', methods=['POST'])
+    @admin_required
+    def admin_delete_hero_icon():
+        try:
+            site_settings = SiteSettings.query.filter_by(is_active=True).first()
+            if site_settings and site_settings.hero_icon_filename:
+                # Delete file from filesystem
+                hero_icon_path = os.path.join(app.root_path, 'static', 'uploads', site_settings.hero_icon_filename)
+                if os.path.exists(hero_icon_path):
+                    os.remove(hero_icon_path)
+                
+                # Update database
+                site_settings.hero_icon_filename = None
+                db.session.commit()
+                
+                return jsonify({'success': True, 'message': 'Hero icon deleted successfully!'})
+            else:
+                return jsonify({'success': False, 'message': 'No hero icon to delete'})
+                
+        except Exception as e:
+            return jsonify({'success': False, 'message': f'Failed to delete hero icon: {str(e)}'})
+
+    @app.context_processor
+    def inject_site_settings():
+        """Make site settings available in all templates"""
+        return dict(site_settings=get_site_settings())
 
     with app.app_context():
         db.create_all()
