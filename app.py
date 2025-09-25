@@ -151,31 +151,31 @@ class HomepageSection(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-    def get_user_plan(user):
-        """Get the user's current plan based on active subscription, else Free."""
-        try:
-            sub = UserSubscription.query.filter_by(user_id=user.id, status='active').order_by(UserSubscription.created_at.desc()).first()
-            if sub:
-                plan = Plan.query.get(sub.plan_id)
-                if plan and plan.is_active:
-                    return plan
-        except Exception:
-            pass
+def get_user_plan(user):
+    """Get the user's current plan based on active subscription, else Free."""
+    try:
+        sub = UserSubscription.query.filter_by(user_id=user.id, status='active').order_by(UserSubscription.created_at.desc()).first()
+        if sub:
+            plan = Plan.query.get(sub.plan_id)
+            if plan and plan.is_active:
+                return plan
+    except Exception:
+        pass
 
-        free_plan = Plan.query.filter_by(name='Free', is_active=True).first()
-        if not free_plan:
-            free_plan = Plan(
-                name='Free',
-                description='Free plan for all users',
-                monthly_price=0.0,
-                yearly_price=0.0,
-                chatbot_limit=3,
-                features=json.dumps(['Up to 3 chatbots', 'Basic support']),
-                is_active=True
-            )
-            db.session.add(free_plan)
-            db.session.commit()
-        return free_plan
+    free_plan = Plan.query.filter_by(name='Free', is_active=True).first()
+    if not free_plan:
+        free_plan = Plan(
+            name='Free',
+            description='Free plan for all users',
+            monthly_price=0.0,
+            yearly_price=0.0,
+            chatbot_limit=3,
+            features=json.dumps(['Up to 3 chatbots', 'Basic support']),
+            is_active=True
+        )
+        db.session.add(free_plan)
+        db.session.commit()
+    return free_plan
 
 
 def get_site_settings():
