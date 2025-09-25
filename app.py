@@ -2054,27 +2054,65 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
                 plan_id = int(plan_id_str)
                 plan = Plan.query.get(plan_id)
                 if plan:
-                    # Get stripe subscription id if available
+                    # Extract Stripe subscription data
                     sub_id = None
-                    if isinstance(checkout_session.get('subscription'), dict):
-                        sub_id = checkout_session['subscription'].get('id')
-                    elif isinstance(checkout_session.get('subscription'), str):
-                        sub_id = checkout_session['subscription']
+                    current_period_end = None
+                    sub_obj = checkout_session.get('subscription')
+                    if isinstance(sub_obj, dict):
+                        sub_id = sub_obj.get('id')
+                        ts = sub_obj.get('current_period_end')
+                        if ts:
+                            try:
+                                from datetime import datetime
+                                current_period_end = datetime.utcfromtimestamp(int(ts))
+                            except Exception:
+                                current_period_end = None
+                    elif isinstance(sub_obj, str):
+                        sub_id = sub_obj
 
-                    # Deactivate previous subs
+                    # Ensure table exists and clean transaction state
                     try:
-                        UserSubscription.query.filter_by(user_id=current_user.id, status='active').update({'status': 'canceled'})
+                        from sqlalchemy import inspect
+                        insp = inspect(db.engine)
+                        if not insp.has_table('user_subscription'):
+                            db.create_all()
                     except Exception:
+                        # Ignore table introspection errors; create_all later if needed
                         pass
 
-                    new_sub = UserSubscription(
-                        user_id=current_user.id,
-                        plan_id=plan.id,
-                        stripe_subscription_id=sub_id,
-                        status='active'
-                    )
-                    db.session.add(new_sub)
-                    db.session.commit()
+                    # Retryable write
+                    for attempt in range(2):
+                        try:
+                            # Clear any failed transaction state
+                            try:
+                                db.session.rollback()
+                            except Exception:
+                                pass
+
+                            # Deactivate previous subs via ORM to avoid bulk-update transaction issues
+                            prev_subs = UserSubscription.query.filter_by(user_id=current_user.id, status='active').all()
+                            for ps in prev_subs:
+                                ps.status = 'canceled'
+
+                            new_sub = UserSubscription(
+                                user_id=current_user.id,
+                                plan_id=plan.id,
+                                stripe_subscription_id=sub_id,
+                                status='active',
+                                current_period_end=current_period_end
+                            )
+                            db.session.add(new_sub)
+                            db.session.commit()
+                            break
+                        except Exception:
+                            db.session.rollback()
+                            # Try to create tables and retry once
+                            try:
+                                db.create_all()
+                            except Exception:
+                                pass
+                            if attempt == 1:
+                                raise
 
             flash('Subscription activated successfully.', 'success')
         except Exception as e:
