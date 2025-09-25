@@ -15,6 +15,12 @@ from services.document_processor import DocumentProcessor
 from services.chatbot_trainer import ChatbotTrainer
 from services.chat_service_openai import ChatServiceOpenAI
 
+# Optional Stripe dependency (guarded)
+try:
+    import stripe  # type: ignore
+except Exception:
+    stripe = None
+
 # Load environment variables from .env file
 try:
     from dotenv import load_dotenv
@@ -1913,6 +1919,113 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
     def inject_site_settings():
         """Make site settings available in all templates"""
         return dict(site_settings=get_site_settings())
+
+    # -----------------------------
+    # Payments (Stripe) - Guarded
+    # -----------------------------
+    def get_stripe_config():
+        publishable_key = get_setting('stripe_publishable_key', '')
+        secret_key = get_setting('stripe_secret_key', '')
+        webhook_secret = get_setting('stripe_webhook_secret', '')
+        return publishable_key, secret_key, webhook_secret
+
+    def is_stripe_ready():
+        if stripe is None:
+            return False
+        _, secret_key, _ = get_stripe_config()
+        return bool(secret_key)
+
+    @app.route('/create-checkout-session', methods=['POST'])
+    def create_checkout_session():
+        try:
+            # Basic guardrails
+            if not is_stripe_ready():
+                return jsonify({'error': 'Payments not configured'}), 503
+
+            data = request.get_json(silent=True) or {}
+            plan_id = data.get('plan_id')
+            billing_cycle = (data.get('billing_cycle') or 'monthly').lower()
+
+            if not plan_id or billing_cycle not in {'monthly', 'yearly'}:
+                return jsonify({'error': 'Invalid request'}), 400
+
+            plan = Plan.query.get(plan_id)
+            if not plan or not plan.is_active:
+                return jsonify({'error': 'Plan not found'}), 404
+
+            # Choose price ID by cycle
+            price_id = plan.stripe_monthly_price_id if billing_cycle == 'monthly' else plan.stripe_yearly_price_id
+            if not price_id:
+                return jsonify({'error': 'Price ID not configured for this plan'}), 400
+
+            # Configure stripe
+            _, secret_key, _ = get_stripe_config()
+            stripe.api_key = secret_key
+
+            # Build success/cancel URLs
+            success_url = url_for('payment_success', _external=True) + '?session_id={CHECKOUT_SESSION_ID}'
+            cancel_url = url_for('plans', _external=True)
+
+            # Create checkout session (subscription)
+            session_args = {
+                'mode': 'subscription',
+                'payment_method_types': ['card'],
+                'line_items': [{'price': price_id, 'quantity': 1}],
+                'success_url': success_url,
+                'cancel_url': cancel_url,
+                'metadata': {
+                    'plan_id': str(plan.id),
+                    'plan_name': plan.name,
+                    'billing_cycle': billing_cycle,
+                },
+            }
+            # Pass customer_email if logged in
+            if current_user.is_authenticated:
+                session_args['customer_email'] = current_user.email  # type: ignore[attr-defined]
+
+            checkout_session = stripe.checkout.Session.create(**session_args)
+            return jsonify({'checkout_url': checkout_session.url})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/payment-success')
+    def payment_success():
+        # Optional: Verify session, show friendly message
+        return render_template('payment_success.html') if os.path.exists(os.path.join(app.root_path, 'templates', 'payment_success.html')) else (
+            "Payment successful. Your subscription is being activated.")
+
+    @app.route('/stripe-webhook', methods=['POST'])
+    def stripe_webhook():
+        # Gracefully no-op if not configured
+        if not is_stripe_ready():
+            return ('', 200)
+
+        payload = request.get_data(as_text=True)
+        sig_header = request.headers.get('Stripe-Signature', '')
+        _, _, webhook_secret = get_stripe_config()
+
+        # If no webhook secret, accept without processing to avoid outages
+        if not webhook_secret:
+            return ('', 200)
+
+        try:
+            event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
+        except Exception:
+            return ('', 400)
+
+        # Handle a few key events (logging only for now)
+        et = event['type']
+        obj = event['data']['object']
+        if et == 'checkout.session.completed':
+            # Subscription created/paid
+            pass
+        elif et == 'invoice.payment_succeeded':
+            pass
+        elif et == 'customer.subscription.deleted':
+            pass
+        # Extend later with DB updates when subscription model is added
+
+        return ('', 200)
 
     with app.app_context():
         db.create_all()

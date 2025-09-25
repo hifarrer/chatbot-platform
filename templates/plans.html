@@ -69,10 +69,15 @@
                             {% endif %}
                         {% else %}
                             <button class="btn {% if plan.name == 'Premium' %}btn-primary{% else %}btn-dark{% endif %} btn-lg w-100" 
-                                    onclick="alert('Payment integration coming soon!')">
+                                    onclick="subscribeToPlan({{ plan.id }}, 'monthly')">
                                 <i class="fas {% if plan.name == 'Premium' %}fa-crown{% else %}fa-diamond{% endif %} me-2"></i>
                                 Upgrade to {{ plan.name }}
                             </button>
+                            {% if plan.yearly_price and plan.yearly_price > 0 and plan.stripe_yearly_price_id %}
+                            <button class="btn btn-outline-secondary btn-sm mt-2 w-100" onclick="subscribeToPlan({{ plan.id }}, 'yearly')">
+                                <i class="fas fa-calendar-alt me-2"></i> Pay yearly (save)
+                            </button>
+                            {% endif %}
                         {% endif %}
                     </div>
                 </div>
@@ -163,6 +168,29 @@
     </div>
 </div>
 
+<script>
+async function subscribeToPlan(planId, billingCycle) {
+    try {
+        const res = await fetch("{{ url_for('create_checkout_session') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plan_id: planId, billing_cycle: billingCycle })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            alert(data.error || 'Unable to start checkout');
+            return;
+        }
+        if (data.checkout_url) {
+            window.location.href = data.checkout_url;
+        } else {
+            alert('Unexpected response from payment system.');
+        }
+    } catch (e) {
+        alert('Payment error: ' + e);
+    }
+}
+</script>
 <style>
 .card {
     transition: transform 0.2s ease-in-out;
