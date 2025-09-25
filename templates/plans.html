@@ -11,6 +11,18 @@
         <p class="lead text-muted">Select the perfect plan for your chatbot needs</p>
     </div>
 
+    <!-- Billing cycle toggle -->
+    <div class="d-flex justify-content-center align-items-center mb-4">
+        <div class="btn-group" role="group" aria-label="Billing toggle">
+            <button type="button" class="btn btn-outline-primary active" id="toggleMonthly" onclick="setBillingCycle('monthly')">
+                Monthly
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="toggleYearly" onclick="setBillingCycle('yearly')">
+                Yearly
+            </button>
+        </div>
+    </div>
+
     <div class="row justify-content-center">
         {% for plan in plans %}
         <div class="col-lg-4 col-md-6 mb-4">
@@ -36,8 +48,9 @@
                         {% if plan.monthly_price == 0 %}
                             <span class="display-4 fw-bold">Free</span>
                         {% else %}
-                            <span class="display-4 fw-bold">${{ "%.0f"|format(plan.monthly_price) }}</span>
-                            <span class="fs-6">/month</span>
+                            <span class="display-4 fw-bold price-monthly">${{ plan.monthly_price }}</span>
+                            <span class="display-4 fw-bold price-yearly d-none">${{ plan.yearly_price }}</span>
+                            <span class="fs-6 cycle-label">/month</span>
                         {% endif %}
                     </div>
                     {% if plan.description %}
@@ -58,13 +71,32 @@
                     
                     <div class="mt-auto">
                         {% if current_user.is_authenticated %}
-                            {% set user_plan = get_user_plan(current_user) %}
-                            {% if user_plan and user_plan.id == plan.id %}
+                            {% if current_user and current_user.is_authenticated and current_user.user_plan and current_user.user_plan.id == plan.id %}
                                 <button class="btn btn-outline-success btn-lg w-100" disabled>
                                     <i class="fas fa-check me-2"></i>Current Plan
                                 </button>
                             {% else %}
-                                {# fall through to buttons below #}
+                                {% if plan.monthly_price != 0 %}
+                                    <button class="btn {% if plan.name == 'Premium' %}btn-primary{% else %}btn-dark{% endif %} btn-lg w-100 upgrade-btn"
+                                            data-plan-id="{{ plan.id }}"
+                                            data-has-monthly="{{ '1' if plan.stripe_monthly_price_id else '0' }}"
+                                            data-has-yearly="{{ '1' if plan.stripe_yearly_price_id else '0' }}"
+                                            onclick="subscribeToPlan({{ plan.id }})">
+                                        <i class="fas {% if plan.name == 'Premium' %}fa-crown{% else %}fa-diamond{% endif %} me-2"></i>
+                                        <span class="upgrade-label">Upgrade to {{ plan.name }}</span>
+                                    </button>
+                                {% endif %}
+                            {% endif %}
+                        {% else %}
+                            {% if plan.monthly_price == 0 %}
+                                <a href="{{ url_for('register') }}" class="btn btn-success btn-lg w-100">
+                                    <i class="fas fa-rocket me-2"></i>Get Started
+                                </a>
+                            {% else %}
+                                <a href="{{ url_for('register') }}" class="btn {% if plan.name == 'Premium' %}btn-primary{% else %}btn-dark{% endif %} btn-lg w-100">
+                                    <i class="fas {% if plan.name == 'Premium' %}fa-crown{% else %}fa-diamond{% endif %} me-2"></i>
+                                    Upgrade to {{ plan.name }}
+                                </a>
                             {% endif %}
                         {% endif %}
                         {% if plan.monthly_price == 0 %}
@@ -78,16 +110,7 @@
                                 </a>
                             {% endif %}
                         {% else %}
-                            <button class="btn {% if plan.name == 'Premium' %}btn-primary{% else %}btn-dark{% endif %} btn-lg w-100" 
-                                    onclick="subscribeToPlan({{ plan.id }}, 'monthly')">
-                                <i class="fas {% if plan.name == 'Premium' %}fa-crown{% else %}fa-diamond{% endif %} me-2"></i>
-                                Upgrade to {{ plan.name }}
-                            </button>
-                            {% if plan.yearly_price and plan.yearly_price > 0 and plan.stripe_yearly_price_id %}
-                            <button class="btn btn-outline-secondary btn-sm mt-2 w-100" onclick="subscribeToPlan({{ plan.id }}, 'yearly')">
-                                <i class="fas fa-calendar-alt me-2"></i> Pay yearly (save)
-                            </button>
-                            {% endif %}
+                            
                         {% endif %}
                     </div>
                 </div>
@@ -179,12 +202,32 @@
 </div>
 
 <script>
-async function subscribeToPlan(planId, billingCycle) {
+let currentBilling = 'monthly';
+
+function setBillingCycle(cycle) {
+    currentBilling = cycle;
+    const monthlyBtn = document.getElementById('toggleMonthly');
+    const yearlyBtn = document.getElementById('toggleYearly');
+    if (cycle === 'monthly') {
+        monthlyBtn.classList.add('active');
+        yearlyBtn.classList.remove('active');
+    } else {
+        yearlyBtn.classList.add('active');
+        monthlyBtn.classList.remove('active');
+    }
+
+    // Toggle visible price and label
+    document.querySelectorAll('.price-monthly').forEach(el => el.classList.toggle('d-none', cycle !== 'monthly'));
+    document.querySelectorAll('.price-yearly').forEach(el => el.classList.toggle('d-none', cycle !== 'yearly'));
+    document.querySelectorAll('.cycle-label').forEach(el => el.textContent = cycle === 'monthly' ? '/month' : '/year');
+}
+
+async function subscribeToPlan(planId) {
     try {
         const res = await fetch("{{ url_for('create_checkout_session') }}", {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ plan_id: planId, billing_cycle: billingCycle })
+            body: JSON.stringify({ plan_id: planId, billing_cycle: currentBilling })
         });
         const data = await res.json();
         if (!res.ok) {
@@ -200,6 +243,9 @@ async function subscribeToPlan(planId, billingCycle) {
         alert('Payment error: ' + e);
     }
 }
+
+// Initialize default state on load
+document.addEventListener('DOMContentLoaded', () => setBillingCycle('monthly'));
 </script>
 <style>
 .card {

@@ -390,6 +390,22 @@ def create_app():
         return chat_service
 
     # Routes
+
+    @app.before_request
+    def attach_user_plan_to_current_user():
+        # Ensure templates like plans can read current_user.user_plan reliably
+        try:
+            if current_user.is_authenticated:
+                try:
+                    current_user.user_plan = get_user_plan(current_user)
+                except Exception:
+                    current_user.user_plan = None
+            else:
+                # Attribute exists but is None when anonymous
+                current_user.user_plan = None
+        except Exception:
+            pass
+
     @app.route('/')
     def index():
         # Get homepage chatbot settings
@@ -657,13 +673,17 @@ Best regards,
     @login_required
     def dashboard():
         chatbots = Chatbot.query.filter_by(user_id=current_user.id).all()
-        user_plan = get_user_plan(current_user)
+        # Attach user_plan attribute for templates that may rely on it
+        try:
+            current_user.user_plan = get_user_plan(current_user)
+        except Exception:
+            current_user.user_plan = None
         current_chatbot_count = len(chatbots)
-        remaining_chatbots = user_plan.chatbot_limit - current_chatbot_count
+        remaining_chatbots = (current_user.user_plan.chatbot_limit - current_chatbot_count) if current_user.user_plan else 0
         
         return render_template('dashboard.html', 
                              chatbots=chatbots,
-                             user_plan=user_plan,
+                             user_plan=current_user.user_plan,
                              current_chatbot_count=current_chatbot_count,
                              remaining_chatbots=remaining_chatbots)
 
@@ -1936,6 +1956,8 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
     def inject_site_settings():
         """Make site settings available in all templates"""
         return dict(site_settings=get_site_settings())
+
+    # Helper injection removed to avoid initialization order issues
 
     # -----------------------------
     # Payments (Stripe) - Guarded
