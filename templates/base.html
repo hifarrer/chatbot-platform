@@ -15,8 +15,8 @@
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
             <a class="navbar-brand" href="{{ url_for('index') }}">
-                {% if site_settings and site_settings.logo_filename %}
-                    <img src="{{ url_for('static', filename='uploads/' + site_settings.logo_filename) }}" 
+                {% if site_settings and (site_settings.logo_filename or site_settings.logo_base64) %}
+                    <img src="{{ get_logo_url(site_settings) }}" 
                          alt="{{ site_settings.site_title }}" height="30" class="me-2">
                 {% else %}
                     <i class="fas fa-robot me-2"></i>

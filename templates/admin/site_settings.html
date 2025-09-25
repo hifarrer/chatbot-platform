@@ -31,10 +31,10 @@
                         <div class="col-12">
                             <label for="logo" class="form-label">Logo</label>
                             <div class="mb-3">
-                                {% if site_settings and site_settings.logo_filename %}
+                                {% if site_settings and (site_settings.logo_filename or site_settings.logo_base64) %}
                                     <div class="current-logo mb-3">
                                         <p class="text-muted mb-2">Current Logo:</p>
-                                        <img src="{{ url_for('static', filename='uploads/' + site_settings.logo_filename) }}" 
+                                        <img src="{{ get_logo_url(site_settings) }}" 
                                              alt="Current Logo" class="img-thumbnail" style="max-height: 100px;">
                                         <div class="mt-2">
                                             <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteLogo()">
@@ -138,8 +138,8 @@
                     
                     <h6 class="mt-3">Logo Preview:</h6>
                     <div class="border rounded p-3 bg-light text-center" id="logo-preview">
-                        {% if site_settings and site_settings.logo_filename %}
-                            <img src="{{ url_for('static', filename='uploads/' + site_settings.logo_filename) }}" 
+                        {% if site_settings and (site_settings.logo_filename or site_settings.logo_base64) %}
+                            <img src="{{ get_logo_url(site_settings) }}" 
                                  alt="Logo Preview" class="img-fluid" style="max-height: 80px;">
                         {% else %}
                             <span class="text-muted">No logo uploaded</span>

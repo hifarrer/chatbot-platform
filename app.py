@@ -116,11 +116,13 @@ class PasswordResetToken(db.Model):
 class SiteSettings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     site_title = db.Column(db.String(255), nullable=False, default='ChatBot Platform')
-    logo_filename = db.Column(db.String(255), nullable=True)
+    logo_filename = db.Column(db.String(255), nullable=True)  # Keep for backward compatibility
+    logo_base64 = db.Column(db.Text, nullable=True)  # Store base64 encoded image
     meta_tags = db.Column(db.Text, nullable=True)  # Comma-separated meta tags
     hero_title = db.Column(db.String(255), nullable=False, default='Build your own AI chatbot')
     hero_subtitle = db.Column(db.Text, nullable=True)
-    hero_icon_filename = db.Column(db.String(255), nullable=True)  # Custom hero icon
+    hero_icon_filename = db.Column(db.String(255), nullable=True)  # Keep for backward compatibility
+    hero_icon_base64 = db.Column(db.Text, nullable=True)  # Store base64 encoded hero icon
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -310,6 +312,41 @@ def set_setting(key, value):
     db.session.commit()
     return setting
 
+def encode_image_to_base64(file):
+    """Convert uploaded file to base64 data URL"""
+    import base64
+    import mimetypes
+    
+    if not file or not file.filename:
+        return None
+    
+    # Get file extension and MIME type
+    file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else 'png'
+    mime_type = mimetypes.guess_type(file.filename)[0] or f'image/{file_ext}'
+    
+    # Read file content and encode
+    file_content = file.read()
+    file.seek(0)  # Reset file pointer for potential future use
+    
+    base64_content = base64.b64encode(file_content).decode('utf-8')
+    return f"data:{mime_type};base64,{base64_content}"
+
+def get_logo_url(site_settings):
+    """Get logo URL - either base64 data URL or file URL"""
+    if site_settings.logo_base64:
+        return site_settings.logo_base64
+    elif site_settings.logo_filename:
+        return url_for('static', filename='uploads/' + site_settings.logo_filename)
+    return None
+
+def get_hero_icon_url(site_settings):
+    """Get hero icon URL - either base64 data URL or file URL"""
+    if site_settings.hero_icon_base64:
+        return site_settings.hero_icon_base64
+    elif site_settings.hero_icon_filename:
+        return url_for('static', filename='uploads/' + site_settings.hero_icon_filename)
+    return None
+
 def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
@@ -341,6 +378,24 @@ def create_app():
         """Get a setting value from the database"""
         setting = Settings.query.filter_by(key=key).first()
         return setting.value if setting else default
+    
+    @app.template_global()
+    def get_logo_url(site_settings):
+        """Get logo URL - either base64 data URL or file URL"""
+        if site_settings and site_settings.logo_base64:
+            return site_settings.logo_base64
+        elif site_settings and site_settings.logo_filename:
+            return url_for('static', filename='uploads/' + site_settings.logo_filename)
+        return None
+    
+    @app.template_global()
+    def get_hero_icon_url(site_settings):
+        """Get hero icon URL - either base64 data URL or file URL"""
+        if site_settings and site_settings.hero_icon_base64:
+            return site_settings.hero_icon_base64
+        elif site_settings and site_settings.hero_icon_filename:
+            return url_for('static', filename='uploads/' + site_settings.hero_icon_filename)
+        return None
     
     # Handle PostgreSQL URL for Render.com
     database_url = os.environ.get('DATABASE_URL', 'sqlite:///chatbot_platform.db')
@@ -1689,55 +1744,27 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
             hero_title = request.form.get('hero_title', '').strip()
             hero_subtitle = request.form.get('hero_subtitle', '').strip()
             
-            # Handle logo upload
+            # Handle logo upload - convert to base64
             logo_file = request.files.get('logo')
-            logo_filename = None
+            logo_base64 = None
             
-            # Handle hero icon upload
+            # Handle hero icon upload - convert to base64
             hero_icon_file = request.files.get('hero_icon')
-            hero_icon_filename = None
+            hero_icon_base64 = None
             
             if logo_file and logo_file.filename:
                 # Check if file is allowed
                 allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'svg'}
                 if '.' in logo_file.filename and \
                    logo_file.filename.rsplit('.', 1)[1].lower() in allowed_extensions:
-                    
-                    # Create uploads directory if it doesn't exist
-                    upload_dir = os.path.join(app.root_path, 'static', 'uploads')
-                    os.makedirs(upload_dir, exist_ok=True)
-                    
-                    # Generate secure filename
-                    filename = secure_filename(logo_file.filename)
-                    # Add timestamp to avoid conflicts
-                    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-                    name, ext = os.path.splitext(filename)
-                    logo_filename = f"{name}_{timestamp}{ext}"
-                    
-                    # Save file
-                    logo_path = os.path.join(upload_dir, logo_filename)
-                    logo_file.save(logo_path)
+                    logo_base64 = encode_image_to_base64(logo_file)
             
             if hero_icon_file and hero_icon_file.filename:
                 # Check if file is allowed
                 allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'svg'}
                 if '.' in hero_icon_file.filename and \
                    hero_icon_file.filename.rsplit('.', 1)[1].lower() in allowed_extensions:
-                    
-                    # Create uploads directory if it doesn't exist
-                    upload_dir = os.path.join(app.root_path, 'static', 'uploads')
-                    os.makedirs(upload_dir, exist_ok=True)
-                    
-                    # Generate secure filename
-                    filename = secure_filename(hero_icon_file.filename)
-                    # Add timestamp to avoid conflicts
-                    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-                    name, ext = os.path.splitext(filename)
-                    hero_icon_filename = f"hero_{name}_{timestamp}{ext}"
-                    
-                    # Save file
-                    hero_icon_path = os.path.join(upload_dir, hero_icon_filename)
-                    hero_icon_file.save(hero_icon_path)
+                    hero_icon_base64 = encode_image_to_base64(hero_icon_file)
             
             # Get or create site settings
             site_settings = SiteSettings.query.filter_by(is_active=True).first()
@@ -1751,21 +1778,15 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
             site_settings.hero_title = hero_title
             site_settings.hero_subtitle = hero_subtitle
             
-            if logo_filename:
-                # Delete old logo if exists
-                if site_settings.logo_filename:
-                    old_logo_path = os.path.join(app.root_path, 'static', 'uploads', site_settings.logo_filename)
-                    if os.path.exists(old_logo_path):
-                        os.remove(old_logo_path)
-                site_settings.logo_filename = logo_filename
+            if logo_base64:
+                # Store base64 logo and clear old filename
+                site_settings.logo_base64 = logo_base64
+                site_settings.logo_filename = None  # Clear old filename
             
-            if hero_icon_filename:
-                # Delete old hero icon if exists
-                if site_settings.hero_icon_filename:
-                    old_hero_icon_path = os.path.join(app.root_path, 'static', 'uploads', site_settings.hero_icon_filename)
-                    if os.path.exists(old_hero_icon_path):
-                        os.remove(old_hero_icon_path)
-                site_settings.hero_icon_filename = hero_icon_filename
+            if hero_icon_base64:
+                # Store base64 hero icon and clear old filename
+                site_settings.hero_icon_base64 = hero_icon_base64
+                site_settings.hero_icon_filename = None  # Clear old filename
             
             db.session.commit()
             
@@ -1780,14 +1801,10 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
     def admin_delete_logo():
         try:
             site_settings = SiteSettings.query.filter_by(is_active=True).first()
-            if site_settings and site_settings.logo_filename:
-                # Delete file from filesystem
-                logo_path = os.path.join(app.root_path, 'static', 'uploads', site_settings.logo_filename)
-                if os.path.exists(logo_path):
-                    os.remove(logo_path)
-                
-                # Update database
+            if site_settings and (site_settings.logo_filename or site_settings.logo_base64):
+                # Clear both filename and base64 data
                 site_settings.logo_filename = None
+                site_settings.logo_base64 = None
                 db.session.commit()
                 
                 return jsonify({'success': True, 'message': 'Logo deleted successfully!'})
@@ -1802,14 +1819,10 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
     def admin_delete_hero_icon():
         try:
             site_settings = SiteSettings.query.filter_by(is_active=True).first()
-            if site_settings and site_settings.hero_icon_filename:
-                # Delete file from filesystem
-                hero_icon_path = os.path.join(app.root_path, 'static', 'uploads', site_settings.hero_icon_filename)
-                if os.path.exists(hero_icon_path):
-                    os.remove(hero_icon_path)
-                
-                # Update database
+            if site_settings and (site_settings.hero_icon_filename or site_settings.hero_icon_base64):
+                # Clear both filename and base64 data
                 site_settings.hero_icon_filename = None
+                site_settings.hero_icon_base64 = None
                 db.session.commit()
                 
                 return jsonify({'success': True, 'message': 'Hero icon deleted successfully!'})
