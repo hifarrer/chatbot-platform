@@ -1,0 +1,20 @@
+[33m20525af[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m, [m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m)[m 09242025 9
+[33m4b5a456[m 09242025 8
+[33macb5c42[m 09242025 7
+[33m10da2ff[m 09242025 6
+[33m4f692bb[m 09242025 5
+[33m50c81ce[m 09242025 4
+[33mc75b93e[m 09242025 1
+[33m50a71f1[m 09232025 6
+[33me786d41[m 09232025 4
+[33m7beb3a5[m 09232025 3
+[33m400ef43[m 09232025 1
+[33m1ae4326[m 09212025 2
+[33md3e0bb3[m 09212025 1
+[33m7b8466a[m readme2
+[33m86971e8[m readme
+[33m2f63264[m Fix embedded chatbot functionality
+[33m2be0986[m Add admin panel, plans page, and system prompt functionality
+[33m963f7d8[m  Major Update: Admin Panel + System Prompts + Enhanced Features
+[33m5a23eff[m Fix similarity threshold in OpenAI chat service for simple text search
+[33mcd6a0a7[m Enhance simple text search for deployment without AI libraries
