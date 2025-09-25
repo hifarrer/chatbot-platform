@@ -57,6 +57,16 @@
                     </ul>
                     
                     <div class="mt-auto">
+                        {% if current_user.is_authenticated %}
+                            {% set user_plan = get_user_plan(current_user) %}
+                            {% if user_plan and user_plan.id == plan.id %}
+                                <button class="btn btn-outline-success btn-lg w-100" disabled>
+                                    <i class="fas fa-check me-2"></i>Current Plan
+                                </button>
+                            {% else %}
+                                {# fall through to buttons below #}
+                            {% endif %}
+                        {% endif %}
                         {% if plan.monthly_price == 0 %}
                             {% if current_user.is_authenticated %}
                                 <button class="btn btn-outline-success btn-lg w-100" disabled>

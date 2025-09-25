@@ -93,6 +93,17 @@ class Settings(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class UserSubscription(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False)
+    stripe_subscription_id = db.Column(db.String(255), nullable=True)
+    status = db.Column(db.String(50), nullable=False, default='active')
+    current_period_end = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class PasswordResetToken(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -138,25 +149,31 @@ class HomepageSection(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-def get_user_plan(user):
-    """Get the user's current plan. For now, return the Free plan as default."""
-    # TODO: Implement user subscription logic when payment system is added
-    # For now, all users get the Free plan
-    free_plan = Plan.query.filter_by(name='Free', is_active=True).first()
-    if not free_plan:
-        # Fallback: create a default free plan if none exists
-        free_plan = Plan(
-            name='Free',
-            description='Free plan for all users',
-            monthly_price=0.0,
-            yearly_price=0.0,
-            chatbot_limit=3,
-            features=json.dumps(['Up to 3 chatbots', 'Basic support']),
-            is_active=True
-        )
-        db.session.add(free_plan)
-        db.session.commit()
-    return free_plan
+    def get_user_plan(user):
+        """Get the user's current plan based on active subscription, else Free."""
+        try:
+            sub = UserSubscription.query.filter_by(user_id=user.id, status='active').order_by(UserSubscription.created_at.desc()).first()
+            if sub:
+                plan = Plan.query.get(sub.plan_id)
+                if plan and plan.is_active:
+                    return plan
+        except Exception:
+            pass
+
+        free_plan = Plan.query.filter_by(name='Free', is_active=True).first()
+        if not free_plan:
+            free_plan = Plan(
+                name='Free',
+                description='Free plan for all users',
+                monthly_price=0.0,
+                yearly_price=0.0,
+                chatbot_limit=3,
+                features=json.dumps(['Up to 3 chatbots', 'Basic support']),
+                is_active=True
+            )
+            db.session.add(free_plan)
+            db.session.commit()
+        return free_plan
 
 
 def get_site_settings():
@@ -1989,10 +2006,58 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
             return jsonify({'error': str(e)}), 500
 
     @app.route('/payment-success')
+    @login_required
     def payment_success():
-        # Optional: Verify session, show friendly message
-        return render_template('payment_success.html') if os.path.exists(os.path.join(app.root_path, 'templates', 'payment_success.html')) else (
-            "Payment successful. Your subscription is being activated.")
+        # Verify session and upsert subscription, then redirect back to plans
+        try:
+            if not is_stripe_ready():
+                flash('Payment processed, but Stripe is not fully configured.', 'warning')
+                return redirect(url_for('plans'))
+
+            session_id = request.args.get('session_id')
+            if not session_id:
+                return redirect(url_for('plans'))
+
+            _, secret_key, _ = get_stripe_config()
+            stripe.api_key = secret_key
+
+            checkout_session = stripe.checkout.Session.retrieve(session_id, expand=['subscription'])
+            if not checkout_session:
+                return redirect(url_for('plans'))
+
+            # Read plan metadata we set when creating the session
+            meta = checkout_session.get('metadata') or {}
+            plan_id_str = meta.get('plan_id')
+            if plan_id_str and plan_id_str.isdigit():
+                plan_id = int(plan_id_str)
+                plan = Plan.query.get(plan_id)
+                if plan:
+                    # Get stripe subscription id if available
+                    sub_id = None
+                    if isinstance(checkout_session.get('subscription'), dict):
+                        sub_id = checkout_session['subscription'].get('id')
+                    elif isinstance(checkout_session.get('subscription'), str):
+                        sub_id = checkout_session['subscription']
+
+                    # Deactivate previous subs
+                    try:
+                        UserSubscription.query.filter_by(user_id=current_user.id, status='active').update({'status': 'canceled'})
+                    except Exception:
+                        pass
+
+                    new_sub = UserSubscription(
+                        user_id=current_user.id,
+                        plan_id=plan.id,
+                        stripe_subscription_id=sub_id,
+                        status='active'
+                    )
+                    db.session.add(new_sub)
+                    db.session.commit()
+
+            flash('Subscription activated successfully.', 'success')
+        except Exception as e:
+            flash(f'Payment processed but could not update subscription: {e}', 'warning')
+        return redirect(url_for('plans'))
 
     @app.route('/stripe-webhook', methods=['POST'])
     def stripe_webhook():
