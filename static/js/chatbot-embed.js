@@ -38,13 +38,13 @@
             const widgetHTML = `
                 <div class="chatbot-widget" id="chatbot-${this.config.embedCode}">
                     <div class="chatbot-toggle" id="chatbot-toggle-${this.config.embedCode}">
+                        <div class="chatbot-toggle-avatar">
+                            ${this.config.avatarUrl ? 
+                                `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
+                                '🤖'
+                            }
+                        </div>
                         <div class="chatbot-toggle-content">
-                            <div class="chatbot-toggle-avatar">
-                                ${this.config.avatarUrl ? 
-                                    `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
-                                    '🤖'
-                                }
-                            </div>
                             <div class="chatbot-toggle-greeting">
                                 ${this.config.greetingMessage || "Need help?"}
                             </div>
@@ -63,11 +63,6 @@
                         <div class="chatbot-toggle-minimize" title="Minimize">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M6 19h12v2H6z"/>
-                            </svg>
-                        </div>
-                        <div class="chatbot-toggle-close-btn" title="Close">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                             </svg>
                         </div>
                     </div>
@@ -178,6 +173,43 @@
                     display: none !important;
                 }
 
+                .chatbot-toggle.minimized-avatar {
+                    width: 60px !important;
+                    height: 60px !important;
+                    min-width: 60px !important;
+                    max-width: 60px !important;
+                    padding: 0 !important;
+                    border-radius: 50% !important;
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                    background: #007bff !important;
+                    box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3) !important;
+                    transition: all 0.3s ease !important;
+                }
+
+                .chatbot-toggle.minimized-avatar:hover {
+                    transform: translateY(-2px) scale(1.05) !important;
+                    box-shadow: 0 6px 20px rgba(0, 123, 255, 0.4) !important;
+                }
+
+                .chatbot-toggle.minimized-avatar .chatbot-toggle-avatar {
+                    width: 50px !important;
+                    height: 50px !important;
+                    background: rgba(255, 255, 255, 0.2) !important;
+                    border-radius: 50% !important;
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                    font-size: 24px !important;
+                }
+
+                .chatbot-toggle.minimized-avatar .chatbot-toggle-avatar img {
+                    width: 100% !important;
+                    height: 100% !important;
+                    border-radius: 50% !important;
+                }
+
                 .chatbot-widget.closed {
                     display: none !important;
                 }
@@ -281,6 +313,7 @@
                     min-width: 280px;
                     max-width: 320px;
                     position: relative;
+                    gap: 12px;
                 }
 
                 .chatbot-toggle:hover {
@@ -292,7 +325,7 @@
                     display: flex;
                     align-items: center;
                     gap: 12px;
-                    width: 100%;
+                    flex: 1;
                 }
 
                 .chatbot-toggle-avatar {
@@ -339,8 +372,7 @@
                     height: 14px;
                 }
 
-                .chatbot-toggle-minimize,
-                .chatbot-toggle-close-btn {
+                .chatbot-toggle-minimize {
                     position: absolute;
                     top: 8px;
                     right: 8px;
@@ -363,14 +395,7 @@
                     opacity: 1;
                 }
 
-                .chatbot-toggle-close-btn:hover {
-                    background: rgba(220, 53, 69, 0.2);
-                    color: #dc3545;
-                    opacity: 1;
-                }
-
-                .chatbot-toggle-minimize svg,
-                .chatbot-toggle-close-btn svg {
+                .chatbot-toggle-minimize svg {
                     width: 14px;
                     height: 14px;
                 }
@@ -782,14 +807,19 @@
             const minimizeBtn = document.querySelector(`#chatbot-window-${this.config.embedCode} .chatbot-minimize-btn`);
             const closeBtn = document.querySelector(`#chatbot-window-${this.config.embedCode} .chatbot-close-btn`);
             const toggleMinimizeBtn = document.querySelector(`#chatbot-toggle-${this.config.embedCode} .chatbot-toggle-minimize`);
-            const toggleCloseBtn = document.querySelector(`#chatbot-toggle-${this.config.embedCode} .chatbot-toggle-close-btn`);
             const restoreBtn = document.getElementById(`chatbot-restore-${this.config.embedCode}`);
             const widget = document.getElementById(`chatbot-${this.config.embedCode}`);
 
             // Toggle chat window
             toggle.addEventListener('click', (e) => {
                 // Don't toggle if clicking on control buttons
-                if (e.target.closest('.chatbot-toggle-minimize') || e.target.closest('.chatbot-toggle-close-btn')) {
+                if (e.target.closest('.chatbot-toggle-minimize')) {
+                    return;
+                }
+                
+                // If minimized (showing only avatar), restore from minimized state
+                if (toggle.classList.contains('minimized-avatar')) {
+                    this.restoreFromMinimized();
                     return;
                 }
                 
@@ -818,7 +848,7 @@
                 });
             }
 
-            // Close button
+            // Close button (in chat window)
             if (closeBtn) {
                 closeBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -831,14 +861,6 @@
                 toggleMinimizeBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.minimizeChat();
-                });
-            }
-
-            // Toggle close button
-            if (toggleCloseBtn) {
-                toggleCloseBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.closeChat();
                 });
             }
 
@@ -994,11 +1016,17 @@
             widget.classList.add('minimized');
             window.style.display = 'none';
             
-            // Show toggle content
+            // Hide toggle content and control buttons, keep avatar visible
             const content = toggle.querySelector('.chatbot-toggle-content');
             const closeIcon = toggle.querySelector('.chatbot-toggle-close');
-            content.style.display = 'flex';
+            const minimizeBtn = toggle.querySelector('.chatbot-toggle-minimize');
+            
+            content.style.display = 'none';
             closeIcon.style.display = 'none';
+            if (minimizeBtn) minimizeBtn.style.display = 'none';
+            
+            // Add circular avatar class for styling
+            toggle.classList.add('minimized-avatar');
         },
 
         closeChat: function() {
@@ -1034,6 +1062,32 @@
                     restoreText.textContent = 'Chat closed';
                 }
             }, 2000);
+        },
+
+        restoreFromMinimized: function() {
+            const widget = document.getElementById(`chatbot-${this.config.embedCode}`);
+            const toggle = document.getElementById(`chatbot-toggle-${this.config.embedCode}`);
+            const window = document.getElementById(`chatbot-window-${this.config.embedCode}`);
+            
+            // Remove minimized state
+            widget.classList.remove('minimized');
+            toggle.classList.remove('minimized-avatar');
+            
+            // Show toggle content and control buttons
+            const content = toggle.querySelector('.chatbot-toggle-content');
+            const minimizeBtn = toggle.querySelector('.chatbot-toggle-minimize');
+            
+            content.style.display = 'flex';
+            if (minimizeBtn) minimizeBtn.style.display = 'flex';
+            
+            // Open the chat window
+            window.style.display = 'flex';
+            
+            // Focus on input
+            const input = document.getElementById(`chatbot-input-${this.config.embedCode}`);
+            if (input) {
+                input.focus();
+            }
         }
     };
 })(); 
