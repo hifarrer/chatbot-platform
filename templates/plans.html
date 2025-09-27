@@ -45,7 +45,9 @@
                         {{ plan.name }}
                     </h3>
                     <div class="mt-3">
-                        {% if plan.monthly_price == 0 %}
+                        {% if plan.show_contact_sales %}
+                            <span class="display-4 fw-bold text-muted">Contact Sales</span>
+                        {% elif plan.monthly_price == 0 %}
                             <span class="display-4 fw-bold">Free</span>
                         {% else %}
                             <span class="display-4 fw-bold price-monthly">${{ plan.monthly_price }}</span>
@@ -76,7 +78,12 @@
                                     <i class="fas fa-check me-2"></i>Current Plan
                                 </button>
                             {% else %}
-                                {% if plan.monthly_price != 0 %}
+                                {% if plan.show_contact_sales %}
+                                    <a href="{{ url_for('contact') }}" class="btn btn-warning btn-lg w-100">
+                                        <i class="fas fa-phone me-2"></i>
+                                        Contact Sales
+                                    </a>
+                                {% elif plan.monthly_price != 0 %}
                                     <button class="btn {% if plan.name == 'Premium' %}btn-primary{% else %}btn-dark{% endif %} btn-lg w-100 upgrade-btn"
                                             data-plan-id="{{ plan.id }}"
                                             data-has-monthly="{{ '1' if plan.stripe_monthly_price_id else '0' }}"
@@ -88,7 +95,12 @@
                                 {% endif %}
                             {% endif %}
                         {% else %}
-                            {% if plan.monthly_price == 0 %}
+                            {% if plan.show_contact_sales %}
+                                <a href="{{ url_for('contact') }}" class="btn btn-warning btn-lg w-100">
+                                    <i class="fas fa-phone me-2"></i>
+                                    Contact Sales
+                                </a>
+                            {% elif plan.monthly_price == 0 %}
                                 <a href="{{ url_for('register') }}" class="btn btn-success btn-lg w-100">
                                     <i class="fas fa-rocket me-2"></i>Get Started
                                 </a>
@@ -96,17 +108,6 @@
                                 <a href="{{ url_for('register') }}" class="btn {% if plan.name == 'Premium' %}btn-primary{% else %}btn-dark{% endif %} btn-lg w-100">
                                     <i class="fas {% if plan.name == 'Premium' %}fa-crown{% else %}fa-diamond{% endif %} me-2"></i>
                                     Upgrade to {{ plan.name }}
-                                </a>
-                            {% endif %}
-                        {% endif %}
-                        {% if plan.monthly_price == 0 %}
-                            {% if current_user.is_authenticated and current_user.user_plan and current_user.user_plan.id == plan.id %}
-                                <button class="btn btn-outline-success btn-lg w-100" disabled>
-                                    <i class="fas fa-check me-2"></i>Current Plan
-                                </button>
-                            {% elif not current_user.is_authenticated %}
-                                <a href="{{ url_for('register') }}" class="btn btn-success btn-lg w-100">
-                                    <i class="fas fa-rocket me-2"></i>Get Started
                                 </a>
                             {% endif %}
                         {% endif %}
@@ -268,4 +269,22 @@ document.addEventListener('DOMContentLoaded', () => setBillingCycle('monthly'));
     border-color: var(--bs-primary);
 }
 </style>
+
+<!-- Platform Assistant Chatbot -->
+<div id="chatbot-container"></div>
+<script src="{{ url_for('static', filename='js/chatbot-embed.js') }}"></script>
+<script>
+window.addEventListener('load', function() {
+    // Initialize the Platform Assistant chatbot
+    ChatbotEmbed.init({
+        embedCode: 'a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb',
+        apiUrl: '{{ request.url_root }}api/chat/a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb',
+        containerId: 'chatbot-container',
+        title: 'Platform Assistant',
+        placeholder: 'Ask me about our pricing plans and features!',
+        theme: 'light',
+        position: 'bottom-right'
+    });
+});
+</script>
 {% endblock %}

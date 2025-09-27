@@ -170,7 +170,7 @@
                 <form action="{{ url_for('upload_document', chatbot_id=chatbot.id) }}" method="POST" enctype="multipart/form-data">
                     <div class="mb-3">
                         <input type="file" class="form-control" name="file" accept=".pdf,.docx,.txt" required>
-                        <div class="form-text">Supported formats: PDF, DOCX, TXT (Max 16MB)</div>
+                        <div class="form-text">Supported formats: PDF, DOCX, TXT (Max {{ current_user.user_plan.file_size_limit_mb }}MB for your {{ current_user.user_plan.name }} plan)</div>
                     </div>
                     <button type="submit" class="btn btn-primary">
                         <i class="fas fa-upload me-2"></i>Upload Document

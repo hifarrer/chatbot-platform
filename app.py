@@ -81,8 +81,10 @@ class Plan(db.Model):
     stripe_monthly_price_id = db.Column(db.String(255))
     stripe_yearly_price_id = db.Column(db.String(255))
     chatbot_limit = db.Column(db.Integer, nullable=False, default=1)
+    file_size_limit_mb = db.Column(db.Integer, nullable=False, default=10)  # File size limit in MB
     features = db.Column(db.Text)  # JSON string of features
     is_active = db.Column(db.Boolean, default=True)
+    show_contact_sales = db.Column(db.Boolean, default=False)  # Show Contact Sales button instead of Stripe checkout
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -930,6 +932,19 @@ Best regards,
             return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
         
         if file and allowed_file(file.filename):
+            # Check file size limit based on user's plan
+            user_plan = get_user_plan(current_user)
+            file_size_limit_bytes = user_plan.file_size_limit_mb * 1024 * 1024  # Convert MB to bytes
+            
+            # Get file size
+            file.seek(0, 2)  # Seek to end of file
+            file_size = file.tell()
+            file.seek(0)  # Reset file pointer
+            
+            if file_size > file_size_limit_bytes:
+                flash(f'File size ({file_size / (1024*1024):.1f}MB) exceeds your plan limit ({user_plan.file_size_limit_mb}MB). Please upgrade your plan or use a smaller file.', 'error')
+                return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+            
             filename = secure_filename(file.filename)
             unique_filename = f"{uuid.uuid4()}_{filename}"
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
@@ -1438,8 +1453,14 @@ Best regards,
         # Get all trained chatbots for selection
         trained_chatbots = Chatbot.query.filter_by(is_trained=True).all()
         
+        # Get current chatbot object if configured
+        current_chatbot = None
+        if current_chatbot_id:
+            current_chatbot = Chatbot.query.get(current_chatbot_id)
+        
         return render_template('admin/settings.html',
                              current_chatbot_id=current_chatbot_id,
+                             current_chatbot=current_chatbot,
                              current_title=current_title,
                              current_placeholder=current_placeholder,
                              current_contact_email=current_contact_email,
@@ -1632,10 +1653,12 @@ The platform is designed to be user-friendly while providing powerful AI capabil
             monthly_price = float(request.form['monthly_price'])
             yearly_price = float(request.form['yearly_price'])
             chatbot_limit = int(request.form['chatbot_limit'])
+            file_size_limit_mb = int(request.form['file_size_limit_mb'])
             stripe_monthly_price_id = request.form.get('stripe_monthly_price_id', '').strip()
             stripe_yearly_price_id = request.form.get('stripe_yearly_price_id', '').strip()
             features_text = request.form.get('features', '')
             is_active = 'is_active' in request.form
+            show_contact_sales = 'show_contact_sales' in request.form
             
             # Convert features text to JSON
             features_list = [feature.strip() for feature in features_text.split('\n') if feature.strip()]
@@ -1647,10 +1670,12 @@ The platform is designed to be user-friendly while providing powerful AI capabil
                 monthly_price=monthly_price,
                 yearly_price=yearly_price,
                 chatbot_limit=chatbot_limit,
+                file_size_limit_mb=file_size_limit_mb,
                 stripe_monthly_price_id=stripe_monthly_price_id if stripe_monthly_price_id else None,
                 stripe_yearly_price_id=stripe_yearly_price_id if stripe_yearly_price_id else None,
                 features=features_json,
-                is_active=is_active
+                is_active=is_active,
+                show_contact_sales=show_contact_sales
             )
             
             db.session.add(plan)
@@ -1672,10 +1697,12 @@ The platform is designed to be user-friendly while providing powerful AI capabil
             plan.monthly_price = float(request.form['monthly_price'])
             plan.yearly_price = float(request.form['yearly_price'])
             plan.chatbot_limit = int(request.form['chatbot_limit'])
+            plan.file_size_limit_mb = int(request.form['file_size_limit_mb'])
             plan.stripe_monthly_price_id = request.form.get('stripe_monthly_price_id', '').strip()
             plan.stripe_yearly_price_id = request.form.get('stripe_yearly_price_id', '').strip()
             features_text = request.form.get('features', '')
             plan.is_active = 'is_active' in request.form
+            plan.show_contact_sales = 'show_contact_sales' in request.form
             
             # Convert features text to JSON
             features_list = [feature.strip() for feature in features_text.split('\n') if feature.strip()]

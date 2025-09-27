@@ -80,10 +80,10 @@
                         <div class="col-12">
                             <label for="hero_icon" class="form-label">Hero Icon</label>
                             <div class="mb-3">
-                                {% if site_settings and site_settings.hero_icon_filename %}
+                                {% if site_settings and (site_settings.hero_icon_filename or site_settings.hero_icon_base64) %}
                                     <div class="current-hero-icon mb-3">
                                         <p class="text-muted mb-2">Current Hero Icon:</p>
-                                        <img src="{{ url_for('static', filename='uploads/' + site_settings.hero_icon_filename) }}" 
+                                        <img src="{{ get_hero_icon_url(site_settings) }}" 
                                              alt="Current Hero Icon" class="img-thumbnail" style="max-height: 100px;">
                                         <div class="mt-2">
                                             <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteHeroIcon()">

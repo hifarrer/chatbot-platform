@@ -240,4 +240,22 @@ document.addEventListener('DOMContentLoaded', function() {
 }
 </style>
 
+<!-- Platform Assistant Chatbot -->
+<div id="chatbot-container"></div>
+<script src="{{ url_for('static', filename='js/chatbot-embed.js') }}"></script>
+<script>
+window.addEventListener('load', function() {
+    // Initialize the Platform Assistant chatbot
+    ChatbotEmbed.init({
+        embedCode: 'a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb',
+        apiUrl: '{{ request.url_root }}api/chat/a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb',
+        containerId: 'chatbot-container',
+        title: 'Platform Assistant',
+        placeholder: 'Ask me about creating and configuring chatbots!',
+        theme: 'light',
+        position: 'bottom-right'
+    });
+});
+</script>
+
 {% endblock %} 

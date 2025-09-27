@@ -205,48 +205,90 @@
                 </h5>
             </div>
             <div class="card-body">
-                {% if current_chatbot_id %}
-                    {% set current_chatbot = trained_chatbots|selectattr('id', 'equalto', current_chatbot_id|int)|first %}
-                    {% if current_chatbot %}
-                        <div class="mb-3">
-                            <strong>Active Chatbot:</strong><br>
-                            <div class="d-flex align-items-center mt-2">
-                                <div class="avatar bg-success text-white rounded-circle d-flex align-items-center justify-content-center me-2" 
-                                     style="width: 32px; height: 32px; font-size: 14px;">
+                {% if current_chatbot %}
+                    <div class="mb-3">
+                        <strong>Active Chatbot:</strong><br>
+                        <div class="d-flex align-items-center mt-2">
+                            <div class="avatar bg-success text-white rounded-circle d-flex align-items-center justify-content-center me-2" 
+                                 style="width: 32px; height: 32px; font-size: 14px;">
+                                {% if current_chatbot.avatar_url %}
+                                    <img src="{{ current_chatbot.avatar_url }}" alt="Avatar" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">
+                                {% else %}
                                     <i class="fas fa-robot"></i>
-                                </div>
-                                <div>
-                                    <div class="fw-bold">{{ current_chatbot.name }}</div>
-                                    <small class="text-muted">by {{ current_chatbot.owner.username }}</small>
-                                </div>
+                                {% endif %}
+                            </div>
+                            <div>
+                                <div class="fw-bold">{{ current_chatbot.name }}</div>
+                                <small class="text-muted">by {{ current_chatbot.owner.username }}</small>
                             </div>
                         </div>
-                        
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>Embed Code:</strong><br>
+                        <code class="small">{{ current_chatbot.embed_code }}</code>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>Training Status:</strong><br>
+                        <span class="badge bg-success">
+                            <i class="fas fa-check me-1"></i>Trained
+                        </span>
+                        <small class="text-muted d-block mt-1">
+                            {{ current_chatbot.documents|length }} document(s),
+                            {{ current_chatbot.conversations|length }} conversation(s)
+                        </small>
+                    </div>
+                    
+                    {% if current_chatbot.system_prompt %}
                         <div class="mb-3">
-                            <strong>Embed Code:</strong><br>
-                            <code class="small">{{ current_chatbot.embed_code }}</code>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <strong>Training Status:</strong><br>
-                            <span class="badge bg-success">
-                                <i class="fas fa-check me-1"></i>Trained
-                            </span>
-                            <small class="text-muted d-block mt-1">
-                                {{ current_chatbot.documents|length }} document(s),
-                                {{ current_chatbot.conversations|length }} conversation(s)
-                            </small>
-                        </div>
-                        
-                        {% if current_chatbot.system_prompt %}
-                            <div class="mb-3">
-                                <strong>System Prompt:</strong><br>
-                                <div class="bg-light p-2 rounded small">
-                                    {{ current_chatbot.system_prompt[:100] }}{% if current_chatbot.system_prompt|length > 100 %}...{% endif %}
-                                </div>
+                            <strong>System Prompt:</strong><br>
+                            <div class="bg-light p-2 rounded small">
+                                {{ current_chatbot.system_prompt[:100] }}{% if current_chatbot.system_prompt|length > 100 %}...{% endif %}
                             </div>
-                        {% endif %}
+                        </div>
                     {% endif %}
+                    
+                    <!-- Avatar and Training Management -->
+                    <div class="mt-4 pt-3 border-top">
+                        <h6 class="mb-3">
+                            <i class="fas fa-cog me-2"></i>
+                            Manage Chatbot
+                        </h6>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Avatar</label>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div class="avatar-preview" style="width: 40px; height: 40px; border-radius: 50%; overflow: hidden; background: #f8f9fa; display: flex; align-items: center; justify-content: center;">
+                                            {% if current_chatbot.avatar_url %}
+                                                <img src="{{ current_chatbot.avatar_url }}" alt="Avatar" style="width: 100%; height: 100%; object-fit: cover;">
+                                            {% else %}
+                                                <i class="fas fa-robot text-muted"></i>
+                                            {% endif %}
+                                        </div>
+                                        <a href="{{ url_for('chatbot_details', chatbot_id=current_chatbot.id) }}" class="btn btn-outline-primary btn-sm">
+                                            <i class="fas fa-edit me-1"></i>
+                                            Update Avatar
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Training Documents</label>
+                                    <div>
+                                        <a href="{{ url_for('chatbot_details', chatbot_id=current_chatbot.id) }}" class="btn btn-outline-success btn-sm">
+                                            <i class="fas fa-upload me-1"></i>
+                                            Upload Documents
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 {% else %}
                     <div class="text-muted text-center py-3">
                         <i class="fas fa-robot fa-2x mb-2"></i>
