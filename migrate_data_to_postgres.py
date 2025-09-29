@@ -174,7 +174,7 @@ def create_sample_data(pg_conn):
         sample_conversations = [
             ('Hello!', 'Hi there! How can I help you today?'),
             ('What can you do?', 'I can answer questions and help with various tasks.'),
-            ('Tell me about the platform', 'This is a chatbot platform that allows you to create AI assistants.')
+            ('Tell me about the platform', 'This is owlbee.ai that allows you to create AI assistants.')
         ]
         
         for user_msg, bot_resp in sample_conversations:

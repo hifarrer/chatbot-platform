@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Application entry point for the Chatbot Platform
+Application entry point for owlbee.ai
 """
 import os
 import sys
@@ -28,7 +28,7 @@ def initialize_app():
             print(f"Created directory: {directory}")
 
 if __name__ == '__main__':
-    print("Starting Chatbot Platform...")
+    print("Starting owlbee.ai...")
     
     try:
         # Check dependencies

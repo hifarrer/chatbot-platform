@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}{{ site_settings.site_title if site_settings else 'ChatBot Platform' }}{% endblock %}</title>
+    <title>{% block title %}{{ site_settings.site_title if site_settings else 'owlbee.ai' }}{% endblock %}</title>
     {% if site_settings and site_settings.meta_tags %}
         <meta name="keywords" content="{{ site_settings.meta_tags }}">
     {% endif %}
@@ -21,7 +21,7 @@
                 {% else %}
                     <i class="fas fa-robot me-2"></i>
                 {% endif %}
-                {{ site_settings.site_title if site_settings else 'ChatBot Platform' }}
+                {{ site_settings.site_title if site_settings else 'owlbee.ai' }}
             </a>
             
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -100,7 +100,7 @@
 
     <footer class="bg-light text-center text-muted py-3 mt-5">
         <div class="container">
-            <p>&copy; 2025 ChatBot Platform. Built with Flask and ❤️</p>
+            <p>&copy; 2025 owlbee.ai. Built with Flask and ❤️</p>
         </div>
     </footer>
 

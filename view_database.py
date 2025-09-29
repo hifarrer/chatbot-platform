@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Database viewer script for the Chatbot Platform
+Database viewer script for owlbee.ai
 Shows all data in the PostgreSQL database in a readable format
 """
 
@@ -11,7 +11,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 def view_database():
-    print("🗄️  Chatbot Platform PostgreSQL Database Viewer")
+    print("🗄️  owlbee.ai PostgreSQL Database Viewer")
     print("=" * 50)
     
     try:

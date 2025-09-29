@@ -66,7 +66,7 @@ def populate_default_faqs():
     # Default FAQ questions
     default_faqs = [
         {
-            'question': 'How much does the ChatBot Platform cost?',
+            'question': 'How much does owlbee.ai cost?',
             'answer': 'The platform itself is free to use! You only need an OpenAI API key for GPT responses, which costs approximately $0.002 per 1000 tokens (very affordable for most use cases).',
             'order': 1
         },

@@ -9,7 +9,7 @@ INSERT INTO "user" (id, username, email, password_hash, created_at) VALUES (4, '
 
 -- Chatbots
 -- =========
-INSERT INTO chatbot (id, name, description, system_prompt, embed_code, user_id, created_at, is_trained) VALUES (2, 'Platform Assistant', 'A helpful assistant for the chatbot platform', 'You are the Platform Assistant for the ChatBot Platform. You are knowledgeable, friendly, and enthusiastic about helping users understand how to create and deploy AI chatbots.', 'a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb', 2, '2025-09-22T03:21:40.884048', true);
+INSERT INTO chatbot (id, name, description, system_prompt, embed_code, user_id, created_at, is_trained) VALUES (2, 'Platform Assistant', 'A helpful assistant for owlbee.ai', 'You are the Platform Assistant for owlbee.ai. You are knowledgeable, friendly, and enthusiastic about helping users understand how to create and deploy AI chatbots.', 'a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb', 2, '2025-09-22T03:21:40.884048', true);
 INSERT INTO chatbot (id, name, description, system_prompt, embed_code, user_id, created_at, is_trained) VALUES (3, 'Customer Support Bot', 'Handles customer support inquiries', 'You are a customer support assistant. Help users with their questions and provide friendly, professional assistance.', 'b91fc8bf-32dc-5c98-cgb5-3c4b1fd7dafc', 3, '2025-09-22T03:21:40.884048', true);
 INSERT INTO chatbot (id, name, description, system_prompt, embed_code, user_id, created_at, is_trained) VALUES (4, 'FAQ Bot', 'Answers frequently asked questions', 'You are an FAQ assistant. Provide clear and concise answers to common questions.', 'c02gd9cg-43ed-6da9-dhc6-4d5c2ge8ebgd', 4, '2025-09-22T03:21:40.884048', false);
 

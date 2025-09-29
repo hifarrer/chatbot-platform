@@ -1,5 +1,5 @@
 @echo off
-echo 🤖 ChatBot Platform Setup for Windows
+echo 🤖 owlbee.ai Setup for Windows
 echo =====================================
 
 echo.

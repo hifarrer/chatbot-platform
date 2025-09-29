@@ -1,4 +1,4 @@
-// Main JavaScript for ChatBot Platform
+// Main JavaScript for owlbee.ai
 
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize tooltips

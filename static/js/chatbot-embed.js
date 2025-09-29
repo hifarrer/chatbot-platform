@@ -148,7 +148,7 @@
                         </div>
                         
                         <div class="chatbot-footer">
-                            <small>Powered by ChatBot Platform</small>
+                            <small>Powered by owlbee.ai</small>
                         </div>
                     </div>
                 </div>

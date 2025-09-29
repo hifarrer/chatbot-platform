@@ -1,1 +1,1 @@
-# Services package for the chatbot platform 
+# Services package for owlbee.ai 

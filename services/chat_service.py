@@ -331,9 +331,9 @@ class ChatService:
             context_info = "I can help with product information, pricing, and purchase decisions."
         elif "platform" in system_prompt.lower() and "chatbot" in system_prompt.lower():
             role_phrases = [
-                "I'm the Platform Assistant, here to help you with the ChatBot Platform.",
+                "I'm the Platform Assistant, here to help you with owlbee.ai.",
                 "As your Platform Assistant, I can guide you through creating and managing chatbots.",
-                "I'm here to help you make the most of the ChatBot Platform."
+                "I'm here to help you make the most of owlbee.ai."
             ]
             context_info = "I can help with creating chatbots, uploading documents, training, embedding, and platform features."
         else:
