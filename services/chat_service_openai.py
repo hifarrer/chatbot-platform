@@ -155,6 +155,12 @@ INSTRUCTIONS:
 5. Keep your answers concise but complete
 6. If you see Q&A pairs in the context, use them to inform your responses
 7. If multiple pieces of context are relevant, synthesize them into a coherent answer
+8. IMPORTANT: After providing your answer, always end with a follow-up question to encourage continued conversation. Use phrases like:
+   - "May I help you with anything else?"
+   - "Have I answered all of your questions?"
+   - "Is there anything else you'd like to know about this topic?"
+   - "Would you like me to explain anything else?"
+   - "Do you have any other questions?"
 
 Remember: Stay in character as defined in your role, and prioritize information from the training documents when available."""
         else:
@@ -167,6 +173,12 @@ INSTRUCTIONS:
 3. Use your general knowledge to answer questions while staying in character
 4. Keep your answers concise but complete
 5. If you don't know something specific to your role, say so politely
+6. IMPORTANT: After providing your answer, always end with a follow-up question to encourage continued conversation. Use phrases like:
+   - "May I help you with anything else?"
+   - "Have I answered all of your questions?"
+   - "Is there anything else you'd like to know about this topic?"
+   - "Would you like me to explain anything else?"
+   - "Do you have any other questions?"
 
 Remember: Stay in character as defined in your role."""
 
