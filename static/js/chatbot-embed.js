@@ -165,7 +165,7 @@
                     position: fixed;
                     bottom: 20px;
                     right: 20px;
-                    z-index: 9999;
+                    z-index: 999999;
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                 }
 
@@ -231,6 +231,7 @@
                     min-width: 200px;
                     max-width: 250px;
                     animation: slideInRestore 0.3s ease-out;
+                    z-index: 1000000;
                 }
 
                 .chatbot-restore:hover {
@@ -413,6 +414,7 @@
                     flex-direction: column;
                     overflow: hidden;
                     animation: slideUp 0.3s ease-out;
+                    z-index: 1000000;
                 }
 
                 @keyframes slideUp {
@@ -1031,8 +1033,17 @@
 
         closeChat: function() {
             const widget = document.getElementById(`chatbot-${this.config.embedCode}`);
+            const window = document.getElementById(`chatbot-window-${this.config.embedCode}`);
+            const toggle = document.getElementById(`chatbot-toggle-${this.config.embedCode}`);
             const restore = document.getElementById(`chatbot-restore-${this.config.embedCode}`);
             
+            // Hide the chat window
+            window.style.display = 'none';
+            
+            // Hide the toggle button
+            toggle.style.display = 'none';
+            
+            // Add closed class to widget
             widget.classList.add('closed');
             
             // Show restore button after a short delay
@@ -1045,6 +1056,7 @@
             const widget = document.getElementById(`chatbot-${this.config.embedCode}`);
             const restore = document.getElementById(`chatbot-restore-${this.config.embedCode}`);
             const toggle = document.getElementById(`chatbot-toggle-${this.config.embedCode}`);
+            const window = document.getElementById(`chatbot-window-${this.config.embedCode}`);
             const restoreText = restore.querySelector('.chatbot-restore-text span');
             
             // Update text to show it's being restored
@@ -1052,9 +1064,13 @@
                 restoreText.textContent = 'Chat reopened';
             }
             
+            // Remove closed class and show toggle
             widget.classList.remove('closed');
             restore.style.display = 'none';
             toggle.style.display = 'flex';
+            
+            // Make sure the chat window is hidden initially
+            window.style.display = 'none';
             
             // Reset text back to "Chat closed" after a delay
             setTimeout(() => {

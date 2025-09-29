@@ -946,21 +946,50 @@ Best regards,
                 return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
             
             filename = secure_filename(file.filename)
-            unique_filename = f"{uuid.uuid4()}_{filename}"
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-            file.save(file_path)
             
-            document = Document(
-                filename=unique_filename,
-                original_filename=filename,
-                file_path=file_path,
+            # Check if a document with the same original filename already exists for this chatbot
+            existing_document = Document.query.filter_by(
+                original_filename=filename, 
                 chatbot_id=chatbot_id
-            )
+            ).first()
             
-            db.session.add(document)
-            db.session.commit()
-            
-            flash('Document uploaded successfully!')
+            if existing_document:
+                # Delete the old file from filesystem
+                try:
+                    if os.path.exists(existing_document.file_path):
+                        os.remove(existing_document.file_path)
+                except OSError:
+                    pass  # File might already be deleted, continue
+                
+                # Update the existing document record
+                unique_filename = f"{uuid.uuid4()}_{filename}"
+                file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+                file.save(file_path)
+                
+                existing_document.filename = unique_filename
+                existing_document.file_path = file_path
+                existing_document.uploaded_at = datetime.utcnow()
+                existing_document.processed = False  # Mark as unprocessed so it gets retrained
+                
+                db.session.commit()
+                flash(f'Document "{filename}" has been updated successfully!')
+            else:
+                # Create new document
+                unique_filename = f"{uuid.uuid4()}_{filename}"
+                file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+                file.save(file_path)
+                
+                document = Document(
+                    filename=unique_filename,
+                    original_filename=filename,
+                    file_path=file_path,
+                    chatbot_id=chatbot_id
+                )
+                
+                db.session.add(document)
+                db.session.commit()
+                
+                flash('Document uploaded successfully!')
         else:
             flash('Invalid file type. Please upload PDF, DOCX, or TXT files.')
         
