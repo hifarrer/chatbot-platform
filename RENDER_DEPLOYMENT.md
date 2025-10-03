@@ -35,7 +35,15 @@
 Render will auto-generate most variables, but you can add:
 ```
 OPENAI_API_KEY=your-openai-api-key-here (optional)
+RENDER_DISK_PATH=/uploads (if using persistent disk)
 ```
+
+### **3.1. Persistent File Storage (Optional)**
+If you need persistent file storage (recommended for production):
+1. Add a **Disk** to your Render service
+2. Set the disk path to `/uploads`
+3. Add environment variable: `RENDER_DISK_PATH=/uploads`
+4. Files will persist across deployments
 
 ### **4. Database Setup**
 Render will automatically:

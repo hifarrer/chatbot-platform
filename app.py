@@ -405,7 +405,14 @@ def create_app():
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['UPLOAD_FOLDER'] = 'uploads'
+    # Use Render disk path if available, otherwise fallback to local uploads
+    render_disk_path = os.environ.get('RENDER_DISK_PATH', '/uploads')
+    if os.path.exists(render_disk_path):
+        app.config['UPLOAD_FOLDER'] = render_disk_path
+        print(f"✅ Using Render disk: {render_disk_path}")
+    else:
+        app.config['UPLOAD_FOLDER'] = 'uploads'
+        print(f"⚠️  Render disk not found at {render_disk_path}, using local: uploads")
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
     # Create upload directory if it doesn't exist
@@ -964,32 +971,50 @@ Best regards,
                 # Update the existing document record
                 unique_filename = f"{uuid.uuid4()}_{filename}"
                 file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-                file.save(file_path)
                 
-                existing_document.filename = unique_filename
-                existing_document.file_path = file_path
-                existing_document.uploaded_at = datetime.utcnow()
-                existing_document.processed = False  # Mark as unprocessed so it gets retrained
-                
-                db.session.commit()
-                flash(f'Document "{filename}" has been updated successfully!')
+                try:
+                    file.save(file_path)
+                    # Verify file was actually saved
+                    if not os.path.exists(file_path):
+                        raise OSError("File save failed - file not found after save")
+                    
+                    existing_document.filename = unique_filename
+                    existing_document.file_path = file_path
+                    existing_document.uploaded_at = datetime.utcnow()
+                    existing_document.processed = False  # Mark as unprocessed so it gets retrained
+                    
+                    db.session.commit()
+                    flash(f'Document "{filename}" has been updated successfully!')
+                except Exception as e:
+                    db.session.rollback()
+                    flash(f'Error saving file: {str(e)}. Please try again.')
+                    return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
             else:
                 # Create new document
                 unique_filename = f"{uuid.uuid4()}_{filename}"
                 file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-                file.save(file_path)
                 
-                document = Document(
-                    filename=unique_filename,
-                    original_filename=filename,
-                    file_path=file_path,
-                    chatbot_id=chatbot_id
-                )
-                
-                db.session.add(document)
-                db.session.commit()
-                
-                flash('Document uploaded successfully!')
+                try:
+                    file.save(file_path)
+                    # Verify file was actually saved
+                    if not os.path.exists(file_path):
+                        raise OSError("File save failed - file not found after save")
+                    
+                    document = Document(
+                        filename=unique_filename,
+                        original_filename=filename,
+                        file_path=file_path,
+                        chatbot_id=chatbot_id
+                    )
+                    
+                    db.session.add(document)
+                    db.session.commit()
+                    
+                    flash('Document uploaded successfully!')
+                except Exception as e:
+                    db.session.rollback()
+                    flash(f'Error saving file: {str(e)}. Please try again.')
+                    return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
         else:
             flash('Invalid file type. Please upload PDF, DOCX, or TXT files.')
         
