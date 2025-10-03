@@ -50,9 +50,14 @@ class ChatServiceOpenAI:
         system_prompt = self._create_system_prompt(context, chatbot.system_prompt)
         
         try:
+            # Get the selected model from database settings
+            from app import get_setting
+            selected_model = get_setting('openai_model', 'gpt-3.5-turbo')
+            print(f"🤖 DEBUG: Using OpenAI model: {selected_model}")
+            
             # Call OpenAI API using the new v1.0+ syntax
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model=selected_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message}

@@ -20,10 +20,10 @@ def migrate_database():
             break
     
     if not db_path:
-        print("✅ No existing database found - new installations will have the Settings table automatically")
+        print("No existing database found - new installations will have the Settings table automatically")
         return
     
-    print("🗄️  Migrating database to add Settings table...")
+    print("Migrating database to add Settings table...")
     
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -32,11 +32,11 @@ def migrate_database():
         # Check if Settings table already exists
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'")
         if cursor.fetchone():
-            print("✅ Settings table already exists!")
+            print("Settings table already exists!")
             return
         
         # Create the Settings table
-        print("📝 Creating Settings table...")
+        print("Creating Settings table...")
         cursor.execute("""
             CREATE TABLE settings (
                 id INTEGER PRIMARY KEY,
@@ -57,19 +57,19 @@ def migrate_database():
             cursor.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (key, value))
         
         conn.commit()
-        print("✅ Migration completed successfully!")
+        print("Migration completed successfully!")
         
         # Show created settings
         cursor.execute("SELECT key, value FROM settings")
         settings = cursor.fetchall()
         
-        print(f"\n📊 Created {len(settings)} default settings:")
+        print(f"\nCreated {len(settings)} default settings:")
         for setting in settings:
             value_display = setting[1] if setting[1] else 'NULL'
             print(f"  - {setting[0]}: {value_display}")
             
     except sqlite3.Error as e:
-        print(f"❌ Migration failed: {e}")
+        print(f"Migration failed: {e}")
         conn.rollback()
     
     finally:

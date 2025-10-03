@@ -1503,6 +1503,9 @@ Best regards,
             stripe_secret_key = request.form.get('stripe_secret_key', '').strip()
             stripe_webhook_secret = request.form.get('stripe_webhook_secret', '').strip()
             
+            # Update OpenAI model settings
+            openai_model = request.form.get('openai_model', 'gpt-3.5-turbo').strip()
+            
             # Save homepage settings
             set_setting('homepage_chatbot_id', homepage_chatbot_id)
             set_setting('homepage_chatbot_title', homepage_chatbot_title)
@@ -1518,6 +1521,9 @@ Best regards,
             set_setting('stripe_publishable_key', stripe_publishable_key)
             set_setting('stripe_secret_key', stripe_secret_key)
             set_setting('stripe_webhook_secret', stripe_webhook_secret)
+            
+            # Save OpenAI model setting
+            set_setting('openai_model', openai_model)
             
             flash('Settings updated successfully!')
             return redirect(url_for('admin_settings'))
@@ -1537,6 +1543,9 @@ Best regards,
         current_stripe_publishable_key = get_setting('stripe_publishable_key', '')
         current_stripe_secret_key = get_setting('stripe_secret_key', '')
         current_stripe_webhook_secret = get_setting('stripe_webhook_secret', '')
+        
+        # Get current OpenAI model setting
+        current_openai_model = get_setting('openai_model', 'gpt-3.5-turbo')
         
         # Get all trained chatbots for selection
         trained_chatbots = Chatbot.query.filter_by(is_trained=True).all()
@@ -1558,6 +1567,7 @@ Best regards,
                              current_stripe_publishable_key=current_stripe_publishable_key,
                              current_stripe_secret_key=current_stripe_secret_key,
                              current_stripe_webhook_secret=current_stripe_webhook_secret,
+                             current_openai_model=current_openai_model,
                              trained_chatbots=trained_chatbots)
 
     def allowed_file(filename):
