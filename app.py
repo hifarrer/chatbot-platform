@@ -441,8 +441,8 @@ def create_app():
             try:
                 chat_service = ChatServiceOpenAI()
             except ValueError as e:
-                print(f"⚠️ WARNING: {e}")
-                print("💡 OpenAI service not available. Some features may be limited.")
+                print(f"WARNING: {e}")
+                print("INFO: OpenAI service not available. Some features may be limited.")
                 return None
         return chat_service
 
@@ -1103,11 +1103,11 @@ Best regards,
             # Import and use the ChatService for better response handling
             try:
                 from services.chat_service import ChatService
-                print(f"✅ Successfully imported ChatService")
+                print(f"[OK] Successfully imported ChatService")
                 chat_service = ChatService()
-                print(f"✅ Successfully created ChatService instance")
+                print(f"[OK] Successfully created ChatService instance")
             except Exception as e:
-                print(f"❌ Failed to import/create ChatService: {e}")
+                print(f"[ERROR] Failed to import/create ChatService: {e}")
                 import traceback
                 traceback.print_exc()
                 return jsonify({'error': f'Service initialization failed: {str(e)}'}), 500
@@ -1118,23 +1118,23 @@ Best regards,
                 try:
                     print(f"🔄 Trying OpenAI service")
                     response = openai_service.get_response(chatbot.id, user_message)
-                    print(f"✅ OpenAI response generated")
+                    print(f"[OK] OpenAI response generated")
                 except Exception as e:
-                    print(f"⚠️ OpenAI service failed: {e}, falling back to local chat service")
+                    print(f"[WARNING] OpenAI service failed: {e}, falling back to local chat service")
                     try:
                         response = chat_service.get_response(chatbot.id, user_message)
-                        print(f"✅ Local chat service response generated")
+                        print(f"[OK] Local chat service response generated")
                     except Exception as e2:
-                        print(f"❌ Local chat service also failed: {e2}")
+                        print(f"[ERROR] Local chat service also failed: {e2}")
                         return jsonify({'error': f'Both services failed. OpenAI: {str(e)}, Local: {str(e2)}'}), 500
             else:
                 # Use local chat service (better than direct trainer)
                 print(f"🔄 Using local chat service")
                 try:
                     response = chat_service.get_response(chatbot.id, user_message)
-                    print(f"✅ Local chat service response generated")
+                    print(f"[OK] Local chat service response generated")
                 except Exception as e:
-                    print(f"❌ Local chat service failed: {e}")
+                    print(f"[ERROR] Local chat service failed: {e}")
                     import traceback
                     traceback.print_exc()
                     return jsonify({'error': f'Chat service failed: {str(e)}'}), 500
@@ -1156,8 +1156,8 @@ Best regards,
             return jsonify({'response': response})
             
         except Exception as e:
-            print(f"❌ Chat API Error: {str(e)}")
-            print(f"❌ Error type: {type(e).__name__}")
+            print(f"[ERROR] Chat API Error: {str(e)}")
+            print(f"[ERROR] Error type: {type(e).__name__}")
             import traceback
             traceback.print_exc()
             
@@ -1512,7 +1512,7 @@ Best regards,
         # Check if demo chatbot already exists
         existing_chatbot = Chatbot.query.filter_by(embed_code=demo_embed_code).first()
         if existing_chatbot and existing_chatbot.is_trained:
-            print(f"✅ Demo chatbot already exists and is trained: {demo_embed_code}")
+            print(f"[OK] Demo chatbot already exists and is trained: {demo_embed_code}")
             return existing_chatbot
         
         # Create demo user if doesn't exist
@@ -1657,9 +1657,9 @@ The platform is designed to be user-friendly while providing powerful AI capabil
             chatbot_trainer.train_chatbot(demo_chatbot.id, demo_content)
             demo_chatbot.is_trained = True
             db.session.commit()
-            print(f"✅ Demo chatbot created and trained with embed code: {demo_embed_code}")
+            print(f"[OK] Demo chatbot created and trained with embed code: {demo_embed_code}")
         except Exception as e:
-            print(f"⚠️ Demo chatbot created but training failed: {e}")
+            print(f"[WARNING] Demo chatbot created but training failed: {e}")
             import traceback
             traceback.print_exc()
         
@@ -2227,6 +2227,6 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
         try:
             create_demo_chatbot_internal()
         except Exception as e:
-            print(f"⚠️ Failed to create demo chatbot: {e}")
+            print(f"[WARNING] Failed to create demo chatbot: {e}")
     
     return app 

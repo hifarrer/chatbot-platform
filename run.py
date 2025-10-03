@@ -13,10 +13,10 @@ def check_dependencies():
     try:
         import flask
         import flask_sqlalchemy
-        print("✅ Core dependencies available")
+        print("Core dependencies available")
         return True
     except ImportError as e:
-        print(f"❌ Missing critical dependency: {e}")
+        print(f"Missing critical dependency: {e}")
         return False
 
 def initialize_app():

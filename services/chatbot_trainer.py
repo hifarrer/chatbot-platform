@@ -10,7 +10,7 @@ try:
     AI_AVAILABLE = True
 except ImportError:
     AI_AVAILABLE = False
-    print("⚠️ WARNING: AI libraries not available. Using OpenAI-only mode.")
+    print("WARNING: AI libraries not available. Using OpenAI-only mode.")
 
 class ChatbotTrainer:
     def __init__(self):
