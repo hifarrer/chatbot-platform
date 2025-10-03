@@ -1031,14 +1031,25 @@ Best regards,
         document = Document.query.get_or_404(document_id)
         chatbot = Chatbot.query.filter_by(id=document.chatbot_id, user_id=current_user.id).first_or_404()
         
+        # Handle both absolute and relative file paths
+        file_path = document.file_path
+        if not os.path.isabs(file_path):
+            # If it's a relative path, make it relative to the app root
+            file_path = os.path.join(os.getcwd(), file_path)
+        
         # Check if file exists
-        if not os.path.exists(document.file_path):
-            flash('File not found on server.')
-            return redirect(url_for('chatbot_details', chatbot_id=chatbot.id))
+        if not os.path.exists(file_path):
+            # Try alternative path resolution
+            alt_path = os.path.join(app.config['UPLOAD_FOLDER'], document.filename)
+            if os.path.exists(alt_path):
+                file_path = alt_path
+            else:
+                flash(f'File not found on server. Please re-upload the document.')
+                return redirect(url_for('chatbot_details', chatbot_id=chatbot.id))
         
         try:
             return send_file(
-                document.file_path,
+                file_path,
                 as_attachment=True,
                 download_name=document.original_filename,
                 mimetype='application/octet-stream'
