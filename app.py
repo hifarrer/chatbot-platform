@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, session
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, send_file, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_cors import CORS
@@ -1023,6 +1023,29 @@ Best regards,
             flash(f'Error deleting document: {str(e)}')
         
         return redirect(url_for('chatbot_details', chatbot_id=chatbot.id))
+
+    @app.route('/download_document/<int:document_id>')
+    @login_required
+    def download_document(document_id):
+        # Get the document and verify ownership
+        document = Document.query.get_or_404(document_id)
+        chatbot = Chatbot.query.filter_by(id=document.chatbot_id, user_id=current_user.id).first_or_404()
+        
+        # Check if file exists
+        if not os.path.exists(document.file_path):
+            flash('File not found on server.')
+            return redirect(url_for('chatbot_details', chatbot_id=chatbot.id))
+        
+        try:
+            return send_file(
+                document.file_path,
+                as_attachment=True,
+                download_name=document.original_filename,
+                mimetype='application/octet-stream'
+            )
+        except Exception as e:
+            flash(f'Error downloading file: {str(e)}')
+            return redirect(url_for('chatbot_details', chatbot_id=chatbot.id))
 
     @app.route('/train_chatbot/<int:chatbot_id>', methods=['POST'])
     @login_required
