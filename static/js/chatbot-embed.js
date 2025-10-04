@@ -20,6 +20,9 @@
                 ...config
             };
 
+            // Initialize conversation tracking
+            this.conversationId = null;
+
             this.createChatWidget();
             this.attachEventListeners();
         },
@@ -900,13 +903,23 @@
             // Show typing indicator
             this.showTyping();
 
+            // Prepare request data with conversation ID
+            const requestData = { 
+                message: message 
+            };
+            
+            // Add conversation ID if it exists
+            if (this.conversationId) {
+                requestData.conversation_id = this.conversationId;
+            }
+
             // Send to API
             fetch(this.config.apiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ message: message })
+                body: JSON.stringify(requestData)
             })
             .then(response => response.json())
             .then(data => {
@@ -914,6 +927,12 @@
                 // Handle undefined, null, or empty responses
                 const botResponse = data.response || data.error || 'Sorry, I encountered an issue. Please try again.';
                 this.addMessage(botResponse, 'bot');
+                
+                // Store conversation ID for future messages
+                if (data.conversation_id) {
+                    this.conversationId = data.conversation_id;
+                    console.log('Conversation ID stored:', this.conversationId);
+                }
             })
             .catch(error => {
                 this.hideTyping();

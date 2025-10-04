@@ -20,12 +20,15 @@ class ChatServiceOpenAI:
             "I don't have enough information in my training data to answer that question accurately.",
             "Could you please ask something related to the documents I've been trained on?",
         ]
+        
+        # Track conversation context for Responses API
+        self.conversation_contexts = {}
     
-    def get_response(self, chatbot_id, user_message):
+    def get_response(self, chatbot_id, user_message, conversation_id=None):
         """
-        Generate a response using OpenAI GPT with context from training data
+        Generate a response using OpenAI Responses API with built-in memory
         """
-        print(f"🤖 DEBUG: Processing OpenAI request for chatbot {chatbot_id}: '{user_message}'")
+        print(f"🤖 DEBUG: Processing OpenAI Responses API request for chatbot {chatbot_id}: '{user_message}'")
         
         # Get chatbot info for custom system prompt
         from app import Chatbot
@@ -33,7 +36,7 @@ class ChatServiceOpenAI:
         if not chatbot:
             return "Chatbot not found."
         
-        # Get relevant context from training data
+        # Get relevant context from training data (only for initial setup)
         context = self._get_relevant_context(chatbot_id, user_message)
         
         # Allow chatbot to work even without documents if it has a custom prompt
@@ -46,8 +49,8 @@ class ChatServiceOpenAI:
         else:
             print("📄 DEBUG: No document context, using custom prompt only")
         
-        # Create the prompt for OpenAI using chatbot's custom system prompt
-        system_prompt = self._create_system_prompt(context, chatbot.system_prompt)
+        # Create the system prompt for OpenAI using chatbot's custom system prompt
+        system_prompt = self._create_system_prompt_for_responses(context, chatbot.system_prompt)
         
         try:
             # Get the selected model from database settings
@@ -56,26 +59,41 @@ class ChatServiceOpenAI:
             selected_model = setting.value if setting else 'gpt-3.5-turbo'
             print(f"🤖 DEBUG: Using OpenAI model: {selected_model}")
             
-            # Call OpenAI API using the new v1.0+ syntax
-            response = self.client.chat.completions.create(
-                model=selected_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message}
-                ],
-                max_tokens=500,
-                temperature=0.7,
-                top_p=1.0,
-                frequency_penalty=0.0,
-                presence_penalty=0.0
-            )
+            # Prepare the input for Responses API
+            input_text = f"{system_prompt}\n\nUser: {user_message}"
             
-            answer = response.choices[0].message.content.strip()
+            # Check if this is a continuation of a conversation
+            previous_response_id = None
+            if conversation_id and conversation_id in self.conversation_contexts:
+                previous_response_id = self.conversation_contexts[conversation_id]
+                print(f"🔄 DEBUG: Continuing conversation with previous_response_id: {previous_response_id}")
+            else:
+                print(f"🆕 DEBUG: Starting new conversation")
+            
+            # Call OpenAI Responses API
+            if previous_response_id:
+                response = self.client.responses.create(
+                    model=selected_model,
+                    previous_response_id=previous_response_id,
+                    input=input_text
+                )
+            else:
+                response = self.client.responses.create(
+                    model=selected_model,
+                    input=input_text
+                )
+            
+            # Store the response ID for future conversation continuity
+            if conversation_id:
+                self.conversation_contexts[conversation_id] = response.id
+                print(f"💾 DEBUG: Stored response_id {response.id} for conversation {conversation_id}")
+            
+            answer = response.output_text.strip()
             print(f"✅ DEBUG: OpenAI response generated: {answer[:100]}...")
             return answer
             
         except Exception as e:
-            print(f"❌ DEBUG: OpenAI API error: {e}")
+            print(f"❌ DEBUG: OpenAI Responses API error: {e}")
             
             # Fallback to local similarity matching if OpenAI fails
             similar_content = self.trainer.find_similar_content(chatbot_id, user_message, top_k=1)
@@ -138,9 +156,10 @@ class ChatServiceOpenAI:
         
         return context_passages
     
-    def _create_system_prompt(self, context_passages, custom_prompt=None):
+    def _create_system_prompt_for_responses(self, context_passages, custom_prompt=None):
         """
-        Create a system prompt for OpenAI with the relevant context and custom prompt
+        Create a system prompt for OpenAI Responses API with the relevant context and custom prompt
+        This is optimized for the Responses API format
         """
         # Use custom prompt if provided, otherwise use default
         base_prompt = custom_prompt or "You are a helpful AI assistant trained on specific documents. Your job is to answer questions based on the information provided in the context below."
@@ -150,7 +169,7 @@ class ChatServiceOpenAI:
             
             system_prompt = f"""{base_prompt}
 
-CONTEXT FROM TRAINING DOCUMENTS:
+TRAINING DOCUMENTS CONTEXT:
 {context_text}
 
 CRITICAL INSTRUCTIONS - TRAINING DOCUMENT PRIORITY:
@@ -202,6 +221,14 @@ TRAINING DOCUMENT PRIORITY:
 Remember: Stay in character as defined in your role."""
 
         return system_prompt
+    
+    def clear_conversation_context(self, conversation_id):
+        """
+        Clear conversation context for a specific conversation
+        """
+        if conversation_id in self.conversation_contexts:
+            del self.conversation_contexts[conversation_id]
+            print(f"🗑️ DEBUG: Cleared conversation context for {conversation_id}")
     
     def is_greeting(self, message):
         """

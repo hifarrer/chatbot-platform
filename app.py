@@ -1153,9 +1153,17 @@ Best regards,
                 return jsonify({'error': 'No data received'}), 400
                 
             user_message = data.get('message', '').strip()
+            conversation_id = data.get('conversation_id', None)
             
             if not user_message:
                 return jsonify({'error': 'Message is required'}), 400
+            
+            # Generate conversation ID if not provided (for new conversations)
+            if not conversation_id:
+                conversation_id = str(uuid.uuid4())
+                print(f"🆕 DEBUG: Generated new conversation ID: {conversation_id}")
+            else:
+                print(f"🔄 DEBUG: Continuing conversation: {conversation_id}")
             
             print(f"🤖 Chat API: Processing message for chatbot {chatbot.id}: '{user_message}'")
             
@@ -1176,7 +1184,7 @@ Best regards,
             if openai_service and hasattr(openai_service, 'get_response'):
                 try:
                     print(f"🔄 Trying OpenAI service")
-                    response = openai_service.get_response(chatbot.id, user_message)
+                    response = openai_service.get_response(chatbot.id, user_message, conversation_id)
                     print(f"[OK] OpenAI response generated")
                 except Exception as e:
                     print(f"[WARNING] OpenAI service failed: {e}, falling back to local chat service")
@@ -1212,7 +1220,7 @@ Best regards,
             db.session.commit()
             
             print(f"💬 Response: {response[:100]}...")
-            return jsonify({'response': response})
+            return jsonify({'response': response, 'conversation_id': conversation_id})
             
         except Exception as e:
             print(f"[ERROR] Chat API Error: {str(e)}")
