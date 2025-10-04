@@ -183,10 +183,6 @@
                             <i class="fas fa-save me-2"></i>
                             Save Model Settings
                         </button>
-                        <button type="button" class="btn btn-outline-info" onclick="showModelInfo()">
-                            <i class="fas fa-info-circle me-2"></i>
-                            Model Comparison
-                        </button>
                     </div>
                 </form>
             </div>
@@ -465,92 +461,6 @@ function testChatbot() {
         btn.classList.remove('btn-success');
         btn.classList.add('btn-outline-info');
     }, 2000);
-}
-
-function showModelInfo() {
-    const modal = `
-        <div class="modal fade" id="modelInfoModal" tabindex="-1">
-            <div class="modal-dialog modal-lg">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">OpenAI Model Comparison</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="table-responsive">
-                            <table class="table table-striped">
-                                <thead>
-                                    <tr>
-                                        <th>Model</th>
-                                        <th>Context Length</th>
-                                        <th>Best For</th>
-                                        <th>Cost Level</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr>
-                                        <td><strong>GPT-3.5 Turbo</strong></td>
-                                        <td>4K tokens</td>
-                                        <td>General purpose, cost-effective</td>
-                                        <td><span class="badge bg-success">Low</span></td>
-                                    </tr>
-                                    <tr>
-                                        <td><strong>GPT-3.5 Turbo 16K</strong></td>
-                                        <td>16K tokens</td>
-                                        <td>Longer conversations</td>
-                                        <td><span class="badge bg-success">Low</span></td>
-                                    </tr>
-                                    <tr>
-                                        <td><strong>GPT-4</strong></td>
-                                        <td>8K tokens</td>
-                                        <td>Complex reasoning, high accuracy</td>
-                                        <td><span class="badge bg-warning">High</span></td>
-                                    </tr>
-                                    <tr>
-                                        <td><strong>GPT-4 Turbo</strong></td>
-                                        <td>128K tokens</td>
-                                        <td>Large documents, complex tasks</td>
-                                        <td><span class="badge bg-warning">High</span></td>
-                                    </tr>
-                                    <tr>
-                                        <td><strong>GPT-4o</strong></td>
-                                        <td>128K tokens</td>
-                                        <td>Latest capabilities, multimodal</td>
-                                        <td><span class="badge bg-info">Medium</span></td>
-                                    </tr>
-                                    <tr>
-                                        <td><strong>GPT-4o Mini</strong></td>
-                                        <td>128K tokens</td>
-                                        <td>Efficient, good performance</td>
-                                        <td><span class="badge bg-success">Low</span></td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <div class="alert alert-info mt-3">
-                            <strong>Recommendation:</strong> Start with GPT-3.5 Turbo for cost-effectiveness, or GPT-4o Mini for better performance at a reasonable cost.
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    // Remove existing modal if any
-    const existingModal = document.getElementById('modelInfoModal');
-    if (existingModal) {
-        existingModal.remove();
-    }
-    
-    // Add modal to body
-    document.body.insertAdjacentHTML('beforeend', modal);
-    
-    // Show modal
-    const modalElement = new bootstrap.Modal(document.getElementById('modelInfoModal'));
-    modalElement.show();
 }
 
 function toggleStripeKeyVisibility() {
