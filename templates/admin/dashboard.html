@@ -164,7 +164,7 @@
 </div>
 
 <div class="row">
-    <div class="col-12">
+    <div class="col-md-8 mb-4">
         <div class="card">
             <div class="card-header">
                 <h5 class="card-title mb-0">
@@ -202,5 +202,123 @@
             </div>
         </div>
     </div>
+    
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-database me-2"></i>
+                    Database Management
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted small">Database Size:</span>
+                        <span class="fw-bold">{{ db_info.file_size_mb }} MB</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted small">Total Tables:</span>
+                        <span class="fw-bold">{{ db_info.total_tables }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted small">Total Records:</span>
+                        <span class="fw-bold">{{ db_info.total_records }}</span>
+                    </div>
+                </div>
+                
+                <div class="d-grid gap-2">
+                    <a href="{{ url_for('admin_export_database') }}" class="btn btn-warning">
+                        <i class="fas fa-download me-2"></i>
+                        Export Database Backup
+                    </a>
+                    <button class="btn btn-outline-info btn-sm" onclick="showDatabaseInfo()">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Database Details
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showDatabaseInfo() {
+    const modal = `
+        <div class="modal fade" id="databaseInfoModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Database Information</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <div class="card bg-light">
+                                    <div class="card-body">
+                                        <h6 class="card-title">Database Statistics</h6>
+                                        <div class="d-flex justify-content-between">
+                                            <span>File Size:</span>
+                                            <strong>{{ db_info.file_size_mb }} MB</strong>
+                                        </div>
+                                        <div class="d-flex justify-content-between">
+                                            <span>Total Tables:</span>
+                                            <strong>{{ db_info.total_tables }}</strong>
+                                        </div>
+                                        <div class="d-flex justify-content-between">
+                                            <span>Total Records:</span>
+                                            <strong>{{ db_info.total_records }}</strong>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card bg-light">
+                                    <div class="card-body">
+                                        <h6 class="card-title">Table Breakdown</h6>
+                                        {% for table, count in db_info.table_counts.items() %}
+                                        <div class="d-flex justify-content-between">
+                                            <span class="text-capitalize">{{ table.replace('_', ' ') }}:</span>
+                                            <strong>{{ count }} records</strong>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <strong>Database Backup:</strong> Use the "Export Database Backup" button to create a complete SQL backup of your database including schema and data.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <a href="{{ url_for('admin_export_database') }}" class="btn btn-warning">
+                            <i class="fas fa-download me-2"></i>
+                            Export Backup
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Remove existing modal if any
+    const existingModal = document.getElementById('databaseInfoModal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    // Add modal to body
+    document.body.insertAdjacentHTML('beforeend', modal);
+    
+    // Show modal
+    const modalElement = new bootstrap.Modal(document.getElementById('databaseInfoModal'));
+    modalElement.show();
+}
+</script>
 {% endblock %}

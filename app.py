@@ -1342,6 +1342,10 @@ Best regards,
         recent_chatbots = Chatbot.query.order_by(Chatbot.created_at.desc()).limit(5).all()
         recent_conversations = Conversation.query.order_by(Conversation.timestamp.desc()).limit(10).all()
         
+        # Get database information
+        from database_export import get_database_info
+        db_info = get_database_info()
+        
         return render_template('admin/dashboard.html', 
                              total_users=total_users,
                              total_chatbots=total_chatbots,
@@ -1349,7 +1353,39 @@ Best regards,
                              total_conversations=total_conversations,
                              recent_users=recent_users,
                              recent_chatbots=recent_chatbots,
-                             recent_conversations=recent_conversations)
+                             recent_conversations=recent_conversations,
+                             db_info=db_info)
+
+    @app.route('/admin/export-database')
+    @admin_required
+    def admin_export_database():
+        """Export the entire database as SQL statements"""
+        try:
+            from database_export import export_database_to_sql
+            import os
+            from flask import send_file, flash
+            
+            # Export the database
+            export_path = export_database_to_sql()
+            
+            # Check if file was created successfully
+            if os.path.exists(export_path):
+                flash(f'Database backup created successfully: {os.path.basename(export_path)}')
+                
+                # Send the file for download
+                return send_file(
+                    export_path,
+                    as_attachment=True,
+                    download_name=f'database_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.sql',
+                    mimetype='application/sql'
+                )
+            else:
+                flash('Failed to create database backup', 'error')
+                return redirect(url_for('admin_dashboard'))
+                
+        except Exception as e:
+            flash(f'Error creating database backup: {str(e)}', 'error')
+            return redirect(url_for('admin_dashboard'))
 
     @app.route('/admin/users')
     @admin_required
