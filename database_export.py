@@ -23,8 +23,8 @@ def export_database_to_sql(db_path=None, output_path=None):
     # Find database path if not provided
     if not db_path:
         possible_paths = [
+            'instance/chatbot_platform.db',  # Main database location
             'chatbot_platform.db',
-            'instance/chatbot_platform.db',
             'instance/chatbot_platform.db'
         ]
         
@@ -150,8 +150,8 @@ def get_database_info(db_path=None):
     """
     if not db_path:
         possible_paths = [
-            'chatbot_platform.db',
-            'instance/chatbot_platform.db'
+            'instance/chatbot_platform.db',  # Main database location
+            'chatbot_platform.db'
         ]
         
         for path in possible_paths:
