@@ -16,8 +16,8 @@ class ChatServiceOpenAI:
         
         self.trainer = ChatbotTrainer()
         self.default_responses = [
-            "I'm sorry, I don't have information about that topic in my training data.",
-            "I don't have enough information to answer that question accurately.",
+            "I'm sorry, I don't have information about that topic in my training documents.",
+            "I don't have enough information in my training data to answer that question accurately.",
             "Could you please ask something related to the documents I've been trained on?",
         ]
     
@@ -51,8 +51,9 @@ class ChatServiceOpenAI:
         
         try:
             # Get the selected model from database settings
-            from app import get_setting
-            selected_model = get_setting('openai_model', 'gpt-3.5-turbo')
+            from app import Settings
+            setting = Settings.query.filter_by(key='openai_model').first()
+            selected_model = setting.value if setting else 'gpt-3.5-turbo'
             print(f"🤖 DEBUG: Using OpenAI model: {selected_model}")
             
             # Call OpenAI API using the new v1.0+ syntax
@@ -152,7 +153,15 @@ class ChatServiceOpenAI:
 CONTEXT FROM TRAINING DOCUMENTS:
 {context_text}
 
-INSTRUCTIONS:
+CRITICAL INSTRUCTIONS - TRAINING DOCUMENT PRIORITY:
+1. ALWAYS answer questions based on the training documents provided above FIRST
+2. ONLY use your general knowledge or other sources if the training documents don't contain relevant information
+3. When training documents contain relevant information, base your response entirely on that content
+4. If training documents have conflicting information with general knowledge, prioritize the training documents
+5. Never contradict information from the training documents with external knowledge
+6. If you must use general knowledge, clearly state that the training documents don't cover that specific aspect
+
+RESPONSE GUIDELINES:
 1. Follow your role as defined above
 2. Use the information from the training documents when relevant
 3. If the context doesn't contain enough information to answer the question, you may use your general knowledge while staying in character
@@ -167,7 +176,7 @@ INSTRUCTIONS:
    - "Would you like me to explain anything else?"
    - "Do you have any other questions?"
 
-Remember: Stay in character as defined in your role, and prioritize information from the training documents when available."""
+Remember: Stay in character as defined in your role, and ALWAYS prioritize information from the training documents when available."""
         else:
             # No documents, just use the custom prompt
             system_prompt = f"""{base_prompt}
@@ -184,6 +193,11 @@ INSTRUCTIONS:
    - "Is there anything else you'd like to know about this topic?"
    - "Would you like me to explain anything else?"
    - "Do you have any other questions?"
+
+TRAINING DOCUMENT PRIORITY:
+- When training documents are available, ALWAYS prioritize information from those documents over general knowledge
+- If training documents contain information that conflicts with general knowledge, always use the training document information
+- Only use general knowledge when training documents don't cover the specific topic
 
 Remember: Stay in character as defined in your role."""
 

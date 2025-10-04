@@ -5,10 +5,10 @@ class ChatService:
     def __init__(self):
         self.trainer = ChatbotTrainer()
         self.default_responses = [
-            "I'm sorry, I don't have information about that topic. Could you try asking something else?",
-            "I don't have enough information to answer that question accurately.",
-            "Could you please rephrase your question? I want to make sure I understand what you're asking.",
-            "I'm not sure about that. Is there anything else I can help you with?",
+            "I'm sorry, I don't have information about that topic in my training documents. Could you try asking something else?",
+            "I don't have enough information in my training data to answer that question accurately.",
+            "Could you please rephrase your question? I want to make sure I understand what you're asking based on my training materials.",
+            "I'm not sure about that based on my training documents. Is there anything else I can help you with?",
         ]
     
     def get_response(self, chatbot_id, user_message):
@@ -259,13 +259,14 @@ class ChatService:
     
     def _generate_contextual_response(self, content):
         """
-        Generate a contextual response based on content
+        Generate a contextual response based on content from training documents
         """
-        # Simple response templates
+        # Response templates that emphasize training document priority
         response_templates = [
-            f"Based on the information I have: {content}",
-            f"Here's what I found: {content}",
-            f"According to my training data: {content}",
+            f"Based on my training documents: {content}",
+            f"According to the information in my training data: {content}",
+            f"From my training materials: {content}",
+            f"Based on the documents I've been trained on: {content}",
             content,  # Sometimes just return the content directly
         ]
         
@@ -283,10 +284,10 @@ class ChatService:
         Get a greeting response
         """
         responses = [
-            "Hello! How can I help you today?",
-            "Hi there! What would you like to know?",
-            "Hey! I'm here to help. What questions do you have?",
-            "Good day! How may I assist you?",
+            "Hello! I'm here to help you with questions based on my training documents. How can I assist you today?",
+            "Hi there! I can answer questions from my training materials. What would you like to know?",
+            "Hey! I'm here to help with questions about my training data. What questions do you have?",
+            "Good day! I can provide information from my training documents. How may I assist you?",
         ]
         return random.choice(responses)
     
