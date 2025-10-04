@@ -6,8 +6,8 @@
 <div class="hero-section text-center py-5 mb-5">
     <div class="container">
         <h1 class="display-4 fw-bold mb-4 animate-fade-in">
-            {% if site_settings and site_settings.hero_icon_filename %}
-                <img src="{{ url_for('static', filename='uploads/' + site_settings.hero_icon_filename) }}" 
+            {% if site_settings and (site_settings.hero_icon_filename or site_settings.hero_icon_base64) %}
+                <img src="{{ get_hero_icon_url(site_settings) }}" 
                      alt="{{ site_settings.hero_title }}" class="me-3" style="max-height: 60px;">
             {% else %}
                 <i class="fas fa-robot text-primary me-3"></i>
