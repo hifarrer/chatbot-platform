@@ -409,10 +409,10 @@ def create_app():
     render_disk_path = os.environ.get('RENDER_DISK_PATH', '/uploads')
     if os.path.exists(render_disk_path):
         app.config['UPLOAD_FOLDER'] = render_disk_path
-        print(f"✅ Using Render disk: {render_disk_path}")
+        print(f"Using Render disk: {render_disk_path}")
     else:
         app.config['UPLOAD_FOLDER'] = 'uploads'
-        print(f"⚠️  Render disk not found at {render_disk_path}, using local: uploads")
+        print(f"WARNING: Render disk not found at {render_disk_path}, using local: uploads")
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
     # Create upload directory if it doesn't exist
@@ -750,6 +750,72 @@ Best regards,
                              user_plan=current_user.user_plan,
                              current_chatbot_count=current_chatbot_count,
                              remaining_chatbots=remaining_chatbots)
+
+    @app.route('/profile', methods=['GET', 'POST'])
+    @login_required
+    def profile():
+        if request.method == 'POST':
+            # Handle profile updates
+            username = request.form.get('username', '').strip()
+            email = request.form.get('email', '').strip()
+            current_password = request.form.get('current_password', '').strip()
+            new_password = request.form.get('new_password', '').strip()
+            confirm_password = request.form.get('confirm_password', '').strip()
+            
+            # Validate required fields
+            if not username or not email:
+                flash('Username and email are required.', 'error')
+                return render_template('profile.html')
+            
+            # Check if username is already taken by another user
+            existing_user = User.query.filter(User.username == username, User.id != current_user.id).first()
+            if existing_user:
+                flash('Username is already taken.', 'error')
+                return render_template('profile.html')
+            
+            # Check if email is already taken by another user
+            existing_email = User.query.filter(User.email == email, User.id != current_user.id).first()
+            if existing_email:
+                flash('Email is already taken.', 'error')
+                return render_template('profile.html')
+            
+            # Update basic profile info
+            current_user.username = username
+            current_user.email = email
+            
+            # Handle password change if provided
+            if new_password:
+                if not current_password:
+                    flash('Current password is required to change password.', 'error')
+                    return render_template('profile.html')
+                
+                # Verify current password
+                if not check_password_hash(current_user.password_hash, current_password):
+                    flash('Current password is incorrect.', 'error')
+                    return render_template('profile.html')
+                
+                if new_password != confirm_password:
+                    flash('New passwords do not match.', 'error')
+                    return render_template('profile.html')
+                
+                if len(new_password) < 6:
+                    flash('New password must be at least 6 characters long.', 'error')
+                    return render_template('profile.html')
+                
+                # Update password
+                current_user.password_hash = generate_password_hash(new_password)
+                flash('Password updated successfully.', 'success')
+            
+            try:
+                db.session.commit()
+                flash('Profile updated successfully.', 'success')
+                return redirect(url_for('profile'))
+            except Exception as e:
+                db.session.rollback()
+                flash(f'Failed to update profile. Please try again. Error: {str(e)}', 'error')
+                return render_template('profile.html')
+        
+        return render_template('profile.html')
 
     @app.route('/create_chatbot', methods=['GET', 'POST'])
     @login_required
