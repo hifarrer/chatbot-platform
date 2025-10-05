@@ -40,6 +40,10 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     is_admin = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # Profile fields
+    full_name = db.Column(db.String(100), nullable=True)
+    business_name = db.Column(db.String(100), nullable=True)
+    website = db.Column(db.String(255), nullable=True)
     chatbots = db.relationship('Chatbot', backref='owner', lazy=True, cascade='all, delete-orphan')
 
 class Chatbot(db.Model):
@@ -758,6 +762,9 @@ Best regards,
             # Handle profile updates
             username = request.form.get('username', '').strip()
             email = request.form.get('email', '').strip()
+            full_name = request.form.get('full_name', '').strip()
+            business_name = request.form.get('business_name', '').strip()
+            website = request.form.get('website', '').strip()
             current_password = request.form.get('current_password', '').strip()
             new_password = request.form.get('new_password', '').strip()
             confirm_password = request.form.get('confirm_password', '').strip()
@@ -782,6 +789,9 @@ Best regards,
             # Update basic profile info
             current_user.username = username
             current_user.email = email
+            current_user.full_name = full_name if full_name else None
+            current_user.business_name = business_name if business_name else None
+            current_user.website = website if website else None
             
             # Handle password change if provided
             if new_password:
