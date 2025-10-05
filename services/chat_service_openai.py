@@ -36,8 +36,11 @@ class ChatServiceOpenAI:
         if not chatbot:
             return "Chatbot not found."
         
-        # Get relevant context from training data (only for initial setup)
+        # Get relevant context from training data
         context = self._get_relevant_context(chatbot_id, user_message)
+        
+        # Check if we need web search as fallback
+        needs_web_search = self._should_use_web_search(context, user_message)
         
         # Allow chatbot to work even without documents if it has a custom prompt
         if not context and not chatbot.system_prompt:
@@ -53,11 +56,16 @@ class ChatServiceOpenAI:
         system_prompt = self._create_system_prompt_for_responses(context, chatbot.system_prompt)
         
         try:
-            # Get the selected model from database settings
-            from app import Settings
-            setting = Settings.query.filter_by(key='openai_model').first()
-            selected_model = setting.value if setting else 'gpt-3.5-turbo'
-            print(f"🤖 DEBUG: Using OpenAI model: {selected_model}")
+            # Determine if we should use web search model
+            if needs_web_search:
+                selected_model = 'gpt-4o-search-preview'
+                print(f"🌐 DEBUG: Using OpenAI web search model: {selected_model}")
+            else:
+                # Get the selected model from database settings
+                from app import Settings
+                setting = Settings.query.filter_by(key='openai_model').first()
+                selected_model = setting.value if setting else 'gpt-3.5-turbo'
+                print(f"🤖 DEBUG: Using OpenAI model: {selected_model}")
             
             # Prepare the input for Responses API
             input_text = f"{system_prompt}\n\nUser: {user_message}"
@@ -70,25 +78,37 @@ class ChatServiceOpenAI:
             else:
                 print(f"🆕 DEBUG: Starting new conversation")
             
-            # Call OpenAI Responses API
-            if previous_response_id:
+            # Call OpenAI Responses API with web search if needed
+            if needs_web_search:
+                # Use chat completions API for web search model
+                response = self.client.chat.completions.create(
+                    model=selected_model,
+                    web_search_options={},
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message}
+                    ]
+                )
+                answer = response.choices[0].message.content.strip()
+            elif previous_response_id:
                 response = self.client.responses.create(
                     model=selected_model,
                     previous_response_id=previous_response_id,
                     input=input_text
                 )
+                answer = response.output_text.strip()
             else:
                 response = self.client.responses.create(
                     model=selected_model,
                     input=input_text
                 )
+                answer = response.output_text.strip()
             
-            # Store the response ID for future conversation continuity
-            if conversation_id:
+            # Store the response ID for future conversation continuity (only for Responses API)
+            if conversation_id and not needs_web_search:
                 self.conversation_contexts[conversation_id] = response.id
                 print(f"💾 DEBUG: Stored response_id {response.id} for conversation {conversation_id}")
             
-            answer = response.output_text.strip()
             print(f"✅ DEBUG: OpenAI response generated: {answer[:100]}...")
             return answer
             
@@ -156,6 +176,47 @@ class ChatServiceOpenAI:
         
         return context_passages
     
+    def _should_use_web_search(self, context_passages, user_message):
+        """
+        Determine if web search should be used as fallback
+        """
+        # Get similarity threshold from settings
+        try:
+            from app import Settings
+            setting = Settings.query.filter_by(key='web_search_min_similarity').first()
+            min_similarity = float(setting.value) if setting else 0.3
+        except:
+            min_similarity = 0.3
+        
+        # If we have good context from training documents, don't search
+        if context_passages:
+            # Check if any context has high relevance
+            for passage in context_passages:
+                if "[Relevance:" in passage:
+                    try:
+                        relevance = float(passage.split("[Relevance: ")[1].split("]")[0])
+                        if relevance > min_similarity:  # Good match from training docs
+                            return False
+                    except:
+                        pass
+        
+        # Check for keywords that suggest external information is needed
+        external_keywords = [
+            'current', 'latest', 'recent', 'news', 'today', 'now',
+            'latest news', 'recent events', 'current events', 'today\'s',
+            'what\'s happening', 'breaking news', 'live', 'real-time'
+        ]
+        
+        message_lower = user_message.lower()
+        for keyword in external_keywords:
+            if keyword in message_lower:
+                print(f"🔍 DEBUG: External keyword '{keyword}' detected, web search recommended")
+                return True
+        
+        # If no good training context and no external keywords, still consider web search
+        # but with lower priority
+        return len(context_passages) == 0
+    
     def _create_system_prompt_for_responses(self, context_passages, custom_prompt=None):
         """
         Create a system prompt for OpenAI Responses API with the relevant context and custom prompt
@@ -174,11 +235,11 @@ TRAINING DOCUMENTS CONTEXT:
 
 CRITICAL INSTRUCTIONS - TRAINING DOCUMENT PRIORITY:
 1. ALWAYS answer questions based on the training documents provided above FIRST
-2. ONLY use your general knowledge or other sources if the training documents don't contain relevant information
+2. ONLY use your general knowledge or web search if the training documents don't contain relevant information
 3. When training documents contain relevant information, base your response entirely on that content
 4. If training documents have conflicting information with general knowledge, prioritize the training documents
 5. Never contradict information from the training documents with external knowledge
-6. If you must use general knowledge, clearly state that the training documents don't cover that specific aspect
+6. If you must use general knowledge or web search, clearly state that the training documents don't cover that specific aspect
 
 RESPONSE GUIDELINES:
 1. Follow your role as defined above
