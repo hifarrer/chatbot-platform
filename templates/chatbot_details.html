@@ -366,16 +366,16 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <form id="trainingForm" action="{{ url_for('train_chatbot', chatbot_id=chatbot.id) }}" method="POST" style="display: inline;">
-                    <button type="submit" class="btn btn-success">
-                        <i class="fas fa-brain me-2"></i>
+                <button type="button" class="btn btn-success" id="trainingBtn" onclick="startTraining()">
+                    <i class="fas fa-brain me-2"></i>
+                    <span id="trainingBtnText">
                         {% if chatbot.is_trained %}
                             Retrain Chatbot
                         {% else %}
                             Train Chatbot
                         {% endif %}
-                    </button>
-                </form>
+                    </span>
+                </button>
             </div>
         </div>
     </div>
@@ -472,6 +472,219 @@ function confirmTraining() {
     modal.show();
 }
 
+function startTraining() {
+    const trainingBtn = document.getElementById('trainingBtn');
+    const trainingBtnText = document.getElementById('trainingBtnText');
+    const trainingIcon = trainingBtn.querySelector('i');
+    
+    // Update button to show loading state
+    trainingBtn.disabled = true;
+    trainingIcon.className = 'fas fa-spinner fa-spin me-2';
+    trainingBtnText.textContent = 'Training...';
+    trainingBtn.classList.remove('btn-success');
+    trainingBtn.classList.add('btn-warning');
+    
+    // Close the modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('trainingModal'));
+    modal.hide();
+    
+    // Show training progress notification
+    showTrainingProgress();
+    
+    // Send AJAX request
+    fetch(`/train_chatbot/{{ chatbot.id }}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Training successful
+            trainingBtn.disabled = false;
+            trainingIcon.className = 'fas fa-check me-2';
+            trainingBtnText.textContent = 'Training Complete!';
+            trainingBtn.classList.remove('btn-warning');
+            trainingBtn.classList.add('btn-success');
+            
+            // Update chatbot status in UI
+            updateChatbotStatus(true);
+            
+            // Show success message
+            showTrainingSuccess();
+            
+            // Reset button after 3 seconds
+            setTimeout(() => {
+                trainingIcon.className = 'fas fa-brain me-2';
+                trainingBtnText.textContent = '{{ "Retrain Chatbot" if chatbot.is_trained else "Train Chatbot" }}';
+            }, 3000);
+        } else {
+            throw new Error(data.error || 'Training failed');
+        }
+    })
+    .catch(error => {
+        // Training failed
+        trainingBtn.disabled = false;
+        trainingIcon.className = 'fas fa-exclamation-triangle me-2';
+        trainingBtnText.textContent = 'Training Failed';
+        trainingBtn.classList.remove('btn-warning');
+        trainingBtn.classList.add('btn-danger');
+        
+        // Show error message
+        showTrainingError(error.message);
+        
+        // Reset button after 5 seconds
+        setTimeout(() => {
+            trainingIcon.className = 'fas fa-brain me-2';
+            trainingBtnText.textContent = '{{ "Retrain Chatbot" if chatbot.is_trained else "Train Chatbot" }}';
+            trainingBtn.classList.remove('btn-danger');
+            trainingBtn.classList.add('btn-success');
+        }, 5000);
+    });
+}
+
+function showTrainingProgress() {
+    // Create and show training progress notification
+    const toastContainer = document.querySelector('.toast-container') || createToastContainer();
+    
+    const toastHtml = `
+        <div class="toast align-items-center text-bg-info border-0" role="alert" aria-live="assertive" aria-atomic="true" id="trainingProgressToast">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="fas fa-spinner fa-spin me-2"></i>
+                    Training your chatbot... This may take a few minutes.
+                </div>
+            </div>
+        </div>
+    `;
+    
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+    const toast = document.getElementById('trainingProgressToast');
+    const bsToast = new bootstrap.Toast(toast);
+    bsToast.show();
+}
+
+function showTrainingSuccess() {
+    // Remove progress toast
+    const progressToast = document.getElementById('trainingProgressToast');
+    if (progressToast) {
+        progressToast.remove();
+    }
+    
+    // Show success toast
+    const toastContainer = document.querySelector('.toast-container') || createToastContainer();
+    
+    const toastHtml = `
+        <div class="toast align-items-center text-bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="fas fa-check-circle me-2"></i>
+                    Chatbot training completed successfully!
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        </div>
+    `;
+    
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+    const toast = toastContainer.lastElementChild;
+    const bsToast = new bootstrap.Toast(toast);
+    bsToast.show();
+    
+    // Remove from DOM after hiding
+    toast.addEventListener('hidden.bs.toast', () => toast.remove());
+}
+
+function showTrainingError(errorMessage) {
+    // Remove progress toast
+    const progressToast = document.getElementById('trainingProgressToast');
+    if (progressToast) {
+        progressToast.remove();
+    }
+    
+    // Show error toast
+    const toastContainer = document.querySelector('.toast-container') || createToastContainer();
+    
+    const toastHtml = `
+        <div class="toast align-items-center text-bg-danger border-0" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Training failed: ${errorMessage}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        </div>
+    `;
+    
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+    const toast = toastContainer.lastElementChild;
+    const bsToast = new bootstrap.Toast(toast);
+    bsToast.show();
+    
+    // Remove from DOM after hiding
+    toast.addEventListener('hidden.bs.toast', () => toast.remove());
+}
+
+function updateChatbotStatus(isTrained) {
+    // Update the training status badge
+    const statusBadge = document.querySelector('.badge');
+    if (statusBadge) {
+        if (isTrained) {
+            statusBadge.className = 'badge bg-success';
+            statusBadge.textContent = 'Trained & Ready';
+        } else {
+            statusBadge.className = 'badge bg-warning';
+            statusBadge.textContent = 'Not Trained';
+        }
+    }
+    
+    // Show/hide test chat section
+    const testChatSection = document.querySelector('#chat-messages').closest('.card');
+    if (testChatSection) {
+        testChatSection.style.display = isTrained ? 'block' : 'none';
+    }
+}
+
+function createToastContainer() {
+    const container = document.createElement('div');
+    container.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+    container.style.zIndex = '9999';
+    document.body.appendChild(container);
+    return container;
+}
+
+function convertLinksToHtml(text) {
+    if (!text) return text;
+    
+    // URL regex pattern (matches http, https, www, and domain patterns)
+    const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/gi;
+    
+    // Email regex pattern
+    const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi;
+    
+    let processedText = text;
+    
+    // Convert URLs to clickable links
+    processedText = processedText.replace(urlRegex, (match) => {
+        let url = match;
+        // Add https:// if the URL doesn't have a protocol
+        if (!url.match(/^https?:\/\//i)) {
+            url = 'https://' + url;
+        }
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${match}</a>`;
+    });
+    
+    // Convert emails to clickable mailto links
+    processedText = processedText.replace(emailRegex, (match) => {
+        return `<a href="mailto:${match}" class="chatbot-link chatbot-email-link">${match}</a>`;
+    });
+    
+    return processedText;
+}
+
 function sendMessage() {
     const input = document.getElementById('chat-input');
     const message = input.value.trim();
@@ -511,7 +724,8 @@ function sendMessage() {
         // Add bot response
         const botDiv = document.createElement('div');
         botDiv.className = 'mb-2';
-        botDiv.innerHTML = `<div class="d-inline-block bg-light rounded px-3 py-2" style="max-width: 70%;"><i class="fas fa-robot me-2 text-primary"></i>${data.response}</div>`;
+        const processedResponse = convertLinksToHtml(data.response);
+        botDiv.innerHTML = `<div class="d-inline-block bg-light rounded px-3 py-2" style="max-width: 70%;"><i class="fas fa-robot me-2 text-primary"></i>${processedResponse}</div>`;
         chatMessages.appendChild(botDiv);
         
         chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -597,6 +811,30 @@ document.addEventListener('DOMContentLoaded', function() {
 .edit-avatar-option.selected img {
     border-color: #007bff !important;
     box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+/* Chatbot link styles for test chat */
+.chatbot-link {
+    color: #007bff;
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: all 0.2s ease;
+    word-break: break-all;
+}
+
+.chatbot-link:hover {
+    color: #0056b3;
+    border-bottom-color: #0056b3;
+    text-decoration: none;
+}
+
+.chatbot-email-link {
+    color: #28a745;
+}
+
+.chatbot-email-link:hover {
+    color: #1e7e34;
+    border-bottom-color: #1e7e34;
 }
 
 .avatar-option,

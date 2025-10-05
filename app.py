@@ -1166,6 +1166,8 @@ Best regards,
         documents = Document.query.filter_by(chatbot_id=chatbot_id).all()
         
         if not documents:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'error': 'Please upload at least one document before training.'})
             flash('Please upload at least one document before training.')
             return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
         
@@ -1182,10 +1184,16 @@ Best regards,
             chatbot.is_trained = True
             db.session.commit()
             
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': True, 'message': 'Chatbot trained successfully!'})
             flash('Chatbot trained successfully!')
         except Exception as e:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'error': str(e)})
             flash(f'Training failed: {str(e)}')
         
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'error': 'Training failed'})
         return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
 
     @app.route('/delete_chatbot/<int:chatbot_id>', methods=['POST'])
