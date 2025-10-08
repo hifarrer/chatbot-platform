@@ -91,11 +91,15 @@
                                 </td>
                                 <td>
                                     <div class="btn-group btn-group-sm">
-                                        <a href="{{ url_for('chatbot_details', chatbot_id=chatbot.id) }}" 
-                                           class="btn btn-outline-primary" target="_blank" title="View Details">
+                                        <a href="{{ url_for('admin_chatbot_details', chatbot_id=chatbot.id) }}" 
+                                           class="btn btn-outline-primary" title="View Details">
                                             <i class="fas fa-eye"></i>
                                         </a>
                                         {% if chatbot.is_trained %}
+                                            <a href="{{ url_for('preview_chatbot', embed_code=chatbot.embed_code) }}" 
+                                               class="btn btn-outline-success" target="_blank" title="Preview Chatbot">
+                                                <i class="fas fa-play"></i>
+                                            </a>
                                             <button class="btn btn-outline-info" 
                                                     onclick="showEmbedCode('{{ chatbot.embed_code }}')" title="Embed Code">
                                                 <i class="fas fa-code"></i>

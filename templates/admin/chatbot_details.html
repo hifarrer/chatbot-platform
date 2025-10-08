@@ -1,0 +1,429 @@
+{% extends "admin/base.html" %}
+
+{% block page_title %}{{ chatbot.name }} - Admin View{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">
+        <i class="fas fa-robot me-2"></i>{{ chatbot.name }}
+        {% if chatbot.is_trained %}
+            <span class="badge bg-success ms-2">Trained</span>
+        {% else %}
+            <span class="badge bg-warning ms-2">Not Trained</span>
+        {% endif %}
+    </h4>
+    <div>
+        <a href="{{ url_for('admin_chatbots') }}" class="btn btn-outline-secondary me-2">
+            <i class="fas fa-arrow-left me-1"></i>Back to Chatbots
+        </a>
+        {% if chatbot.is_trained %}
+        <button class="btn btn-info me-2" onclick="showEmbedCode('{{ chatbot.embed_code }}')">
+            <i class="fas fa-code me-1"></i>View Embed Code
+        </button>
+        <a href="{{ url_for('preview_chatbot', embed_code=chatbot.embed_code) }}" target="_blank" class="btn btn-success me-2">
+            <i class="fas fa-eye me-1"></i>Preview Chatbot
+        </a>
+        {% endif %}
+        <button class="btn btn-danger" onclick="confirmDelete()">
+            <i class="fas fa-trash me-1"></i>Delete Chatbot
+        </button>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <!-- Chatbot Info -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5><i class="fas fa-info-circle me-2"></i>Chatbot Information</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <p><strong>Owner:</strong> 
+                            <span class="badge bg-primary">{{ chatbot.owner.username }}</span>
+                        </p>
+                        <p><strong>Description:</strong> {{ chatbot.description or 'No description provided' }}</p>
+                        <p><strong>Created:</strong> {{ chatbot.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                        <p><strong>Embed Code:</strong> <code>{{ chatbot.embed_code }}</code></p>
+                        <p><strong>Greeting Message:</strong> {{ chatbot.greeting_message or 'No custom greeting set' }}</p>
+                        <p><strong>System Prompt:</strong></p>
+                        <div class="bg-light p-3 rounded" style="white-space: pre-wrap;">{{ chatbot.system_prompt or 'No system prompt set' }}</div>
+                    </div>
+                    <div class="col-md-4 text-center">
+                        <div class="mb-3">
+                            <strong>Avatar:</strong>
+                            {% if chatbot.avatar_filename %}
+                                <div class="mt-2">
+                                    <img src="{{ get_avatar_url(chatbot.avatar_filename) }}" 
+                                         alt="Chatbot Avatar" 
+                                         class="img-thumbnail" 
+                                         style="width: 80px; height: 80px; object-fit: cover; border-radius: 50%;">
+                                </div>
+                            {% else %}
+                                <div class="mt-2">
+                                    <div class="bg-light rounded-circle d-inline-flex align-items-center justify-content-center" 
+                                         style="width: 80px; height: 80px;">
+                                        <i class="fas fa-robot fa-2x text-muted"></i>
+                                    </div>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Uploaded Documents -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5><i class="fas fa-file-alt me-2"></i>Training Documents ({{ documents|length }})</h5>
+            </div>
+            <div class="card-body">
+                {% if documents %}
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Filename</th>
+                                    <th>Uploaded</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for doc in documents %}
+                                <tr>
+                                    <td>
+                                        <i class="fas fa-file me-2"></i>{{ doc.original_filename }}
+                                    </td>
+                                    <td>{{ doc.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                    <td>
+                                        {% if doc.processed %}
+                                            <span class="badge bg-success">Processed</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">Pending</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <a href="{{ url_for('download_document', document_id=doc.id) }}" 
+                                           class="btn btn-outline-primary btn-sm" title="Download Document">
+                                            <i class="fas fa-download"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-file-upload fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No documents uploaded</h5>
+                        <p class="text-muted">This chatbot has no training documents</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Test Chat -->
+        {% if chatbot.is_trained %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5><i class="fas fa-comments me-2"></i>Test Chatbot</h5>
+            </div>
+            <div class="card-body">
+                <div id="chat-messages" class="chat-messages mb-3" style="height: 300px; overflow-y: auto; border: 1px solid #dee2e6; padding: 10px; border-radius: 5px;">
+                    <div class="alert alert-info">
+                        <i class="fas fa-robot me-2"></i>Hi! I'm {{ chatbot.name }}. Ask me anything based on the documents I've been trained on.
+                    </div>
+                </div>
+                <div class="input-group">
+                    <input type="text" class="form-control" id="chat-input" placeholder="Type your message..." onkeypress="if(event.key === 'Enter') sendMessage()">
+                    <button class="btn btn-primary" onclick="sendMessage()">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-md-4">
+        <!-- Stats -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-bar me-2"></i>Statistics</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6">
+                        <h4 class="text-primary">{{ documents|length }}</h4>
+                        <small class="text-muted">Documents</small>
+                    </div>
+                    <div class="col-6">
+                        <h4 class="text-success">{{ conversations|length }}</h4>
+                        <small class="text-muted">Conversations</small>
+                    </div>
+                </div>
+                <hr>
+                <div class="row text-center">
+                    <div class="col-12">
+                        <h4 class="text-info">{{ owner_plan.name }}</h4>
+                        <small class="text-muted">Owner's Plan</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Conversations -->
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-history me-2"></i>Recent Conversations</h5>
+            </div>
+            <div class="card-body">
+                {% if conversations %}
+                    <div style="max-height: 400px; overflow-y: auto;">
+                        {% for conv in conversations[:10] %}
+                        <div class="border-bottom pb-2 mb-2">
+                            <small class="text-muted">{{ conv.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+                            <div class="small"><strong>User:</strong> {{ conv.user_message[:100] }}{% if conv.user_message|length > 100 %}...{% endif %}</div>
+                            <div class="small text-muted"><strong>Bot:</strong> {{ conv.bot_response[:100] }}{% if conv.bot_response|length > 100 %}...{% endif %}</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-3">
+                        <i class="fas fa-comments fa-2x text-muted mb-2"></i>
+                        <p class="text-muted small">No conversations yet</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Embed Code Modal -->
+<div class="modal fade" id="embedModal" tabindex="-1" aria-labelledby="embedModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="embedModalLabel">
+                    <i class="fas fa-code me-2"></i>Embed Code for {{ chatbot.name }}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Copy and paste this code into your website where you want the chatbot to appear:</p>
+                <div class="position-relative">
+                    <pre class="bg-light p-3 rounded"><code id="embedCode"></code></pre>
+                    <button class="btn btn-sm btn-outline-secondary position-absolute top-0 end-0 m-2" 
+                            onclick="copyEmbedCode()" id="copyBtn">
+                        <i class="fas fa-copy me-1"></i>Copy
+                    </button>
+                </div>
+                <div class="alert alert-info mt-3">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Note:</strong> Replace <code>YOUR_DOMAIN</code> with your actual domain name where this platform is hosted.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalLabel">
+                    <i class="fas fa-exclamation-triangle me-2 text-danger"></i>Confirm Delete
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete <strong>{{ chatbot.name }}</strong> owned by <strong>{{ chatbot.owner.username }}</strong>?</p>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Warning:</strong> This will permanently delete:
+                    <ul class="mb-0 mt-2">
+                        <li>The chatbot and its configuration</li>
+                        <li>{{ documents|length }} document(s)</li>
+                        <li>{{ conversations|length }} conversation(s)</li>
+                        <li>All training data and embeddings</li>
+                    </ul>
+                </div>
+                <p class="text-danger">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form action="{{ url_for('admin_delete_chatbot', chatbot_id=chatbot.id) }}" method="POST" style="display: inline;">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash me-2"></i>Delete Chatbot
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showEmbedCode(embedCode) {
+    const domain = window.location.origin;
+    const code = `<div id="chatbot-${embedCode}"></div>
+<script src="${domain}/static/js/chatbot-embed.js"><\/script>
+<script>
+ChatbotEmbed.init({
+    embedCode: '${embedCode}',
+    apiUrl: '${domain}/api/chat/${embedCode}',
+    containerId: 'chatbot-${embedCode}',
+    title: '{{ chatbot.name }}',
+    avatarUrl: '{% if chatbot.avatar_filename %}{{ domain }}/static/uploads/{{ chatbot.avatar_filename }}{% endif %}',
+    greetingMessage: '{{ chatbot.greeting_message or "Hi! I'm here to help. Ask me anything!" }}'
+});
+<\/script>`;
+    
+    document.getElementById('embedCode').textContent = code;
+    const modal = new bootstrap.Modal(document.getElementById('embedModal'));
+    modal.show();
+}
+
+function copyEmbedCode() {
+    const code = document.getElementById('embedCode').textContent;
+    navigator.clipboard.writeText(code).then(function() {
+        const btn = document.getElementById('copyBtn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
+        btn.classList.remove('btn-outline-secondary');
+        btn.classList.add('btn-success');
+        
+        setTimeout(function() {
+            btn.innerHTML = originalText;
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-outline-secondary');
+        }, 2000);
+    });
+}
+
+function confirmDelete() {
+    const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    modal.show();
+}
+
+function convertLinksToHtml(text) {
+    if (!text) return text;
+    
+    // URL regex pattern (matches http, https, www, and domain patterns)
+    const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/gi;
+    
+    // Email regex pattern
+    const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi;
+    
+    let processedText = text;
+    
+    // Convert URLs to clickable links
+    processedText = processedText.replace(urlRegex, (match) => {
+        let url = match;
+        // Add https:// if the URL doesn't have a protocol
+        if (!url.match(/^https?:\/\//i)) {
+            url = 'https://' + url;
+        }
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${match}</a>`;
+    });
+    
+    // Convert emails to clickable mailto links
+    processedText = processedText.replace(emailRegex, (match) => {
+        return `<a href="mailto:${match}" class="chatbot-link chatbot-email-link">${match}</a>`;
+    });
+    
+    return processedText;
+}
+
+function sendMessage() {
+    const input = document.getElementById('chat-input');
+    const message = input.value.trim();
+    
+    if (!message) return;
+    
+    const chatMessages = document.getElementById('chat-messages');
+    
+    // Add user message
+    const userDiv = document.createElement('div');
+    userDiv.className = 'mb-2 text-end';
+    userDiv.innerHTML = `<div class="d-inline-block bg-primary text-white rounded px-3 py-2" style="max-width: 70%;">${message}</div>`;
+    chatMessages.appendChild(userDiv);
+    
+    // Add loading indicator
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'mb-2';
+    loadingDiv.innerHTML = `<div class="d-inline-block bg-light rounded px-3 py-2"><i class="fas fa-spinner fa-spin me-2"></i>Thinking...</div>`;
+    chatMessages.appendChild(loadingDiv);
+    
+    input.value = '';
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    // Send to API
+    fetch(`/api/chat/{{ chatbot.embed_code }}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: message })
+    })
+    .then(response => response.json())
+    .then(data => {
+        // Remove loading indicator
+        chatMessages.removeChild(loadingDiv);
+        
+        // Add bot response
+        const botDiv = document.createElement('div');
+        botDiv.className = 'mb-2';
+        const processedResponse = convertLinksToHtml(data.response);
+        botDiv.innerHTML = `<div class="d-inline-block bg-light rounded px-3 py-2" style="max-width: 70%;"><i class="fas fa-robot me-2 text-primary"></i>${processedResponse}</div>`;
+        chatMessages.appendChild(botDiv);
+        
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    })
+    .catch(error => {
+        // Remove loading indicator
+        chatMessages.removeChild(loadingDiv);
+        
+        // Add error message
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'mb-2';
+        errorDiv.innerHTML = `<div class="d-inline-block bg-danger text-white rounded px-3 py-2" style="max-width: 70%;">Sorry, I encountered an error. Please try again.</div>`;
+        chatMessages.appendChild(errorDiv);
+        
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
+}
+</script>
+
+<style>
+/* Chatbot link styles for test chat */
+.chatbot-link {
+    color: #007bff;
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: all 0.2s ease;
+    word-break: break-all;
+}
+
+.chatbot-link:hover {
+    color: #0056b3;
+    border-bottom-color: #0056b3;
+    text-decoration: none;
+}
+
+.chatbot-email-link {
+    color: #28a745;
+}
+
+.chatbot-email-link:hover {
+    color: #1e7e34;
+    border-bottom-color: #1e7e34;
+}
+</style>
+{% endblock %}

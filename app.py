@@ -1586,6 +1586,23 @@ Best regards,
             page=page, per_page=20, error_out=False)
         return render_template('admin/chatbots.html', chatbots=chatbots)
 
+    @app.route('/admin/chatbots/<int:chatbot_id>')
+    @admin_required
+    def admin_chatbot_details(chatbot_id):
+        """Admin view of chatbot details - can view any chatbot"""
+        chatbot = Chatbot.query.get_or_404(chatbot_id)
+        documents = Document.query.filter_by(chatbot_id=chatbot_id).all()
+        conversations = Conversation.query.filter_by(chatbot_id=chatbot_id).order_by(Conversation.timestamp.desc()).limit(50).all()
+        
+        # Get the owner's plan
+        owner_plan = get_user_plan(chatbot.owner)
+        
+        return render_template('admin/chatbot_details.html', 
+                             chatbot=chatbot, 
+                             documents=documents, 
+                             conversations=conversations,
+                             owner_plan=owner_plan)
+
     @app.route('/admin/chatbots/<int:chatbot_id>/delete', methods=['POST'])
     @admin_required
     def admin_delete_chatbot(chatbot_id):
