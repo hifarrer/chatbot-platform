@@ -512,6 +512,9 @@ function startTraining() {
             // Update chatbot status in UI
             updateChatbotStatus(true);
             
+            // Update all document status badges to "Processed"
+            updateDocumentStatus();
+            
             // Show success message
             showTrainingSuccess();
             
@@ -646,6 +649,17 @@ function updateChatbotStatus(isTrained) {
     if (testChatSection) {
         testChatSection.style.display = isTrained ? 'block' : 'none';
     }
+}
+
+function updateDocumentStatus() {
+    // Find all document status badges and update them to "Processed"
+    const statusBadges = document.querySelectorAll('tbody tr td:nth-child(3) .badge');
+    statusBadges.forEach(badge => {
+        if (badge.textContent.trim() === 'Pending') {
+            badge.className = 'badge bg-success';
+            badge.textContent = 'Processed';
+        }
+    });
 }
 
 function createToastContainer() {
