@@ -1179,6 +1179,9 @@ Best regards,
                 all_text += f"\n\n{text}"
                 doc.processed = True
             
+            # Commit document processing status first
+            db.session.commit()
+            
             # Train the chatbot
             chatbot_trainer.train_chatbot(chatbot_id, all_text)
             chatbot.is_trained = True
@@ -1188,6 +1191,7 @@ Best regards,
                 return jsonify({'success': True, 'message': 'Chatbot trained successfully!'})
             flash('Chatbot trained successfully!')
         except Exception as e:
+            # Even if training fails, documents are already marked as processed
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'success': False, 'error': str(e)})
             flash(f'Training failed: {str(e)}')
