@@ -58,11 +58,6 @@
                                 </svg>
                             </div>
                         </div>
-                        <div class="chatbot-toggle-close" style="display: none;">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                            </svg>
-                        </div>
                         <div class="chatbot-toggle-minimize" title="Minimize">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M6 19h12v2H6z"/>
@@ -70,24 +65,6 @@
                         </div>
                     </div>
                     
-                    <div class="chatbot-restore" id="chatbot-restore-${this.config.embedCode}" style="display: none;">
-                        <div class="chatbot-restore-content">
-                            <div class="chatbot-restore-avatar">
-                                ${this.config.avatarUrl ? 
-                                    `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
-                                    '🤖'
-                                }
-                            </div>
-                            <div class="chatbot-restore-text">
-                                <span>Chat closed</span>
-                            </div>
-                            <button class="chatbot-restore-btn" title="Restore Chat">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
                     
                     <div class="chatbot-window" id="chatbot-window-${this.config.embedCode}" style="display: none;">
                         <div class="chatbot-header">
@@ -109,11 +86,6 @@
                                     <button class="chatbot-minimize-btn" title="Minimize">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                                             <path d="M6 19h12v2H6z"/>
-                                        </svg>
-                                    </button>
-                                    <button class="chatbot-close-btn" title="Close">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                                         </svg>
                                     </button>
                                 </div>
@@ -221,88 +193,6 @@
                     display: none !important;
                 }
 
-                .chatbot-restore {
-                    background: #28a745;
-                    border-radius: 12px;
-                    display: flex;
-                    align-items: center;
-                    cursor: pointer;
-                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-                    transition: all 0.3s ease;
-                    color: white;
-                    padding: 12px 16px;
-                    min-width: 200px;
-                    max-width: 250px;
-                    animation: slideInRestore 0.3s ease-out;
-                    z-index: 1000000;
-                }
-
-                .chatbot-restore:hover {
-                    transform: translateY(-2px);
-                    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
-                }
-
-                .chatbot-restore-content {
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                    width: 100%;
-                }
-
-                .chatbot-restore-avatar {
-                    width: 32px;
-                    height: 32px;
-                    border-radius: 50%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    overflow: hidden;
-                    flex-shrink: 0;
-                    background: rgba(255, 255, 255, 0.2);
-                }
-
-                .chatbot-restore-avatar img {
-                    width: 100%;
-                    height: 100%;
-                    object-fit: cover;
-                    border-radius: 50%;
-                }
-
-                .chatbot-restore-text {
-                    flex: 1;
-                    font-weight: 500;
-                    font-size: 14px;
-                }
-
-                .chatbot-restore-btn {
-                    background: rgba(255, 255, 255, 0.2);
-                    color: white;
-                    border: none;
-                    border-radius: 6px;
-                    padding: 6px;
-                    cursor: pointer;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    transition: all 0.2s ease;
-                    flex-shrink: 0;
-                }
-
-                .chatbot-restore-btn:hover {
-                    background: rgba(255, 255, 255, 0.3);
-                    transform: scale(1.05);
-                }
-
-                @keyframes slideInRestore {
-                    from {
-                        opacity: 0;
-                        transform: translateX(20px);
-                    }
-                    to {
-                        opacity: 1;
-                        transform: translateX(0);
-                    }
-                }
 
                 .chatbot-toggle {
                     background: white;
@@ -411,7 +301,7 @@
                     border-radius: 12px;
                     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
                     position: absolute;
-                    bottom: 80px;
+                    bottom: 20px;
                     right: 0;
                     display: flex;
                     flex-direction: column;
@@ -452,8 +342,7 @@
                     gap: 8px;
                 }
 
-                .chatbot-minimize-btn,
-                .chatbot-close-btn {
+                .chatbot-minimize-btn {
                     background: none;
                     border: none;
                     color: white;
@@ -467,14 +356,9 @@
                     opacity: 0.8;
                 }
 
-                .chatbot-minimize-btn:hover,
-                .chatbot-close-btn:hover {
+                .chatbot-minimize-btn:hover {
                     background: rgba(255, 255, 255, 0.2);
                     opacity: 1;
-                }
-
-                .chatbot-close-btn:hover {
-                    background: rgba(220, 53, 69, 0.8);
                 }
 
                 .chatbot-title {
@@ -754,44 +638,27 @@
                     .chatbot-window {
                         width: calc(100vw - 40px);
                         height: calc(100vh - 100px);
-                        bottom: 80px;
+                        bottom: 20px;
                         right: 20px;
                     }
 
-                    .chatbot-restore {
-                        min-width: 200px;
-                        max-width: calc(100vw - 40px);
-                        padding: 10px 12px;
-                    }
-
-                    .chatbot-restore-avatar {
-                        width: 28px;
-                        height: 28px;
-                    }
-
-                    .chatbot-restore-text {
-                        font-size: 13px;
-                    }
 
                     .chatbot-control-buttons {
                         gap: 6px;
                     }
 
-                    .chatbot-minimize-btn,
-                    .chatbot-close-btn {
+                    .chatbot-minimize-btn {
                         padding: 3px;
                     }
 
-                    .chatbot-toggle-minimize,
-                    .chatbot-toggle-close-btn {
+                    .chatbot-toggle-minimize {
                         width: 20px;
                         height: 20px;
                         top: 6px;
                         right: 6px;
                     }
 
-                    .chatbot-toggle-minimize svg,
-                    .chatbot-toggle-close-btn svg {
+                    .chatbot-toggle-minimize svg {
                         width: 12px;
                         height: 12px;
                     }
@@ -810,9 +677,7 @@
             const input = document.getElementById(`chatbot-input-${this.config.embedCode}`);
             const sendBtn = document.getElementById(`chatbot-send-${this.config.embedCode}`);
             const minimizeBtn = document.querySelector(`#chatbot-window-${this.config.embedCode} .chatbot-minimize-btn`);
-            const closeBtn = document.querySelector(`#chatbot-window-${this.config.embedCode} .chatbot-close-btn`);
             const toggleMinimizeBtn = document.querySelector(`#chatbot-toggle-${this.config.embedCode} .chatbot-toggle-minimize`);
-            const restoreBtn = document.getElementById(`chatbot-restore-${this.config.embedCode}`);
             const widget = document.getElementById(`chatbot-${this.config.embedCode}`);
 
             // Toggle chat window
@@ -832,15 +697,16 @@
                 window.style.display = isVisible ? 'none' : 'flex';
                 
                 const content = toggle.querySelector('.chatbot-toggle-content');
-                const closeIcon = toggle.querySelector('.chatbot-toggle-close');
                 
                 if (isVisible) {
+                    // Chat window is closing, show toggle button
+                    toggle.style.display = 'flex';
                     content.style.display = 'flex';
-                    closeIcon.style.display = 'none';
                     widget.classList.remove('minimized');
                 } else {
+                    // Chat window is opening, hide toggle button
+                    toggle.style.display = 'none';
                     content.style.display = 'none';
-                    closeIcon.style.display = 'block';
                     input.focus();
                 }
             });
@@ -853,13 +719,6 @@
                 });
             }
 
-            // Close button (in chat window)
-            if (closeBtn) {
-                closeBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.closeChat();
-                });
-            }
 
             // Toggle minimize button
             if (toggleMinimizeBtn) {
@@ -869,12 +728,6 @@
                 });
             }
 
-            // Restore button
-            if (restoreBtn) {
-                restoreBtn.addEventListener('click', () => {
-                    this.restoreChat();
-                });
-            }
 
             // Send message on Enter
             input.addEventListener('keypress', (e) => {
@@ -1037,67 +890,19 @@
             widget.classList.add('minimized');
             window.style.display = 'none';
             
-            // Hide toggle content and control buttons, keep avatar visible
+            // Show toggle button and hide content, keep avatar visible
+            toggle.style.display = 'flex';
             const content = toggle.querySelector('.chatbot-toggle-content');
-            const closeIcon = toggle.querySelector('.chatbot-toggle-close');
             const minimizeBtn = toggle.querySelector('.chatbot-toggle-minimize');
             
             content.style.display = 'none';
-            closeIcon.style.display = 'none';
             if (minimizeBtn) minimizeBtn.style.display = 'none';
             
             // Add circular avatar class for styling
             toggle.classList.add('minimized-avatar');
         },
 
-        closeChat: function() {
-            const widget = document.getElementById(`chatbot-${this.config.embedCode}`);
-            const window = document.getElementById(`chatbot-window-${this.config.embedCode}`);
-            const toggle = document.getElementById(`chatbot-toggle-${this.config.embedCode}`);
-            const restore = document.getElementById(`chatbot-restore-${this.config.embedCode}`);
-            
-            // Hide the chat window
-            window.style.display = 'none';
-            
-            // Hide the toggle button
-            toggle.style.display = 'none';
-            
-            // Add closed class to widget
-            widget.classList.add('closed');
-            
-            // Show restore button after a short delay
-            setTimeout(() => {
-                restore.style.display = 'block';
-            }, 500);
-        },
 
-        restoreChat: function() {
-            const widget = document.getElementById(`chatbot-${this.config.embedCode}`);
-            const restore = document.getElementById(`chatbot-restore-${this.config.embedCode}`);
-            const toggle = document.getElementById(`chatbot-toggle-${this.config.embedCode}`);
-            const window = document.getElementById(`chatbot-window-${this.config.embedCode}`);
-            const restoreText = restore.querySelector('.chatbot-restore-text span');
-            
-            // Update text to show it's being restored
-            if (restoreText) {
-                restoreText.textContent = 'Chat reopened';
-            }
-            
-            // Remove closed class and show toggle
-            widget.classList.remove('closed');
-            restore.style.display = 'none';
-            toggle.style.display = 'flex';
-            
-            // Make sure the chat window is hidden initially
-            window.style.display = 'none';
-            
-            // Reset text back to "Chat closed" after a delay
-            setTimeout(() => {
-                if (restoreText) {
-                    restoreText.textContent = 'Chat closed';
-                }
-            }, 2000);
-        },
 
         restoreFromMinimized: function() {
             const widget = document.getElementById(`chatbot-${this.config.embedCode}`);
@@ -1108,7 +913,10 @@
             widget.classList.remove('minimized');
             toggle.classList.remove('minimized-avatar');
             
-            // Show toggle content and control buttons
+            // Hide toggle button when chat window opens
+            toggle.style.display = 'none';
+            
+            // Show toggle content and control buttons (for when it's shown again)
             const content = toggle.querySelector('.chatbot-toggle-content');
             const minimizeBtn = toggle.querySelector('.chatbot-toggle-minimize');
             

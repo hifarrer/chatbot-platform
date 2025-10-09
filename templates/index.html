@@ -214,6 +214,8 @@ window.addEventListener('load', function() {
         containerId: 'chatbot-container',
         title: '{{ homepage_chatbot_title }}',
         placeholder: '{{ homepage_chatbot_placeholder }}',
+        avatarUrl: '{% if homepage_chatbot.avatar_filename %}{{ get_avatar_url(homepage_chatbot.avatar_filename) }}{% endif %}',
+        greetingMessage: '{{ homepage_chatbot.greeting_message or "Hi! I\'m here to help. Ask me anything!" }}',
         theme: 'light',
         position: 'bottom-right'
     });
