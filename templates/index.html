@@ -25,23 +25,28 @@
             </p>
         {% endif %}
         
-        <!-- Try It Now Highlight Box -->
-        <div class="try-now-highlight mb-4 animate-bounce-subtle">
-            <div class="highlight-box">
-                <div class="d-flex align-items-center justify-content-center mb-3">
-                    <div class="chatbot-icon-large me-3">
-                        <i class="fas fa-comments fa-3x text-primary"></i>
+        <!-- Dynamic Platform Assistant Section -->
+        {% for section in homepage_sections %}
+            {% if section.section_type == 'platform_assistant' %}
+            <div class="try-now-highlight mb-4 animate-bounce-subtle">
+                <div class="highlight-box">
+                    <div class="d-flex align-items-center justify-content-center mb-3">
+                        <div class="chatbot-icon-large me-3">
+                            {% set assistant_data = section.content|from_json %}
+                            <i class="{{ assistant_data.icon }} fa-3x text-{{ assistant_data.highlight_color }}"></i>
+                        </div>
+                        <div class="text-start">
+                            <h4 class="mb-1 text-{{ assistant_data.highlight_color }}">{{ section.title }}</h4>
+                            <p class="mb-0 text-muted">{{ section.subtitle }}</p>
+                        </div>
                     </div>
-                    <div class="text-start">
-                        <h4 class="mb-1 text-primary">Try Our Platform Assistant!</h4>
-                        <p class="mb-0 text-muted">Click the blue chat bubble in the bottom-right corner →</p>
+                    <div class="highlight-arrow">
+                        <i class="fas fa-arrow-down fa-2x text-{{ assistant_data.arrow_color }} animate-bounce"></i>
                     </div>
-                </div>
-                <div class="highlight-arrow">
-                    <i class="fas fa-arrow-down fa-2x text-warning animate-bounce"></i>
                 </div>
             </div>
-        </div>
+            {% endif %}
+        {% endfor %}
         
         {% if not current_user.is_authenticated %}
             <div class="d-grid gap-2 d-md-flex justify-content-md-center">

@@ -105,7 +105,7 @@
     <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
         <div class="container">
             <a class="navbar-brand" href="#">
-                <i class="fas fa-rocket me-2"></i>TechCorp Solutions
+                <i class="fas fa-rocket me-2"></i>{{ chatbot.owner.business_name or 'Your Business' }}
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
@@ -159,7 +159,7 @@
     <!-- Hero Section -->
     <section id="home" class="hero-section">
         <div class="container text-center">
-            <h1 class="display-4 fw-bold mb-4">Welcome to TechCorp Solutions</h1>
+            <h1 class="display-4 fw-bold mb-4">Welcome to {{ chatbot.owner.business_name or 'Your Business' }}</h1>
             <p class="lead mb-4">We provide cutting-edge technology solutions for modern businesses</p>
             <a href="#services" class="btn btn-primary btn-lg">
                 <i class="fas fa-arrow-down me-2"></i>Explore Our Services
@@ -213,7 +213,7 @@
         <div class="container">
             <div class="row align-items-center">
                 <div class="col-lg-6">
-                    <h2 class="display-5 fw-bold mb-4">About TechCorp</h2>
+                    <h2 class="display-5 fw-bold mb-4">About {{ chatbot.owner.business_name or 'Your Business' }}</h2>
                     <p class="lead">We are a team of passionate developers and designers dedicated to creating exceptional digital experiences.</p>
                     <p>With over 10 years of experience in the industry, we've helped hundreds of businesses transform their digital presence and achieve their goals.</p>
                     <ul class="list-unstyled">
@@ -284,7 +284,7 @@
         <div class="container">
             <div class="row">
                 <div class="col-lg-4 mb-4">
-                    <h5><i class="fas fa-rocket me-2"></i>TechCorp Solutions</h5>
+                    <h5><i class="fas fa-rocket me-2"></i>{{ chatbot.owner.business_name or 'Your Business' }}</h5>
                     <p>Building the future of digital experiences, one project at a time.</p>
                     <div class="social-links">
                         <a href="#"><i class="fab fa-facebook"></i></a>
@@ -321,7 +321,7 @@
             <hr class="my-4">
             <div class="row align-items-center">
                 <div class="col-md-6">
-                    <p class="mb-0">&copy; 2024 TechCorp Solutions. All rights reserved.</p>
+                    <p class="mb-0">&copy; 2024 {{ chatbot.owner.business_name or 'Your Business' }}. All rights reserved.</p>
                 </div>
                 <div class="col-md-6 text-md-end">
                     <a href="#" class="text-light me-3">Privacy Policy</a>

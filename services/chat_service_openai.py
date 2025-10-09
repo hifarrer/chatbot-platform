@@ -225,10 +225,23 @@ class ChatServiceOpenAI:
         # Use custom prompt if provided, otherwise use default
         base_prompt = custom_prompt or "You are a helpful AI assistant trained on specific documents. Your job is to answer questions based on the information provided in the context below."
         
+        # Get training prompt from database
+        from app import get_setting
+        training_prompt_template = get_setting('training_prompt', '')
+        
         if context_passages:
             context_text = "\n\n".join(context_passages)
             
-            system_prompt = f"""{base_prompt}
+            # Use database prompt if available, otherwise use default
+            if training_prompt_template:
+                # Replace placeholders in the template
+                system_prompt = training_prompt_template.format(
+                    base_prompt=base_prompt,
+                    context_text=context_text
+                )
+            else:
+                # Fallback to hardcoded prompt
+                system_prompt = f"""{base_prompt}
 
 TRAINING DOCUMENTS CONTEXT:
 {context_text}
@@ -258,8 +271,16 @@ RESPONSE GUIDELINES:
 
 Remember: Stay in character as defined in your role, and ALWAYS prioritize information from the training documents when available."""
         else:
-            # No documents, just use the custom prompt
-            system_prompt = f"""{base_prompt}
+            # No documents, use database prompt or fallback
+            if training_prompt_template:
+                # Use database prompt template without context
+                system_prompt = training_prompt_template.format(
+                    base_prompt=base_prompt,
+                    context_text=""
+                )
+            else:
+                # Fallback to hardcoded prompt
+                system_prompt = f"""{base_prompt}
 
 INSTRUCTIONS:
 1. Follow your role as defined above

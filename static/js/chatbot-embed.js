@@ -120,6 +120,14 @@
                                     </svg>
                                 </button>
                             </div>
+                            <div class="chatbot-end-conversation">
+                                <button id="chatbot-end-conversation-${this.config.embedCode}" class="end-conversation-btn" type="button">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                                    </svg>
+                                    End Conversation
+                                </button>
+                            </div>
                         </div>
                         
                         <div class="chatbot-footer">
@@ -571,6 +579,83 @@
                     color: #6c757d;
                 }
 
+                .chatbot-end-conversation {
+                    padding: 8px 0;
+                    text-align: center;
+                }
+
+                .end-conversation-btn {
+                    background: #dc3545;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 8px 16px;
+                    font-size: 12px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    transition: all 0.2s ease;
+                }
+
+                .end-conversation-btn:hover {
+                    background: #c82333;
+                    transform: translateY(-1px);
+                }
+
+                .end-conversation-btn:active {
+                    transform: translateY(0);
+                }
+
+                .end-conversation-btn svg {
+                    width: 14px;
+                    height: 14px;
+                }
+
+                .end-conversation-options {
+                    display: flex;
+                    gap: 12px;
+                    justify-content: center;
+                    margin-top: 8px;
+                }
+
+                .end-conversation-yes-btn,
+                .end-conversation-no-btn {
+                    background: #007bff;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 8px 16px;
+                    font-size: 12px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    transition: all 0.2s ease;
+                }
+
+                .end-conversation-yes-btn:hover {
+                    background: #0056b3;
+                    transform: translateY(-1px);
+                }
+
+                .end-conversation-no-btn {
+                    background: #6c757d;
+                }
+
+                .end-conversation-no-btn:hover {
+                    background: #545b62;
+                    transform: translateY(-1px);
+                }
+
+                .end-conversation-yes-btn svg,
+                .end-conversation-no-btn svg {
+                    width: 14px;
+                    height: 14px;
+                }
+
                 .typing-indicator {
                     display: flex;
                     align-items: center;
@@ -676,6 +761,7 @@
             const window = document.getElementById(`chatbot-window-${this.config.embedCode}`);
             const input = document.getElementById(`chatbot-input-${this.config.embedCode}`);
             const sendBtn = document.getElementById(`chatbot-send-${this.config.embedCode}`);
+            const endConversationBtn = document.getElementById(`chatbot-end-conversation-${this.config.embedCode}`);
             const minimizeBtn = document.querySelector(`#chatbot-window-${this.config.embedCode} .chatbot-minimize-btn`);
             const toggleMinimizeBtn = document.querySelector(`#chatbot-toggle-${this.config.embedCode} .chatbot-toggle-minimize`);
             const widget = document.getElementById(`chatbot-${this.config.embedCode}`);
@@ -707,6 +793,14 @@
                     // Chat window is opening, hide toggle button
                     toggle.style.display = 'none';
                     content.style.display = 'none';
+                    
+                    // Clear messages if flag is set
+                    if (this.shouldClearMessages) {
+                        this.clearMessages();
+                        this.shouldClearMessages = false;
+                        this.conversationId = null; // Reset conversation ID
+                    }
+                    
                     input.focus();
                 }
             });
@@ -741,6 +835,13 @@
             sendBtn.addEventListener('click', () => {
                 this.sendMessage();
             });
+
+            // End conversation button
+            if (endConversationBtn) {
+                endConversationBtn.addEventListener('click', () => {
+                    this.showEndConversationDialog();
+                });
+            }
         },
 
         sendMessage: function() {  
@@ -923,6 +1024,13 @@
             content.style.display = 'flex';
             if (minimizeBtn) minimizeBtn.style.display = 'flex';
             
+            // Clear messages if flag is set
+            if (this.shouldClearMessages) {
+                this.clearMessages();
+                this.shouldClearMessages = false;
+                this.conversationId = null; // Reset conversation ID
+            }
+            
             // Open the chat window
             window.style.display = 'flex';
             
@@ -930,6 +1038,117 @@
             const input = document.getElementById(`chatbot-input-${this.config.embedCode}`);
             if (input) {
                 input.focus();
+            }
+        },
+
+        clearMessages: function() {
+            const messagesContainer = document.getElementById(`chatbot-messages-${this.config.embedCode}`);
+            if (messagesContainer) {
+                // Clear all messages except the initial greeting
+                messagesContainer.innerHTML = `
+                    <div class="message bot-message">
+                        <div class="message-avatar">
+                            ${this.config.avatarUrl ? 
+                                `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
+                                '🤖'
+                            }
+                        </div>
+                        <div class="message-content">
+                            <div class="message-bubble">
+                                ${this.config.greetingMessage}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        },
+
+        showEndConversationDialog: function() {
+            const messagesContainer = document.getElementById(`chatbot-messages-${this.config.embedCode}`);
+            
+            // Add bot message asking if questions are answered
+            this.addMessage("Have I answered all your questions?", 'bot');
+            
+            // Add Yes/No buttons
+            const buttonContainer = document.createElement('div');
+            buttonContainer.className = 'message bot-message end-conversation-buttons';
+            buttonContainer.innerHTML = `
+                <div class="message-avatar">
+                    ${this.config.avatarUrl ? 
+                        `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
+                        '🤖'
+                    }
+                </div>
+                <div class="message-content">
+                    <div class="message-bubble">
+                        <div class="end-conversation-options">
+                            <button class="end-conversation-yes-btn" onclick="ChatbotEmbed.handleEndConversationResponse('${this.config.embedCode}', true)">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                                </svg>
+                                Yes
+                            </button>
+                            <button class="end-conversation-no-btn" onclick="ChatbotEmbed.handleEndConversationResponse('${this.config.embedCode}', false)">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                                </svg>
+                                No
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            messagesContainer.appendChild(buttonContainer);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        },
+
+        handleEndConversationResponse: function(embedCode, isResolved) {
+            if (isResolved) {
+                // Mark conversation as resolved
+                this.markConversationResolved();
+                this.addMessage("Great! I'm glad I could help. Feel free to start a new conversation anytime!", 'bot');
+                
+                // Set flag to clear messages on next open
+                this.shouldClearMessages = true;
+                
+                // Auto-minimize after 5 seconds
+                setTimeout(() => {
+                    this.minimizeChat();
+                }, 5000);
+            } else {
+                // Ask what other questions they have
+                this.addMessage("What other questions can I help you with?", 'bot');
+            }
+            
+            // Remove the Yes/No buttons
+            const buttonContainer = document.querySelector(`#chatbot-messages-${embedCode} .end-conversation-buttons`);
+            if (buttonContainer) {
+                buttonContainer.remove();
+            }
+        },
+
+        markConversationResolved: function() {
+            // Send request to mark conversation as resolved
+            if (this.conversationId) {
+                fetch(this.config.apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'end_conversation',
+                        conversation_id: this.conversationId,
+                        resolved: true
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Conversation marked as resolved:', data);
+                })
+                .catch(error => {
+                    console.error('Error marking conversation as resolved:', error);
+                });
             }
         }
     };

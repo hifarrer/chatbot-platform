@@ -75,6 +75,7 @@ class Conversation(db.Model):
     user_message = db.Column(db.Text, nullable=False)
     bot_response = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    response_status = db.Column(db.String(20), default='active')  # 'active', 'resolved', 'pending'
 
 class Plan(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -1242,6 +1243,29 @@ Best regards,
             if not data:
                 return jsonify({'error': 'No data received'}), 400
                 
+            # Check if this is an end conversation action
+            action = data.get('action')
+            if action == 'end_conversation':
+                conversation_id = data.get('conversation_id')
+                resolved = data.get('resolved', False)
+                
+                if conversation_id:
+                    # Update conversation status in database
+                    # Since conversation_id is a UUID string, we need to find conversations by chatbot_id
+                    # and update the most recent ones or all conversations for this chatbot
+                    conversations = Conversation.query.filter_by(chatbot_id=chatbot.id).all()
+                    for conv in conversations:
+                        conv.response_status = 'resolved' if resolved else 'active'
+                    db.session.commit()
+                    
+                    return jsonify({
+                        'success': True,
+                        'message': 'Conversation status updated',
+                        'conversation_id': conversation_id
+                    })
+                else:
+                    return jsonify({'error': 'Conversation ID required for end conversation action'}), 400
+            
             user_message = data.get('message', '').strip()
             conversation_id = data.get('conversation_id', None)
             
@@ -1720,6 +1744,9 @@ Best regards,
         # Get current OpenAI model setting
         current_openai_model = get_setting('openai_model', 'gpt-3.5-turbo')
         
+        # Get current training prompt
+        current_training_prompt = get_setting('training_prompt', '')
+        
         # Get all trained chatbots for selection
         trained_chatbots = Chatbot.query.filter_by(is_trained=True).all()
         
@@ -1741,6 +1768,7 @@ Best regards,
                              current_stripe_secret_key=current_stripe_secret_key,
                              current_stripe_webhook_secret=current_stripe_webhook_secret,
                              current_openai_model=current_openai_model,
+                             current_training_prompt=current_training_prompt,
                              trained_chatbots=trained_chatbots)
 
     @app.route('/admin/settings/homepage', methods=['POST'])
@@ -1807,6 +1835,22 @@ Best regards,
             return {'success': True, 'message': 'Stripe settings updated successfully!'}
         except Exception as e:
             return {'success': False, 'message': f'Error updating Stripe settings: {str(e)}'}, 500
+
+    @app.route('/admin/settings/training-prompt', methods=['POST'])
+    @admin_required
+    def admin_settings_training_prompt():
+        """AJAX endpoint for training prompt settings"""
+        try:
+            training_prompt = request.form.get('training_prompt', '').strip()
+            
+            if not training_prompt:
+                return {'success': False, 'message': 'Training prompt cannot be empty'}, 400
+            
+            set_setting('training_prompt', training_prompt)
+            
+            return {'success': True, 'message': 'Training prompt updated successfully!'}
+        except Exception as e:
+            return {'success': False, 'message': f'Error updating training prompt: {str(e)}'}, 500
 
     def allowed_file(filename):
         ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx'}

@@ -25,7 +25,7 @@
                     <div class="card h-100">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <h5 class="card-title mb-0">
-                                <i class="fas fa-{{ 'cogs' if section.section_type == 'how_it_works' else 'star' if section.section_type == 'features' else 'chart-bar' if section.section_type == 'stats' else 'bullhorn' }} me-2"></i>
+                                <i class="fas fa-{{ 'cogs' if section.section_type == 'how_it_works' else 'star' if section.section_type == 'features' else 'chart-bar' if section.section_type == 'stats' else 'bullhorn' if section.section_type == 'cta' else 'comments' if section.section_type == 'platform_assistant' else 'bullhorn' }} me-2"></i>
                                 {{ section.title or section.section_type.replace('_', ' ').title() }}
                             </h5>
                             <div class="d-flex gap-2">

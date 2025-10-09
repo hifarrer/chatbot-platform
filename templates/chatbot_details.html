@@ -266,6 +266,11 @@
                         <i class="fas fa-paper-plane"></i>
                     </button>
                 </div>
+                <div class="mt-2 text-center">
+                    <button id="end-conversation-btn" class="btn btn-outline-danger btn-sm" onclick="showEndConversationDialog()">
+                        <i class="fas fa-times me-1"></i>End Conversation
+                    </button>
+                </div>
             </div>
         </div>
         {% endif %}
@@ -699,6 +704,9 @@ function convertLinksToHtml(text) {
     return processedText;
 }
 
+// Global variable to track conversation ID
+let conversationId = null;
+
 function sendMessage() {
     const input = document.getElementById('chat-input');
     const message = input.value.trim();
@@ -706,6 +714,13 @@ function sendMessage() {
     if (!message) return;
     
     const chatMessages = document.getElementById('chat-messages');
+    
+    // Clear messages if flag is set (new conversation after end)
+    if (window.shouldClearMessages) {
+        clearMessages();
+        window.shouldClearMessages = false;
+        conversationId = null; // Reset conversation ID
+    }
     
     // Add user message
     const userDiv = document.createElement('div');
@@ -722,18 +737,29 @@ function sendMessage() {
     input.value = '';
     chatMessages.scrollTop = chatMessages.scrollHeight;
     
+    // Prepare request data with conversation ID
+    const requestData = { message: message };
+    if (conversationId) {
+        requestData.conversation_id = conversationId;
+    }
+    
     // Send to API
     fetch(`/api/chat/{{ chatbot.embed_code }}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message: message })
+        body: JSON.stringify(requestData)
     })
     .then(response => response.json())
     .then(data => {
         // Remove loading indicator
         chatMessages.removeChild(loadingDiv);
+        
+        // Store conversation ID for future messages
+        if (data.conversation_id) {
+            conversationId = data.conversation_id;
+        }
         
         // Add bot response
         const botDiv = document.createElement('div');
@@ -756,6 +782,111 @@ function sendMessage() {
         
         chatMessages.scrollTop = chatMessages.scrollHeight;
     });
+}
+
+function showEndConversationDialog() {
+    const chatMessages = document.getElementById('chat-messages');
+    
+    // Add bot message asking if questions are answered
+    const botDiv = document.createElement('div');
+    botDiv.className = 'mb-2';
+    botDiv.innerHTML = `<div class="d-inline-block bg-light rounded px-3 py-2" style="max-width: 70%;"><i class="fas fa-robot me-2 text-primary"></i>Have I answered all your questions?</div>`;
+    chatMessages.appendChild(botDiv);
+    
+    // Add Yes/No buttons
+    const buttonDiv = document.createElement('div');
+    buttonDiv.className = 'mb-2';
+    buttonDiv.innerHTML = `
+        <div class="d-inline-block bg-light rounded px-3 py-2" style="max-width: 70%;">
+            <div class="d-flex gap-2 justify-content-center">
+                <button class="btn btn-success btn-sm" onclick="handleEndConversationResponse(true)">
+                    <i class="fas fa-check me-1"></i>Yes
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="handleEndConversationResponse(false)">
+                    <i class="fas fa-times me-1"></i>No
+                </button>
+            </div>
+        </div>
+    `;
+    chatMessages.appendChild(buttonDiv);
+    
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function handleEndConversationResponse(isResolved) {
+    const chatMessages = document.getElementById('chat-messages');
+    
+    if (isResolved) {
+        // Mark conversation as resolved
+        markConversationResolved();
+        
+        // Add bot response
+        const botDiv = document.createElement('div');
+        botDiv.className = 'mb-2';
+        botDiv.innerHTML = `<div class="d-inline-block bg-light rounded px-3 py-2" style="max-width: 70%;"><i class="fas fa-robot me-2 text-primary"></i>Great! I'm glad I could help. Feel free to start a new conversation anytime!</div>`;
+        chatMessages.appendChild(botDiv);
+        
+        // Set flag to clear messages on next interaction
+        window.shouldClearMessages = true;
+        
+        // Auto-hide chat section after 5 seconds
+        setTimeout(() => {
+            const chatSection = document.querySelector('#chat-messages').closest('.card');
+            if (chatSection) {
+                chatSection.style.display = 'none';
+            }
+        }, 5000);
+    } else {
+        // Ask what other questions they have
+        const botDiv = document.createElement('div');
+        botDiv.className = 'mb-2';
+        botDiv.innerHTML = `<div class="d-inline-block bg-light rounded px-3 py-2" style="max-width: 70%;"><i class="fas fa-robot me-2 text-primary"></i>What other questions can I help you with?</div>`;
+        chatMessages.appendChild(botDiv);
+    }
+    
+    // Remove the Yes/No buttons
+    const buttonContainer = chatMessages.querySelector('.d-flex.gap-2.justify-content-center');
+    if (buttonContainer) {
+        buttonContainer.closest('.mb-2').remove();
+    }
+    
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function markConversationResolved() {
+    // Send request to mark conversation as resolved
+    if (conversationId) {
+        fetch(`/api/chat/{{ chatbot.embed_code }}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                action: 'end_conversation',
+                conversation_id: conversationId,
+                resolved: true
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('Conversation marked as resolved:', data);
+        })
+        .catch(error => {
+            console.error('Error marking conversation as resolved:', error);
+        });
+    }
+}
+
+function clearMessages() {
+    const chatMessages = document.getElementById('chat-messages');
+    if (chatMessages) {
+        // Clear all messages and show initial greeting
+        chatMessages.innerHTML = `
+            <div class="alert alert-info">
+                <i class="fas fa-robot me-2"></i>Hi! I'm your chatbot. Ask me anything based on the documents you've uploaded.
+            </div>
+        `;
+    }
 }
 
 // Avatar selection for edit mode
