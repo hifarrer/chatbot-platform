@@ -15,7 +15,7 @@
             <div class="card-body">
                 <p class="text-muted">Configure which chatbot appears on the homepage and customize its appearance.</p>
                 
-                <form method="POST">
+                <form id="homepage-form">
                     <div class="mb-3">
                         <label for="homepage_chatbot_id" class="form-label">Homepage Chatbot</label>
                         <select class="form-select" id="homepage_chatbot_id" name="homepage_chatbot_id">
@@ -78,7 +78,7 @@
             <div class="card-body">
                 <p class="text-muted">Customize the "Get in Touch" section on the contact page.</p>
                 
-                <form method="POST">
+                <form id="contact-form">
                     <div class="row">
                         <div class="col-md-6">
                             <div class="mb-3">
@@ -128,7 +128,7 @@
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-save me-2"></i>
-                            Save All Settings
+                            Save Contact Settings
                         </button>
                         <a href="{{ url_for('contact') }}" target="_blank" class="btn btn-outline-secondary">
                             <i class="fas fa-external-link-alt me-2"></i>
@@ -150,7 +150,7 @@
             <div class="card-body">
                 <p class="text-muted">Configure which OpenAI model to use for chatbot responses. </p>
                 
-                <form method="POST">
+                <form id="openai-form">
                     <div class="mb-3">
                         <label for="openai_model" class="form-label">OpenAI Model</label>
                         <select class="form-select" id="openai_model" name="openai_model">
@@ -199,7 +199,7 @@
             <div class="card-body">
                 <p class="text-muted">Configure Stripe payment integration for future payment processing.</p>
                 
-                <form method="POST">
+                <form id="stripe-form">
                     <div class="mb-3">
                         <label for="stripe_publishable_key" class="form-label">Stripe Publishable Key</label>
                         <input type="text" class="form-control" id="stripe_publishable_key" 
@@ -233,7 +233,7 @@
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-save me-2"></i>
-                            Save All Settings
+                            Save Stripe Settings
                         </button>
                         <button type="button" class="btn btn-outline-info" onclick="toggleStripeKeyVisibility()">
                             <i class="fas fa-eye me-2"></i>
@@ -445,6 +445,109 @@
 
 {% block scripts %}
 <script>
+// AJAX form submission functions
+function submitForm(formId, endpoint) {
+    const form = document.getElementById(formId);
+    const formData = new FormData(form);
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    
+    // Show loading state
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Saving...';
+    submitBtn.disabled = true;
+    
+    fetch(endpoint, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            submitBtn.innerHTML = '<i class="fas fa-check me-2"></i>Saved!';
+            submitBtn.classList.remove('btn-primary');
+            submitBtn.classList.add('btn-success');
+            
+            // Show flash message
+            showFlashMessage(data.message, 'success');
+            
+            // Reset button after 2 seconds
+            setTimeout(() => {
+                submitBtn.innerHTML = originalText;
+                submitBtn.classList.remove('btn-success');
+                submitBtn.classList.add('btn-primary');
+                submitBtn.disabled = false;
+            }, 2000);
+        } else {
+            throw new Error(data.message || 'Unknown error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        submitBtn.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i>Error';
+        submitBtn.classList.remove('btn-primary');
+        submitBtn.classList.add('btn-danger');
+        
+        showFlashMessage('Error: ' + error.message, 'danger');
+        
+        // Reset button after 3 seconds
+        setTimeout(() => {
+            submitBtn.innerHTML = originalText;
+            submitBtn.classList.remove('btn-danger');
+            submitBtn.classList.add('btn-primary');
+            submitBtn.disabled = false;
+        }, 3000);
+    });
+}
+
+function showFlashMessage(message, type) {
+    // Create flash message element
+    const flashDiv = document.createElement('div');
+    flashDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    flashDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    // Insert at top of content
+    const content = document.querySelector('.row');
+    content.insertBefore(flashDiv, content.firstChild);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (flashDiv.parentNode) {
+            flashDiv.remove();
+        }
+    }, 5000);
+}
+
+// Form event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    // Homepage form
+    document.getElementById('homepage-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        submitForm('homepage-form', '/admin/settings/homepage');
+    });
+    
+    // Contact form
+    document.getElementById('contact-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        submitForm('contact-form', '/admin/settings/contact');
+    });
+    
+    // OpenAI form
+    document.getElementById('openai-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        submitForm('openai-form', '/admin/settings/openai');
+    });
+    
+    // Stripe form
+    document.getElementById('stripe-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        submitForm('stripe-form', '/admin/settings/stripe');
+    });
+});
+
 function testChatbot() {
     // Open homepage in new tab and scroll to chatbot
     const homepage = window.open('{{ url_for("index") }}', '_blank');

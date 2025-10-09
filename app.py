@@ -608,6 +608,7 @@ Best regards,
             username = request.form['username']
             email = request.form['email']
             password = request.form['password']
+            business_name = request.form.get('business_name', '').strip()
             
             if User.query.filter_by(username=username).first():
                 flash('Username already exists')
@@ -620,7 +621,8 @@ Best regards,
             user = User(
                 username=username,
                 email=email,
-                password_hash=generate_password_hash(password)
+                password_hash=generate_password_hash(password),
+                business_name=business_name if business_name else None
             )
             
             db.session.add(user)
@@ -1636,45 +1638,67 @@ Best regards,
     @admin_required
     def admin_settings():
         if request.method == 'POST':
-            # Update homepage chatbot settings
-            homepage_chatbot_id = request.form.get('homepage_chatbot_id')
-            homepage_chatbot_title = request.form.get('homepage_chatbot_title', 'Platform Assistant')
-            homepage_chatbot_placeholder = request.form.get('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+            section = request.form.get('section')
+            print(f"DEBUG: Processing section: {section}")
+            print(f"DEBUG: Form data: {dict(request.form)}")
             
-            # Update contact page settings
-            contact_email = request.form.get('contact_email', 'support@chatbotplatform.com')
-            contact_response_time = request.form.get('contact_response_time', 'We typically respond within 24 hours')
-            contact_support_hours = request.form.get('contact_support_hours', 'Monday - Friday\n9:00 AM - 6:00 PM (EST)')
-            contact_live_chat_text = request.form.get('contact_live_chat_text', 'Try our Platform Assistant chatbot in the bottom-right corner for instant help!')
+            if section == 'homepage':
+                # Update homepage chatbot settings only
+                print("DEBUG: Processing homepage section")
+                homepage_chatbot_id = request.form.get('homepage_chatbot_id')
+                homepage_chatbot_title = request.form.get('homepage_chatbot_title', 'Platform Assistant')
+                homepage_chatbot_placeholder = request.form.get('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+                
+                print(f"DEBUG: Homepage values - ID: {homepage_chatbot_id}, Title: {homepage_chatbot_title}, Placeholder: {homepage_chatbot_placeholder}")
+                
+                set_setting('homepage_chatbot_id', homepage_chatbot_id)
+                set_setting('homepage_chatbot_title', homepage_chatbot_title)
+                set_setting('homepage_chatbot_placeholder', homepage_chatbot_placeholder)
+                
+                flash('Homepage settings updated successfully!')
+                
+            elif section == 'contact':
+                # Update contact page settings only
+                print("DEBUG: Processing contact section")
+                contact_email = request.form.get('contact_email', 'support@owlbee.ai')
+                contact_response_time = request.form.get('contact_response_time', 'We typically respond within 24 hours')
+                contact_support_hours = request.form.get('contact_support_hours', 'Monday - Friday\n9:00 AM - 6:00 PM (EST)')
+                contact_live_chat_text = request.form.get('contact_live_chat_text', 'Try our Platform Assistant chatbot in the bottom-right corner for instant help!')
+                
+                print(f"DEBUG: Contact values - Email: {contact_email}, Response Time: {contact_response_time}")
+                
+                set_setting('contact_email', contact_email)
+                set_setting('contact_response_time', contact_response_time)
+                set_setting('contact_support_hours', contact_support_hours)
+                set_setting('contact_live_chat_text', contact_live_chat_text)
+                
+                flash('Contact page settings updated successfully!')
+                
+            elif section == 'openai':
+                # Update OpenAI model settings only
+                print("DEBUG: Processing openai section")
+                openai_model = request.form.get('openai_model', 'gpt-3.5-turbo').strip()
+                print(f"DEBUG: OpenAI model: {openai_model}")
+                set_setting('openai_model', openai_model)
+                
+                flash('OpenAI model settings updated successfully!')
+                
+            elif section == 'stripe':
+                # Update Stripe settings only
+                print("DEBUG: Processing stripe section")
+                stripe_publishable_key = request.form.get('stripe_publishable_key', '').strip()
+                stripe_secret_key = request.form.get('stripe_secret_key', '').strip()
+                stripe_webhook_secret = request.form.get('stripe_webhook_secret', '').strip()
+                
+                set_setting('stripe_publishable_key', stripe_publishable_key)
+                set_setting('stripe_secret_key', stripe_secret_key)
+                set_setting('stripe_webhook_secret', stripe_webhook_secret)
+                
+                flash('Stripe settings updated successfully!')
+            else:
+                print(f"DEBUG: Unknown section: {section}")
+                flash('Unknown section. No settings updated.')
             
-            # Update Stripe settings
-            stripe_publishable_key = request.form.get('stripe_publishable_key', '').strip()
-            stripe_secret_key = request.form.get('stripe_secret_key', '').strip()
-            stripe_webhook_secret = request.form.get('stripe_webhook_secret', '').strip()
-            
-            # Update OpenAI model settings
-            openai_model = request.form.get('openai_model', 'gpt-3.5-turbo').strip()
-            
-            # Save homepage settings
-            set_setting('homepage_chatbot_id', homepage_chatbot_id)
-            set_setting('homepage_chatbot_title', homepage_chatbot_title)
-            set_setting('homepage_chatbot_placeholder', homepage_chatbot_placeholder)
-            
-            # Save contact page settings
-            set_setting('contact_email', contact_email)
-            set_setting('contact_response_time', contact_response_time)
-            set_setting('contact_support_hours', contact_support_hours)
-            set_setting('contact_live_chat_text', contact_live_chat_text)
-            
-            # Save Stripe settings
-            set_setting('stripe_publishable_key', stripe_publishable_key)
-            set_setting('stripe_secret_key', stripe_secret_key)
-            set_setting('stripe_webhook_secret', stripe_webhook_secret)
-            
-            # Save OpenAI model setting
-            set_setting('openai_model', openai_model)
-            
-            flash('Settings updated successfully!')
             return redirect(url_for('admin_settings'))
         
         # Get current homepage settings
@@ -1683,7 +1707,7 @@ Best regards,
         current_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
         
         # Get current contact page settings
-        current_contact_email = get_setting('contact_email', 'support@chatbotplatform.com')
+        current_contact_email = get_setting('contact_email', 'support@owlbee.ai')
         current_contact_response_time = get_setting('contact_response_time', 'We typically respond within 24 hours')
         current_contact_support_hours = get_setting('contact_support_hours', 'Monday - Friday\n9:00 AM - 6:00 PM (EST)')
         current_contact_live_chat_text = get_setting('contact_live_chat_text', 'Try our Platform Assistant chatbot in the bottom-right corner for instant help!')
@@ -1718,6 +1742,71 @@ Best regards,
                              current_stripe_webhook_secret=current_stripe_webhook_secret,
                              current_openai_model=current_openai_model,
                              trained_chatbots=trained_chatbots)
+
+    @app.route('/admin/settings/homepage', methods=['POST'])
+    @admin_required
+    def admin_settings_homepage():
+        """AJAX endpoint for homepage settings"""
+        try:
+            homepage_chatbot_id = request.form.get('homepage_chatbot_id')
+            homepage_chatbot_title = request.form.get('homepage_chatbot_title', 'Platform Assistant')
+            homepage_chatbot_placeholder = request.form.get('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+            
+            set_setting('homepage_chatbot_id', homepage_chatbot_id)
+            set_setting('homepage_chatbot_title', homepage_chatbot_title)
+            set_setting('homepage_chatbot_placeholder', homepage_chatbot_placeholder)
+            
+            return {'success': True, 'message': 'Homepage settings updated successfully!'}
+        except Exception as e:
+            return {'success': False, 'message': f'Error updating homepage settings: {str(e)}'}, 500
+
+    @app.route('/admin/settings/contact', methods=['POST'])
+    @admin_required
+    def admin_settings_contact():
+        """AJAX endpoint for contact settings"""
+        try:
+            contact_email = request.form.get('contact_email', 'support@owlbee.ai')
+            contact_response_time = request.form.get('contact_response_time', 'We typically respond within 24 hours')
+            contact_support_hours = request.form.get('contact_support_hours', 'Monday - Friday\n9:00 AM - 6:00 PM (EST)')
+            contact_live_chat_text = request.form.get('contact_live_chat_text', 'Try our Platform Assistant chatbot in the bottom-right corner for instant help!')
+            
+            set_setting('contact_email', contact_email)
+            set_setting('contact_response_time', contact_response_time)
+            set_setting('contact_support_hours', contact_support_hours)
+            set_setting('contact_live_chat_text', contact_live_chat_text)
+            
+            return {'success': True, 'message': 'Contact settings updated successfully!'}
+        except Exception as e:
+            return {'success': False, 'message': f'Error updating contact settings: {str(e)}'}, 500
+
+    @app.route('/admin/settings/openai', methods=['POST'])
+    @admin_required
+    def admin_settings_openai():
+        """AJAX endpoint for OpenAI settings"""
+        try:
+            openai_model = request.form.get('openai_model', 'gpt-3.5-turbo').strip()
+            set_setting('openai_model', openai_model)
+            
+            return {'success': True, 'message': 'OpenAI model settings updated successfully!'}
+        except Exception as e:
+            return {'success': False, 'message': f'Error updating OpenAI settings: {str(e)}'}, 500
+
+    @app.route('/admin/settings/stripe', methods=['POST'])
+    @admin_required
+    def admin_settings_stripe():
+        """AJAX endpoint for Stripe settings"""
+        try:
+            stripe_publishable_key = request.form.get('stripe_publishable_key', '').strip()
+            stripe_secret_key = request.form.get('stripe_secret_key', '').strip()
+            stripe_webhook_secret = request.form.get('stripe_webhook_secret', '').strip()
+            
+            set_setting('stripe_publishable_key', stripe_publishable_key)
+            set_setting('stripe_secret_key', stripe_secret_key)
+            set_setting('stripe_webhook_secret', stripe_webhook_secret)
+            
+            return {'success': True, 'message': 'Stripe settings updated successfully!'}
+        except Exception as e:
+            return {'success': False, 'message': f'Error updating Stripe settings: {str(e)}'}, 500
 
     def allowed_file(filename):
         ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx'}
