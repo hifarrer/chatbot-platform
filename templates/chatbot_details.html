@@ -20,6 +20,9 @@
         <a href="{{ url_for('preview_chatbot', embed_code=chatbot.embed_code) }}" target="_blank" class="btn btn-success me-2">
             <i class="fas fa-eye me-1"></i>Preview
         </a>
+        <a href="{{ url_for('web_preview_chatbot', embed_code=chatbot.embed_code) }}" target="_blank" class="btn btn-warning me-2" style="display: none;">
+            <i class="fas fa-globe me-1"></i>Web Preview
+        </a>
         {% endif %}
         <button class="btn btn-danger" onclick="confirmDelete()">
             <i class="fas fa-trash me-1"></i>Delete Chatbot
@@ -411,6 +414,7 @@
         </div>
     </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -451,6 +455,7 @@ function copyEmbedCode() {
         }, 2000);
     });
 }
+
 
 function toggleEditMode() {
     const viewMode = document.getElementById('view-mode');
@@ -990,6 +995,7 @@ document.addEventListener('DOMContentLoaded', function() {
     align-items: center;
     justify-content: center;
 }
+
 </style>
 
 {% endblock %} 

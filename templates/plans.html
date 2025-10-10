@@ -271,20 +271,24 @@ document.addEventListener('DOMContentLoaded', () => setBillingCycle('monthly'));
 </style>
 
 <!-- Platform Assistant Chatbot -->
+{% if homepage_chatbot %}
 <div id="chatbot-container"></div>
 <script src="{{ url_for('static', filename='js/chatbot-embed.js') }}"></script>
 <script>
 window.addEventListener('load', function() {
     // Initialize the Platform Assistant chatbot
     ChatbotEmbed.init({
-        embedCode: 'a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb',
-        apiUrl: '{{ request.url_root }}api/chat/a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb',
+        embedCode: '{{ homepage_chatbot.embed_code }}',
+        apiUrl: '{{ request.url_root }}api/chat/{{ homepage_chatbot.embed_code }}',
         containerId: 'chatbot-container',
-        title: 'Platform Assistant',
-        placeholder: 'Ask me about our pricing plans and features!',
+        title: '{{ homepage_chatbot_title }}',
+        placeholder: '{{ homepage_chatbot_placeholder }}',
+        avatarUrl: '{% if homepage_chatbot.avatar_filename %}{{ get_avatar_url(homepage_chatbot.avatar_filename) }}{% endif %}',
+        greetingMessage: '{{ homepage_chatbot.greeting_message or "Hi! I\'m here to help. Ask me anything!" }}',
         theme: 'light',
         position: 'bottom-right'
     });
 });
 </script>
+{% endif %}
 {% endblock %}

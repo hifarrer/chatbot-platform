@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Preview - No Website - owlbee.ai</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            min-height: 100vh;
+        }
+        
+        .preview-banner {
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            color: white;
+            padding: 15px 20px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .back-button {
+            position: absolute;
+            top: 15px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+        
+        .back-button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            color: white;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Preview Banner -->
+    <div class="preview-banner">
+        <a href="{{ url_for('chatbot_details', chatbot_id=chatbot.id) }}" class="back-button">
+            <i class="fas fa-arrow-left me-2"></i>Back to Chatbot
+        </a>
+        <h4><i class="fas fa-globe me-2"></i>Web Preview Mode</h4>
+        <p>No website URL configured for this chatbot</p>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8 col-lg-6">
+                <div class="card shadow-lg border-0">
+                    <div class="card-body text-center p-5">
+                        <div class="mb-4">
+                            <i class="fas fa-globe fa-4x text-muted"></i>
+                        </div>
+                        
+                        <h3 class="text-muted mb-3">No Website URL Configured</h3>
+                        <p class="text-muted mb-4">
+                            To use the Web Preview feature, the chatbot owner needs to add their business website URL to their profile.
+                        </p>
+                        
+                        <div class="alert alert-info text-start">
+                            <h6><i class="fas fa-info-circle me-2"></i>How to enable Web Preview:</h6>
+                            <ol class="mb-0">
+                                <li>Go to your <strong>Profile</strong> page</li>
+                                <li>Add your business website URL in the <strong>Website</strong> field</li>
+                                <li>Save your profile</li>
+                                <li>Return here to use Web Preview</li>
+                            </ol>
+                        </div>
+                        
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-center mt-4">
+                            <a href="{{ url_for('profile') }}" class="btn btn-primary btn-lg">
+                                <i class="fas fa-user-edit me-2"></i>Update Profile
+                            </a>
+                            <a href="{{ url_for('chatbot_details', chatbot_id=chatbot.id) }}" class="btn btn-outline-secondary btn-lg">
+                                <i class="fas fa-arrow-left me-2"></i>Back to Chatbot
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Alternative Preview -->
+                <div class="card mt-4 border-0 bg-light">
+                    <div class="card-body text-center p-4">
+                        <h5 class="text-muted mb-3">Alternative Preview</h5>
+                        <p class="text-muted mb-3">You can still preview your chatbot on a sample website:</p>
+                        <a href="{{ url_for('preview_chatbot', embed_code=chatbot.embed_code) }}" target="_blank" class="btn btn-success">
+                            <i class="fas fa-eye me-2"></i>Sample Website Preview
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

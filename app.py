@@ -534,14 +534,52 @@ def create_app():
                 flash('All fields are required.', 'error')
                 # Get active FAQ items for error case
                 faqs = FAQ.query.filter_by(is_active=True).order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
-                return render_template('contact.html', faqs=faqs)
+                
+                # Get homepage chatbot settings for chatbot display
+                homepage_chatbot_id = get_setting('homepage_chatbot_id')
+                homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
+                homepage_chatbot_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+                
+                # Get the chatbot details if configured
+                homepage_chatbot = None
+                if homepage_chatbot_id:
+                    homepage_chatbot = Chatbot.query.get(homepage_chatbot_id)
+                
+                # Fallback to demo chatbot if no specific one is configured
+                if not homepage_chatbot:
+                    homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
+                
+                return render_template('contact.html', 
+                                     faqs=faqs,
+                                     homepage_chatbot=homepage_chatbot,
+                                     homepage_chatbot_title=homepage_chatbot_title,
+                                     homepage_chatbot_placeholder=homepage_chatbot_placeholder)
             
             # Email validation
             if '@' not in email or '.' not in email:
                 flash('Please enter a valid email address.', 'error')
                 # Get active FAQ items for error case
                 faqs = FAQ.query.filter_by(is_active=True).order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
-                return render_template('contact.html', faqs=faqs)
+                
+                # Get homepage chatbot settings for chatbot display
+                homepage_chatbot_id = get_setting('homepage_chatbot_id')
+                homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
+                homepage_chatbot_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+                
+                # Get the chatbot details if configured
+                homepage_chatbot = None
+                if homepage_chatbot_id:
+                    homepage_chatbot = Chatbot.query.get(homepage_chatbot_id)
+                
+                # Fallback to demo chatbot if no specific one is configured
+                if not homepage_chatbot:
+                    homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
+                
+                return render_template('contact.html', 
+                                     faqs=faqs,
+                                     homepage_chatbot=homepage_chatbot,
+                                     homepage_chatbot_title=homepage_chatbot_title,
+                                     homepage_chatbot_placeholder=homepage_chatbot_placeholder)
             
             try:
                 # Create email content
@@ -563,7 +601,28 @@ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
                 admin_email = os.getenv('RESEND_ADMIN_EMAIL')
                 if not admin_email:
                     flash('Admin email not configured. Please contact the administrator.', 'error')
-                    return render_template('contact.html')
+                    # Get active FAQ items for error case
+                    faqs = FAQ.query.filter_by(is_active=True).order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
+                    
+                    # Get homepage chatbot settings for chatbot display
+                    homepage_chatbot_id = get_setting('homepage_chatbot_id')
+                    homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
+                    homepage_chatbot_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+                    
+                    # Get the chatbot details if configured
+                    homepage_chatbot = None
+                    if homepage_chatbot_id:
+                        homepage_chatbot = Chatbot.query.get(homepage_chatbot_id)
+                    
+                    # Fallback to demo chatbot if no specific one is configured
+                    if not homepage_chatbot:
+                        homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
+                    
+                    return render_template('contact.html', 
+                                         faqs=faqs,
+                                         homepage_chatbot=homepage_chatbot,
+                                         homepage_chatbot_title=homepage_chatbot_title,
+                                         homepage_chatbot_placeholder=homepage_chatbot_placeholder)
                 
                 send_email(admin_email, email_subject, email_body)
                 
@@ -592,16 +651,73 @@ Best regards,
                 flash(f'Failed to send message. Please try again later. Error: {str(e)}', 'error')
                 # Get active FAQ items for error case
                 faqs = FAQ.query.filter_by(is_active=True).order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
-                return render_template('contact.html', faqs=faqs)
+                
+                # Get homepage chatbot settings for chatbot display
+                homepage_chatbot_id = get_setting('homepage_chatbot_id')
+                homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
+                homepage_chatbot_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+                
+                # Get the chatbot details if configured
+                homepage_chatbot = None
+                if homepage_chatbot_id:
+                    homepage_chatbot = Chatbot.query.get(homepage_chatbot_id)
+                
+                # Fallback to demo chatbot if no specific one is configured
+                if not homepage_chatbot:
+                    homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
+                
+                return render_template('contact.html', 
+                                     faqs=faqs,
+                                     homepage_chatbot=homepage_chatbot,
+                                     homepage_chatbot_title=homepage_chatbot_title,
+                                     homepage_chatbot_placeholder=homepage_chatbot_placeholder)
         
         # Get active FAQ items ordered by order field
         faqs = FAQ.query.filter_by(is_active=True).order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
-        return render_template('contact.html', faqs=faqs)
+        
+        # Get homepage chatbot settings for chatbot display
+        homepage_chatbot_id = get_setting('homepage_chatbot_id')
+        homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
+        homepage_chatbot_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+        
+        # Get the chatbot details if configured
+        homepage_chatbot = None
+        if homepage_chatbot_id:
+            homepage_chatbot = Chatbot.query.get(homepage_chatbot_id)
+        
+        # Fallback to demo chatbot if no specific one is configured
+        if not homepage_chatbot:
+            homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
+        
+        return render_template('contact.html', 
+                             faqs=faqs,
+                             homepage_chatbot=homepage_chatbot,
+                             homepage_chatbot_title=homepage_chatbot_title,
+                             homepage_chatbot_placeholder=homepage_chatbot_placeholder)
 
     @app.route('/plans')
     def plans():
         plans = Plan.query.filter_by(is_active=True).order_by(Plan.monthly_price.asc()).all()
-        return render_template('plans.html', plans=plans)
+        
+        # Get homepage chatbot settings for chatbot display
+        homepage_chatbot_id = get_setting('homepage_chatbot_id')
+        homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
+        homepage_chatbot_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+        
+        # Get the chatbot details if configured
+        homepage_chatbot = None
+        if homepage_chatbot_id:
+            homepage_chatbot = Chatbot.query.get(homepage_chatbot_id)
+        
+        # Fallback to demo chatbot if no specific one is configured
+        if not homepage_chatbot:
+            homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
+        
+        return render_template('plans.html', 
+                             plans=plans,
+                             homepage_chatbot=homepage_chatbot,
+                             homepage_chatbot_title=homepage_chatbot_title,
+                             homepage_chatbot_placeholder=homepage_chatbot_placeholder)
 
     @app.route('/register', methods=['GET', 'POST'])
     def register():
@@ -610,6 +726,7 @@ Best regards,
             email = request.form['email']
             password = request.form['password']
             business_name = request.form.get('business_name', '').strip()
+            website = request.form.get('website', '').strip()
             
             if User.query.filter_by(username=username).first():
                 flash('Username already exists')
@@ -623,7 +740,8 @@ Best regards,
                 username=username,
                 email=email,
                 password_hash=generate_password_hash(password),
-                business_name=business_name if business_name else None
+                business_name=business_name if business_name else None,
+                website=website if website else None
             )
             
             db.session.add(user)
@@ -752,11 +870,28 @@ Best regards,
         current_chatbot_count = len(chatbots)
         remaining_chatbots = (current_user.user_plan.chatbot_limit - current_chatbot_count) if current_user.user_plan else 0
         
+        # Get homepage chatbot settings for chatbot display
+        homepage_chatbot_id = get_setting('homepage_chatbot_id')
+        homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
+        homepage_chatbot_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+        
+        # Get the chatbot details if configured
+        homepage_chatbot = None
+        if homepage_chatbot_id:
+            homepage_chatbot = Chatbot.query.get(homepage_chatbot_id)
+        
+        # Fallback to demo chatbot if no specific one is configured
+        if not homepage_chatbot:
+            homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
+        
         return render_template('dashboard.html', 
                              chatbots=chatbots,
                              user_plan=current_user.user_plan,
                              current_chatbot_count=current_chatbot_count,
-                             remaining_chatbots=remaining_chatbots)
+                             remaining_chatbots=remaining_chatbots,
+                             homepage_chatbot=homepage_chatbot,
+                             homepage_chatbot_title=homepage_chatbot_title,
+                             homepage_chatbot_placeholder=homepage_chatbot_placeholder)
 
     @app.route('/profile', methods=['GET', 'POST'])
     @login_required
@@ -913,10 +1048,27 @@ Best regards,
         current_chatbot_count = Chatbot.query.filter_by(user_id=current_user.id).count()
         remaining_chatbots = user_plan.chatbot_limit - current_chatbot_count
         
+        # Get homepage chatbot settings for chatbot display
+        homepage_chatbot_id = get_setting('homepage_chatbot_id')
+        homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
+        homepage_chatbot_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+        
+        # Get the chatbot details if configured
+        homepage_chatbot = None
+        if homepage_chatbot_id:
+            homepage_chatbot = Chatbot.query.get(homepage_chatbot_id)
+        
+        # Fallback to demo chatbot if no specific one is configured
+        if not homepage_chatbot:
+            homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
+        
         return render_template('create_chatbot.html', 
                              user_plan=user_plan, 
                              current_chatbot_count=current_chatbot_count,
-                             remaining_chatbots=remaining_chatbots)
+                             remaining_chatbots=remaining_chatbots,
+                             homepage_chatbot=homepage_chatbot,
+                             homepage_chatbot_title=homepage_chatbot_title,
+                             homepage_chatbot_placeholder=homepage_chatbot_placeholder)
 
     @app.route('/chatbot/<int:chatbot_id>')
     @login_required
@@ -1377,6 +1529,19 @@ Best regards,
         if not chatbot:
             return "Chatbot not found", 404
         return render_template('preview.html', embed_code=embed_code, chatbot=chatbot)
+    
+    @app.route('/web-preview/<embed_code>')
+    def web_preview_chatbot(embed_code):
+        """Web preview chatbot on user's actual business website"""
+        chatbot = Chatbot.query.filter_by(embed_code=embed_code).first()
+        if not chatbot:
+            return "Chatbot not found", 404
+        
+        # Check if user has a website URL
+        if not chatbot.owner.website:
+            return render_template('web_preview_no_website.html', chatbot=chatbot)
+        
+        return render_template('web_preview.html', embed_code=embed_code, chatbot=chatbot)
     
     @app.route('/create-demo-chatbot')
     def create_demo_route():
