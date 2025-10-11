@@ -1345,15 +1345,14 @@ Best regards,
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'success': True, 'message': 'Chatbot trained successfully!'})
             flash('Chatbot trained successfully!')
+            return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+            
         except Exception as e:
             # Even if training fails, documents are already marked as processed
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'success': False, 'error': str(e)})
             flash(f'Training failed: {str(e)}')
-        
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return jsonify({'success': False, 'error': 'Training failed'})
-        return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+            return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
 
     @app.route('/delete_chatbot/<int:chatbot_id>', methods=['POST'])
     @login_required

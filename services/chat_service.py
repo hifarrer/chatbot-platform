@@ -15,7 +15,7 @@ class ChatService:
         """
         Generate a response based on the user's message and the chatbot's training data
         """
-        print(f"🔍 DEBUG: Processing message for chatbot {chatbot_id}: '{user_message}'")
+        print(f" DEBUG: Processing message for chatbot {chatbot_id}: '{user_message}'")
         
         # Store chatbot_id for use in other methods
         self._current_chatbot_id = chatbot_id
@@ -31,27 +31,27 @@ class ChatService:
         
         # Allow chatbot to work even without documents if it has a custom prompt
         if not training_data and not chatbot.system_prompt:
-            print(f"❌ DEBUG: No training data found for chatbot {chatbot_id} and no custom prompt")
+            print(f" DEBUG: No training data found for chatbot {chatbot_id} and no custom prompt")
             return "I haven't been trained yet. Please upload some documents and train me first!"
         
         if training_data:
-            print(f"✅ DEBUG: Found training data with {len(training_data['sentences'])} sentences")
+            print(f" DEBUG: Found training data with {len(training_data['sentences'])} sentences")
         else:
-            print(f"📝 DEBUG: No training data, but chatbot has custom prompt: {chatbot.system_prompt[:50]}...")
+            print(f" DEBUG: No training data, but chatbot has custom prompt: {chatbot.system_prompt[:50]}...")
         
         # Find similar content from training data
         similar_content = self.trainer.find_similar_content(chatbot_id, user_message, top_k=5)
         
-        print(f"🔍 DEBUG: Found {len(similar_content)} similar content items")
+        print(f" DEBUG: Found {len(similar_content)} similar content items")
         for i, item in enumerate(similar_content):
             print(f"   {i+1}. Similarity: {item['similarity']:.3f} - Content: {item['content'][:100]}...")
         
         if not similar_content:
-            print("❌ DEBUG: No similar content found, trying fallback response")
+            print(" DEBUG: No similar content found, trying fallback response")
             
             # If no training data but has custom prompt, provide a generic response in character
             if not training_data and chatbot.system_prompt:
-                print("📝 DEBUG: Using custom prompt fallback")
+                print(" DEBUG: Using custom prompt fallback")
                 return self._generate_custom_prompt_response(chatbot.system_prompt, user_message)
             
             # If we have training data but no matches, provide a more helpful response
@@ -72,11 +72,11 @@ class ChatService:
         
         # Check if we have good enough similarity to use document content
         best_similarity = max(item['similarity'] for item in similar_content) if similar_content else 0
-        print(f"📊 DEBUG: Best similarity score: {best_similarity:.3f}")
+        print(f" DEBUG: Best similarity score: {best_similarity:.3f}")
         
         # If similarity is too low, use system prompt instead of forcing document matches
         if best_similarity < 0.3:
-            print(f"⚠️ DEBUG: Similarity too low ({best_similarity:.3f}), using system prompt response")
+            print(f" DEBUG: Similarity too low ({best_similarity:.3f}), using system prompt response")
             if chatbot.system_prompt:
                 return self._generate_custom_prompt_response(chatbot.system_prompt, user_message)
             else:
@@ -85,7 +85,7 @@ class ChatService:
         # Smart Q&A matching - if we find a question, look for the answer
         best_response = self._find_best_response(similar_content, user_message, chatbot)
         
-        print(f"🎯 DEBUG: Selected response: {best_response[:100]}...")
+        print(f" DEBUG: Selected response: {best_response[:100]}...")
         return best_response
     
     def _find_best_response(self, similar_content, user_message, chatbot=None):
@@ -99,20 +99,20 @@ class ChatService:
             
             # If we found a question with high similarity, look for the answer
             if content.startswith('Q:') and similarity > 0.3:
-                print(f"🔍 DEBUG: Found matching Q: question: {content[:50]}...")
+                print(f" DEBUG: Found matching Q: question: {content[:50]}...")
                 
                 # Look for the corresponding answer in the similar content
                 for j, answer_item in enumerate(similar_content):
                     answer_content = answer_item['content'].strip()
                     if answer_content.startswith('A:'):
-                        print(f"✅ DEBUG: Found corresponding A: answer: {answer_content[:50]}...")
+                        print(f" DEBUG: Found corresponding A: answer: {answer_content[:50]}...")
                         return answer_content[2:].strip()  # Remove 'A:' prefix
                 
                 # If no 'A:' found, look for content that might be an answer
                 for j, potential_answer in enumerate(similar_content[1:], 1):  # Skip the question itself
                     answer_content = potential_answer['content'].strip()
                     if not answer_content.startswith('Q:') and len(answer_content) > 20:
-                        print(f"✅ DEBUG: Using potential answer after Q: question: {answer_content[:50]}...")
+                        print(f" DEBUG: Using potential answer after Q: question: {answer_content[:50]}...")
                         return answer_content
         
         # Look for questions without Q: prefix (like "What is Snowflake...")
@@ -123,7 +123,7 @@ class ChatService:
             
             # Check if this looks like a question
             if self._is_question_like(content) and similarity > 0.3:
-                print(f"🔍 DEBUG: Found question-like content at index {sentence_index}: {content[:50]}...")
+                print(f" DEBUG: Found question-like content at index {sentence_index}: {content[:50]}...")
                 
                 # First, try to find the answer in the next few sentences
                 if sentence_index >= 0:
@@ -133,7 +133,7 @@ class ChatService:
                         if next_sentence and len(next_sentence.strip()) > 20:
                             # Check if this looks like an answer (not another question)
                             if not self._is_question_like(next_sentence):
-                                print(f"✅ DEBUG: Found adjacent answer at index {sentence_index + offset}: {next_sentence[:50]}...")
+                                print(f" DEBUG: Found adjacent answer at index {sentence_index + offset}: {next_sentence[:50]}...")
                                 return next_sentence.strip()
                 
                 # If no adjacent answer found, look in similar content
@@ -148,14 +148,14 @@ class ChatService:
                     if (len(answer_content) > 30 and 
                         potential_answer['similarity'] > 0.3 and
                         not answer_content.startswith(('What', 'How', 'Why', 'When', 'Where', 'Which'))):
-                        print(f"✅ DEBUG: Found answer for question-like content: {answer_content[:50]}...")
+                        print(f" DEBUG: Found answer for question-like content: {answer_content[:50]}...")
                         return answer_content
         
                     # Look for direct answers (starting with 'A:')
         for item in similar_content:
             content = item['content'].strip()
             if content.startswith('A:') and item['similarity'] > 0.2:
-                print(f"✅ DEBUG: Found direct A: answer: {content[:50]}...")
+                print(f" DEBUG: Found direct A: answer: {content[:50]}...")
                 return content[2:].strip()  # Remove 'A:' prefix
         
         # Get the best non-question content
@@ -169,7 +169,7 @@ class ChatService:
             
             # Return the first good non-question content
             if similarity > 0.15 and len(content) > 20:
-                print(f"✅ DEBUG: Using best non-question content: {content[:50]}...")
+                print(f" DEBUG: Using best non-question content: {content[:50]}...")
                 return self._format_response(content, similarity)
         
         # If we still don't have a good answer, check if we should use system prompt instead
@@ -179,10 +179,10 @@ class ChatService:
         
         # If similarity is still too low and we have a system prompt, use that instead
         if similarity < 0.2 and chatbot and chatbot.system_prompt:
-            print(f"⚠️ DEBUG: Document match too weak ({similarity:.3f}), falling back to system prompt")
+            print(f" DEBUG: Document match too weak ({similarity:.3f}), falling back to system prompt")
             return self._generate_custom_prompt_response(chatbot.system_prompt, user_message)
         
-        print(f"⚠️ DEBUG: Using fallback response formatting")
+        print(f" DEBUG: Using fallback response formatting")
         return self._format_response(best_content, similarity)
     
     def _is_question_like(self, content):
@@ -220,7 +220,7 @@ class ChatService:
         
         # If this is still a question, try to make it more helpful
         if self._is_question_like(content):
-            print(f"⚠️ DEBUG: Still have a question, trying to make it helpful: {content[:50]}...")
+            print(f" DEBUG: Still have a question, trying to make it helpful: {content[:50]}...")
             
             # Convert question to a statement about the topic
             if content.lower().startswith('what is'):
@@ -244,17 +244,17 @@ class ChatService:
         
         # If similarity is very high, return content directly
         if similarity > 0.8:
-            print("✅ DEBUG: High similarity - returning direct content")
+            print(" DEBUG: High similarity - returning direct content")
             return content
         
         # If similarity is good, create a response based on the content
         elif similarity > 0.3:
-            print("✅ DEBUG: Medium similarity - generating contextual response")
+            print(" DEBUG: Medium similarity - generating contextual response")
             return self._generate_contextual_response(content)
         
         # If similarity is low, return a default response
         else:
-            print("❌ DEBUG: Low similarity - returning default response")
+            print(" DEBUG: Low similarity - returning default response")
             return random.choice(self.default_responses)
     
     def _generate_contextual_response(self, content):

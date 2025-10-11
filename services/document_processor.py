@@ -11,10 +11,10 @@ class DocumentProcessor:
         """
         Process a document and extract text based on file type
         """
-        print(f"📄 DEBUG: Processing document: {file_path}")
+        print(f" DEBUG: Processing document: {file_path}")
         
         file_extension = Path(file_path).suffix.lower()
-        print(f"🔍 DEBUG: File extension: {file_extension}")
+        print(f" DEBUG: File extension: {file_extension}")
         
         if file_extension == '.pdf':
             text = self._process_pdf(file_path)
@@ -25,8 +25,8 @@ class DocumentProcessor:
         else:
             raise ValueError(f"Unsupported file type: {file_extension}")
         
-        print(f"✅ DEBUG: Extracted {len(text)} characters from document")
-        print(f"📝 DEBUG: First 200 characters: {text[:200]}...")
+        print(f" DEBUG: Extracted {len(text)} characters from document")
+        print(f" DEBUG: First 200 characters: {text[:200]}...")
         
         return text
     
@@ -36,7 +36,7 @@ class DocumentProcessor:
         try:
             with open(file_path, 'rb') as file:
                 pdf_reader = PyPDF2.PdfReader(file)
-                print(f"📖 DEBUG: PDF has {len(pdf_reader.pages)} pages")
+                print(f" DEBUG: PDF has {len(pdf_reader.pages)} pages")
                 
                 for page_num in range(len(pdf_reader.pages)):
                     page = pdf_reader.pages[page_num]
@@ -54,7 +54,7 @@ class DocumentProcessor:
         text = ""
         try:
             doc = docx.Document(file_path)
-            print(f"📖 DEBUG: DOCX has {len(doc.paragraphs)} paragraphs")
+            print(f" DEBUG: DOCX has {len(doc.paragraphs)} paragraphs")
             
             for i, paragraph in enumerate(doc.paragraphs):
                 paragraph_text = paragraph.text
@@ -72,13 +72,13 @@ class DocumentProcessor:
         try:
             with open(file_path, 'r', encoding='utf-8') as file:
                 text = file.read()
-                print(f"📖 DEBUG: TXT file read successfully")
+                print(f" DEBUG: TXT file read successfully")
         except UnicodeDecodeError:
             # Try with different encoding if UTF-8 fails
             try:
                 with open(file_path, 'r', encoding='latin-1') as file:
                     text = file.read()
-                    print(f"📖 DEBUG: TXT file read with latin-1 encoding")
+                    print(f" DEBUG: TXT file read with latin-1 encoding")
             except Exception as e:
                 raise Exception(f"Error processing TXT file: {str(e)}")
         except Exception as e:
@@ -100,5 +100,5 @@ class DocumentProcessor:
             if i + chunk_size >= len(words):
                 break
         
-        print(f"🔢 DEBUG: Split text into {len(chunks)} chunks")
+        print(f" DEBUG: Split text into {len(chunks)} chunks")
         return chunks 

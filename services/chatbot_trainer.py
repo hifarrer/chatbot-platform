@@ -15,8 +15,14 @@ except ImportError:
 class ChatbotTrainer:
     def __init__(self):
         if AI_AVAILABLE:
-            self.model = SentenceTransformer('all-MiniLM-L6-v2')
+            try:
+                self.model = SentenceTransformer('all-MiniLM-L6-v2')
+                print("DEBUG: SentenceTransformer model loaded successfully")
+            except Exception as e:
+                print(f"DEBUG: Failed to load SentenceTransformer: {e}")
+                self.model = None
         else:
+            print("DEBUG: AI libraries not available, using text-based search only")
             self.model = None
         self.data_dir = 'training_data'
         os.makedirs(self.data_dir, exist_ok=True)
@@ -25,8 +31,10 @@ class ChatbotTrainer:
         """
         Train a chatbot with the provided text by creating embeddings
         """
-        print(f"🤖 DEBUG: Starting training for chatbot {chatbot_id}")
-        print(f"📄 DEBUG: Text length: {len(text)} characters")
+        print(f"DEBUG: Starting training for chatbot {chatbot_id}")
+        print(f"DEBUG: Text length: {len(text)} characters")
+        print(f"DEBUG: AI_AVAILABLE = {AI_AVAILABLE}")
+        print(f"DEBUG: Model available = {self.model is not None}")
         
         # Split text into sentences/chunks for better granular responses
         sentences = self._split_into_sentences(text)
@@ -34,7 +42,7 @@ class ChatbotTrainer:
         # Remove empty sentences
         sentences = [s.strip() for s in sentences if s.strip()]
         
-        print(f"📝 DEBUG: Split into {len(sentences)} sentences")
+        print(f" DEBUG: Split into {len(sentences)} sentences")
         for i, sentence in enumerate(sentences[:5]):  # Show first 5 sentences
             print(f"   {i+1}. {sentence[:100]}...")
         
@@ -48,20 +56,28 @@ class ChatbotTrainer:
         
         # Generate embeddings only if AI libraries are available
         if AI_AVAILABLE and self.model:
-            print("🧠 DEBUG: Generating embeddings...")
-            embeddings = self.model.encode(sentences)
-            print(f"✅ DEBUG: Generated embeddings shape: {embeddings.shape}")
-            training_data['embeddings'] = embeddings.tolist()
+            print(" DEBUG: Generating embeddings...")
+            try:
+                embeddings = self.model.encode(sentences)
+                print(f" DEBUG: Generated embeddings shape: {embeddings.shape}")
+                training_data['embeddings'] = embeddings.tolist()
+                print(f" DEBUG: Successfully generated {len(embeddings)} embeddings")
+            except Exception as e:
+                print(f" DEBUG: Error generating embeddings: {e}")
+                print(" DEBUG: Falling back to no embeddings")
+                training_data['embeddings'] = None
         else:
-            print("⚠️ DEBUG: Skipping embeddings generation (OpenAI-only mode)")
+            print(" DEBUG: Skipping embeddings generation")
+            print(f"   - AI_AVAILABLE: {AI_AVAILABLE}")
+            print(f"   - Model available: {self.model is not None}")
             training_data['embeddings'] = None
         
         file_path = os.path.join(self.data_dir, f'chatbot_{chatbot_id}.json')
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(training_data, f, ensure_ascii=False, indent=2)
         
-        print(f"💾 DEBUG: Saved training data to {file_path}")
-        print(f"✅ DEBUG: Chatbot {chatbot_id} trained with {len(sentences)} sentences")
+        print(f" DEBUG: Saved training data to {file_path}")
+        print(f" DEBUG: Chatbot {chatbot_id} trained with {len(sentences)} sentences")
     
     def _split_into_sentences(self, text):
         """
@@ -137,7 +153,7 @@ class ChatbotTrainer:
                 final_sentences.append(sentence)
                 i += 1
         
-        print(f"📝 DEBUG: Sentence splitting - Original: {len(sentences)}, Cleaned: {len(cleaned_sentences)}, Final: {len(final_sentences)}")
+        print(f" DEBUG: Sentence splitting - Original: {len(sentences)}, Cleaned: {len(cleaned_sentences)}, Final: {len(final_sentences)}")
         
         return final_sentences
     
@@ -165,23 +181,69 @@ class ChatbotTrainer:
         file_path = os.path.join(self.data_dir, f'chatbot_{chatbot_id}.json')
         
         if not os.path.exists(file_path):
-            print(f"❌ DEBUG: Training file not found: {file_path}")
+            print(f" DEBUG: Training file not found: {file_path}")
             return None
         
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
+            print(f" DEBUG: Loaded training data: {len(data['sentences'])} sentences")
+            
             # Convert embeddings back to numpy array if available
             embeddings_data = data.get('embeddings')
             if embeddings_data is not None and len(embeddings_data) > 0 and AI_AVAILABLE:
                 data['embeddings'] = np.array(embeddings_data)
+                print(f" DEBUG: Loaded {len(embeddings_data)} embeddings")
+            else:
+                print(f" DEBUG: No embeddings available (embeddings_data: {embeddings_data is not None})")
             
-            print(f"✅ DEBUG: Loaded training data: {len(data['sentences'])} sentences")
             return data
         except Exception as e:
-            print(f"❌ DEBUG: Error loading training data: {e}")
+            print(f" DEBUG: Error loading training data: {e}")
             return None
+    
+    def diagnose_training_data(self, chatbot_id):
+        """
+        Diagnose training data issues for a specific chatbot
+        """
+        print(f" DIAGNOSING TRAINING DATA FOR CHATBOT {chatbot_id}")
+        print("=" * 50)
+        
+        file_path = os.path.join(self.data_dir, f'chatbot_{chatbot_id}.json')
+        
+        if not os.path.exists(file_path):
+            print(f" Training file does not exist: {file_path}")
+            return False
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            print(f" Training data statistics:")
+            print(f"   - Sentences: {len(data.get('sentences', []))}")
+            print(f"   - Embeddings: {data.get('embeddings') is not None}")
+            
+            if data.get('embeddings'):
+                print(f"   - Embeddings count: {len(data['embeddings'])}")
+            else:
+                print(f"   -  No embeddings found - this will cause poor search results")
+            
+            print(f" AI Library status:")
+            print(f"   - AI_AVAILABLE: {AI_AVAILABLE}")
+            print(f"   - Model loaded: {self.model is not None}")
+            
+            if not AI_AVAILABLE:
+                print(f"   -  AI libraries not available - install with: pip install sentence-transformers scikit-learn numpy")
+            
+            if not self.model:
+                print(f"   -  Model not loaded - embeddings cannot be generated")
+            
+            return True
+            
+        except Exception as e:
+            print(f" Error reading training data: {e}")
+            return False
     
     def delete_chatbot_data(self, chatbot_id):
         """
@@ -191,50 +253,71 @@ class ChatbotTrainer:
         
         if os.path.exists(file_path):
             os.remove(file_path)
-            print(f"🗑️ DEBUG: Training data for chatbot {chatbot_id} deleted")
+            print(f" DEBUG: Training data for chatbot {chatbot_id} deleted")
     
     def find_similar_content(self, chatbot_id, query, top_k=3):
         """
         Find the most similar content to the user query
         """
-        print(f"🔍 DEBUG: Searching for similar content to: '{query}'")
+        print(f" DEBUG: Searching for similar content to: '{query}'")
+        print(f" DEBUG: AI_AVAILABLE = {AI_AVAILABLE}")
+        print(f" DEBUG: Model available = {self.model is not None}")
         
         training_data = self.get_training_data(chatbot_id)
         
         if not training_data:
-            print("❌ DEBUG: No training data available")
+            print(" DEBUG: No training data available")
             return []
         
-        # If AI libraries are not available or no embeddings, use simple text matching
+        print(f" DEBUG: Training data has {len(training_data['sentences'])} sentences")
+        
+        # Check embeddings availability
         embeddings = training_data.get('embeddings')
+        print(f" DEBUG: Embeddings available: {embeddings is not None}")
+        if embeddings is not None:
+            print(f" DEBUG: Embeddings length: {len(embeddings)}")
+        
+        # If AI libraries are not available or no embeddings, use simple text matching
         if not AI_AVAILABLE or embeddings is None or len(embeddings) == 0 or not self.model:
-            print("⚠️ DEBUG: Using simple text matching (no embeddings available)")
+            print(" DEBUG: Using simple text matching (no embeddings available)")
+            print(f"   - AI_AVAILABLE: {AI_AVAILABLE}")
+            print(f"   - Embeddings: {embeddings is not None}")
+            print(f"   - Model: {self.model is not None}")
             return self._simple_text_search(training_data['sentences'], query, top_k)
         
-        # Encode the query
-        query_embedding = self.model.encode([query])
-        
-        # Calculate similarities
-        similarities = cosine_similarity(query_embedding, training_data['embeddings'])[0]
-        
-        print(f"📊 DEBUG: Similarity scores - min: {similarities.min():.3f}, max: {similarities.max():.3f}, avg: {similarities.mean():.3f}")
-        
-        # Get top k most similar sentences
-        top_indices = np.argsort(similarities)[::-1][:top_k]
-        
-        results = []
-        for idx in top_indices:
-            similarity_score = similarities[idx]
-            if similarity_score > 0.1:  # Very low threshold to catch more potential matches
-                results.append({
-                    'content': training_data['sentences'][idx],
-                    'similarity': float(similarity_score),
-                    'index': int(idx)  # Add the sentence index
-                })
-                print(f"   Match {len(results)}: {similarity_score:.3f} - {training_data['sentences'][idx][:100]}...")
-        
-        print(f"🎯 DEBUG: Returning {len(results)} similar content items")
-        return results
+        try:
+            # Encode the query
+            print(" DEBUG: Encoding query with model...")
+            query_embedding = self.model.encode([query])
+            print(f" DEBUG: Query encoded, shape: {query_embedding.shape}")
+            
+            # Calculate similarities
+            print(" DEBUG: Calculating cosine similarities...")
+            similarities = cosine_similarity(query_embedding, training_data['embeddings'])[0]
+            
+            print(f" DEBUG: Similarity scores - min: {similarities.min():.3f}, max: {similarities.max():.3f}, avg: {similarities.mean():.3f}")
+            
+            # Get top k most similar sentences
+            top_indices = np.argsort(similarities)[::-1][:top_k]
+            
+            results = []
+            for idx in top_indices:
+                similarity_score = similarities[idx]
+                if similarity_score > 0.1:  # Very low threshold to catch more potential matches
+                    results.append({
+                        'content': training_data['sentences'][idx],
+                        'similarity': float(similarity_score),
+                        'index': int(idx)  # Add the sentence index
+                    })
+                    print(f"   Match {len(results)}: {similarity_score:.3f} - {training_data['sentences'][idx][:100]}...")
+            
+            print(f" DEBUG: Returning {len(results)} similar content items")
+            return results
+            
+        except Exception as e:
+            print(f" DEBUG: Error in similarity search: {e}")
+            print(" DEBUG: Falling back to simple text matching")
+            return self._simple_text_search(training_data['sentences'], query, top_k)
     
     def get_sentence_by_index(self, chatbot_id, index):
         """
@@ -312,11 +395,11 @@ class ChatbotTrainer:
                     'index': idx
                 })
                 
-                print(f"📊 DEBUG: Simple search match {idx}: score={score:.3f}, content='{sentence[:50]}...'")
+                print(f" DEBUG: Simple search match {idx}: score={score:.3f}, content='{sentence[:50]}...'")
         
         # If no matches found, try even more lenient matching
         if not results:
-            print("🔍 DEBUG: No matches found, trying lenient search...")
+            print(" DEBUG: No matches found, trying lenient search...")
             for idx, sentence in enumerate(sentences):
                 sentence_lower = sentence.lower()
                 
@@ -328,21 +411,21 @@ class ChatbotTrainer:
                             'similarity': 0.2,  # Low but non-zero score
                             'index': idx
                         })
-                        print(f"📊 DEBUG: Lenient match {idx}: '{sentence[:50]}...'")
+                        print(f" DEBUG: Lenient match {idx}: '{sentence[:50]}...'")
                         break
         
         # Sort by score and return top k
         results.sort(key=lambda x: x['similarity'], reverse=True)
         final_results = results[:top_k]
         
-        print(f"🎯 DEBUG: Simple search returning {len(final_results)} results")
+        print(f" DEBUG: Simple search returning {len(final_results)} results")
         return final_results
     
     def generate_response(self, chatbot_id, user_message):
         """
         Generate a response for the user message using trained data
         """
-        print(f"🤖 DEBUG: Generating response for: '{user_message}'")
+        print(f" DEBUG: Generating response for: '{user_message}'")
         
         # Find similar content
         similar_content = self.find_similar_content(chatbot_id, user_message, top_k=3)
@@ -354,8 +437,8 @@ class ChatbotTrainer:
         best_match = similar_content[0]
         response = best_match['content']
         
-        print(f"✅ DEBUG: Best match similarity: {best_match['similarity']:.3f}")
-        print(f"📝 DEBUG: Response: {response[:100]}...")
+        print(f" DEBUG: Best match similarity: {best_match['similarity']:.3f}")
+        print(f" DEBUG: Response: {response[:100]}...")
         
         # Clean up the response (remove Q: prefixes, etc.)
         response = self._clean_response(response)
