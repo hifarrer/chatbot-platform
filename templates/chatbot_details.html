@@ -498,6 +498,9 @@ function startTraining() {
     trainingBtn.classList.remove('btn-success');
     trainingBtn.classList.add('btn-warning');
     
+    // Add pulsing effect to button
+    trainingBtn.style.animation = 'pulse 1.5s infinite';
+    
     // Close the modal
     const modal = bootstrap.Modal.getInstance(document.getElementById('trainingModal'));
     modal.hide();
@@ -521,6 +524,9 @@ function startTraining() {
     })
     .then(data => {
         if (data && data.success) {
+            // Hide progress indicator
+            hideTrainingProgress();
+            
             // Training successful
             trainingBtn.disabled = false;
             trainingIcon.className = 'fas fa-check me-2';
@@ -541,6 +547,7 @@ function startTraining() {
             setTimeout(() => {
                 trainingIcon.className = 'fas fa-brain me-2';
                 trainingBtnText.textContent = '{{ "Retrain Chatbot" if chatbot.is_trained else "Train Chatbot" }}';
+                trainingBtn.style.animation = ''; // Remove pulse animation
             }, 3000);
         } else {
             throw new Error(data.error || 'Training failed');
@@ -548,6 +555,9 @@ function startTraining() {
     })
     .catch(error => {
         console.error('Training error:', error);
+        
+        // Hide progress indicator
+        hideTrainingProgress();
         
         // Training failed
         trainingBtn.disabled = false;
@@ -566,20 +576,37 @@ function startTraining() {
             trainingBtnText.textContent = '{{ "Retrain Chatbot" if chatbot.is_trained else "Train Chatbot" }}';
             trainingBtn.classList.remove('btn-danger');
             trainingBtn.classList.add('btn-success');
+            trainingBtn.style.animation = ''; // Remove pulse animation
         }, 5000);
     });
 }
 
 function showTrainingProgress() {
-    // Create and show training progress notification
+    // Create and show training progress notification with progress bar
     const toastContainer = document.querySelector('.toast-container') || createToastContainer();
     
     const toastHtml = `
-        <div class="toast align-items-center text-bg-info border-0" role="alert" aria-live="assertive" aria-atomic="true" id="trainingProgressToast">
+        <div class="toast align-items-center text-bg-primary border-0" role="alert" aria-live="assertive" aria-atomic="true" id="trainingProgressToast" style="min-width: 400px;">
             <div class="d-flex">
-                <div class="toast-body">
-                    <i class="fas fa-spinner fa-spin me-2"></i>
-                    Training your chatbot... This may take a few minutes.
+                <div class="toast-body w-100">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="fas fa-brain fa-spin me-2 text-warning"></i>
+                        <strong>Training Your Chatbot</strong>
+                    </div>
+                    <div class="progress mb-2" style="height: 8px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" 
+                             role="progressbar" 
+                             id="trainingProgressBar" 
+                             style="width: 0%" 
+                             aria-valuenow="0" 
+                             aria-valuemin="0" 
+                             aria-valuemax="100">
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <small class="text-light" id="trainingStatusText">Initializing training...</small>
+                        <small class="text-light" id="trainingTimeElapsed">0:00</small>
+                    </div>
                 </div>
             </div>
         </div>
@@ -587,16 +614,112 @@ function showTrainingProgress() {
     
     toastContainer.insertAdjacentHTML('beforeend', toastHtml);
     const toast = document.getElementById('trainingProgressToast');
-    const bsToast = new bootstrap.Toast(toast);
+    const bsToast = new bootstrap.Toast(toast, { 
+        autohide: false,  // Don't auto-hide, we'll hide it manually
+        delay: 0 
+    });
     bsToast.show();
+    
+    // Start progress animation
+    startTrainingProgressAnimation();
+}
+
+function startTrainingProgressAnimation() {
+    const progressBar = document.getElementById('trainingProgressBar');
+    const statusText = document.getElementById('trainingStatusText');
+    const timeElapsed = document.getElementById('trainingTimeElapsed');
+    
+    if (!progressBar || !statusText || !timeElapsed) return;
+    
+    let progress = 0;
+    let startTime = Date.now();
+    const statusMessages = [
+        "Initializing training...",
+        "Processing documents...",
+        "Extracting text content...",
+        "Generating knowledge base...",
+        "Creating QA patterns...",
+        "Optimizing responses...",
+        "Finalizing training...",
+        "Almost complete..."
+    ];
+    
+    const progressInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        const minutes = Math.floor(elapsed / 60);
+        const seconds = elapsed % 60;
+        timeElapsed.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        
+        // Update progress (slower at the beginning, faster toward the end)
+        if (progress < 20) {
+            progress += 0.5; // Very slow start
+        } else if (progress < 60) {
+            progress += 1; // Medium speed
+        } else if (progress < 85) {
+            progress += 0.8; // Slower near the end
+        } else {
+            progress += 0.3; // Very slow at the end
+        }
+        
+        // Don't go over 95% until training is actually complete
+        if (progress > 95) {
+            progress = 95;
+        }
+        
+        progressBar.style.width = `${progress}%`;
+        progressBar.setAttribute('aria-valuenow', progress);
+        
+        // Update status message based on progress
+        const messageIndex = Math.floor((progress / 100) * statusMessages.length);
+        if (messageIndex < statusMessages.length) {
+            statusText.textContent = statusMessages[messageIndex];
+        }
+        
+    }, 500); // Update every 500ms
+    
+    // Store interval ID so we can clear it when training completes
+    window.trainingProgressInterval = progressInterval;
+}
+
+function hideTrainingProgress() {
+    // Clear the progress animation
+    if (window.trainingProgressInterval) {
+        clearInterval(window.trainingProgressInterval);
+        window.trainingProgressInterval = null;
+    }
+    
+    // Complete the progress bar to 100%
+    const progressBar = document.getElementById('trainingProgressBar');
+    const statusText = document.getElementById('trainingStatusText');
+    if (progressBar && statusText) {
+        progressBar.style.width = '100%';
+        progressBar.setAttribute('aria-valuenow', 100);
+        progressBar.classList.remove('bg-warning');
+        progressBar.classList.add('bg-success');
+        statusText.textContent = 'Training complete!';
+    }
+    
+    // Hide the toast after a brief delay to show completion
+    setTimeout(() => {
+        const toast = document.getElementById('trainingProgressToast');
+        if (toast) {
+            const bsToast = bootstrap.Toast.getInstance(toast);
+            if (bsToast) {
+                bsToast.hide();
+            }
+            // Remove from DOM after hiding
+            setTimeout(() => {
+                if (toast && toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 500);
+        }
+    }, 1000); // Show 100% for 1 second before hiding
 }
 
 function showTrainingSuccess() {
-    // Remove progress toast
-    const progressToast = document.getElementById('trainingProgressToast');
-    if (progressToast) {
-        progressToast.remove();
-    }
+    // Progress toast should already be hidden by hideTrainingProgress()
+    // Just show success message
     
     // Show success toast
     const toastContainer = document.querySelector('.toast-container') || createToastContainer();
@@ -1202,6 +1325,22 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 <style>
+/* Training progress animations */
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.7);
+    }
+    70% {
+        transform: scale(1.05);
+        box-shadow: 0 0 0 10px rgba(255, 193, 7, 0);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(255, 193, 7, 0);
+    }
+}
+
 .avatar-preview:hover {
     border-color: #007bff !important;
     transform: scale(1.05);
