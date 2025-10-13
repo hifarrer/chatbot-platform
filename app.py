@@ -1287,21 +1287,25 @@ Best regards,
         document = Document.query.get_or_404(document_id)
         chatbot = Chatbot.query.filter_by(id=document.chatbot_id, user_id=current_user.id).first_or_404()
         
-        # Handle both absolute and relative file paths
+        # Resolve the actual file path - handle both absolute and relative paths
         file_path = document.file_path
-        if not os.path.isabs(file_path):
-            # If it's a relative path, make it relative to the app root
-            file_path = os.path.join(os.getcwd(), file_path)
         
-        # Check if file exists
+        # Check if file exists as-is
         if not os.path.exists(file_path):
-            # Try alternative path resolution
+            # Try with just the filename in the upload folder
             alt_path = os.path.join(app.config['UPLOAD_FOLDER'], document.filename)
             if os.path.exists(alt_path):
                 file_path = alt_path
             else:
-                flash(f'File not found on server. Please re-upload the document.')
-                return redirect(url_for('chatbot_details', chatbot_id=chatbot.id))
+                # Handle cross-platform path issues (Windows backslashes on Linux)
+                # Extract just the filename from the stored path
+                filename_only = os.path.basename(file_path.replace('\\', '/'))
+                alt_path = os.path.join(app.config['UPLOAD_FOLDER'], filename_only)
+                if os.path.exists(alt_path):
+                    file_path = alt_path
+                else:
+                    flash(f'File not found on server. Please re-upload the document.')
+                    return redirect(url_for('chatbot_details', chatbot_id=chatbot.id))
         
         try:
             return send_file(
@@ -1330,7 +1334,26 @@ Best regards,
             # Process all documents for this chatbot
             all_text = ""
             for doc in documents:
-                text = document_processor.process_document(doc.file_path)
+                # Resolve the actual file path - handle both absolute and relative paths
+                file_path = doc.file_path
+                
+                # If file_path doesn't exist as-is, try to resolve it
+                if not os.path.exists(file_path):
+                    # Try with just the filename in the upload folder
+                    alt_path = os.path.join(app.config['UPLOAD_FOLDER'], doc.filename)
+                    if os.path.exists(alt_path):
+                        file_path = alt_path
+                    else:
+                        # Handle cross-platform path issues (Windows backslashes on Linux)
+                        # Extract just the filename from the stored path
+                        filename_only = os.path.basename(file_path.replace('\\', '/'))
+                        alt_path = os.path.join(app.config['UPLOAD_FOLDER'], filename_only)
+                        if os.path.exists(alt_path):
+                            file_path = alt_path
+                        else:
+                            raise FileNotFoundError(f"Document file not found: {doc.original_filename} (tried: {doc.file_path}, {alt_path})")
+                
+                text = document_processor.process_document(file_path)
                 all_text += f"\n\n{text}"
                 doc.processed = True
             
