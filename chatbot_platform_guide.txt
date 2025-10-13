@@ -7,7 +7,7 @@ Key Features and Capabilities
 
 What can the ChatBot Platform do?
 - Create unlimited custom chatbots for different purposes
-- Train chatbots using PDF, DOCX, and TXT documents
+- Train chatbots using PDF, DOCX, TXT, and JSON documents
 - Generate intelligent responses using OpenAI GPT-3.5 Turbo
 - Provide embeddable widgets for websites
 - Track conversation history and analytics
@@ -23,6 +23,7 @@ You can train your chatbots with:
 - PDF files (automatically extracts text from all pages)
 - Microsoft Word documents (DOCX format)
 - Plain text files (TXT format)
+- JSON files (intelligently flattened into readable text)
 - Maximum file size is 16MB per document
 - You can upload multiple documents per chatbot
 - Documents are processed automatically with smart sentence splitting
@@ -34,7 +35,7 @@ How do I create my first chatbot?
 2. Log in to access your dashboard
 3. Click "Create New Chatbot"
 4. Enter a name and description for your chatbot
-5. Upload your training documents (PDF, DOCX, or TXT)
+5. Upload your training documents (PDF, DOCX, TXT, or JSON)
 6. Click "Train Chatbot" to process your documents
 7. Test your chatbot using the built-in chat interface
 8. Get your embed code to add the chatbot to your website

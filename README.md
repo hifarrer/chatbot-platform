@@ -58,7 +58,7 @@ chatbot-platform/
 ├── 📄 .gitignore               # Git ignore rules
 │
 ├── 📁 services/                # Business logic
-│   ├── 📄 document_processor.py    # Handle PDF, DOCX, TXT files
+│   ├── 📄 document_processor.py    # Handle PDF, DOCX, TXT, JSON files
 │   ├── 📄 chatbot_trainer.py       # AI training logic
 │   └── 📄 chat_service_openai.py   # OpenAI integration
 │

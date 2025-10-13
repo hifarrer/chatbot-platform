@@ -1247,7 +1247,7 @@ Best regards,
                     flash(f'Error saving file: {str(e)}. Please try again.')
                     return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
         else:
-            flash('Invalid file type. Please upload PDF, DOCX, or TXT files.')
+            flash('Invalid file type. Please upload PDF, DOCX, TXT, or JSON files.')
         
         return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
 
@@ -2040,7 +2040,7 @@ Best regards,
             return {'success': False, 'message': f'Error updating training prompt: {str(e)}'}, 500
 
     def allowed_file(filename):
-        ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx'}
+        ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx', 'json'}
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
     def create_demo_chatbot_internal():
@@ -2112,7 +2112,7 @@ Step 2: Create Your First Chatbot
 From your dashboard, click "Create Chatbot" and give it a name and description that reflects its purpose.
 
 Step 3: Upload Training Documents
-Upload relevant documents (manuals, FAQs, product information, policies) in PDF, DOCX, or TXT format. The platform will process these automatically.
+Upload relevant documents (manuals, FAQs, product information, policies) in PDF, DOCX, TXT, or JSON format. The platform will process these automatically.
 
 Step 4: Train Your Chatbot
 Click the "Train" button to process your documents and create the AI knowledge base. This usually takes just a few minutes.

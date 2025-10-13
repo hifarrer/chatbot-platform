@@ -1,4 +1,5 @@
 import os
+import json
 import PyPDF2
 import docx
 from pathlib import Path
@@ -22,6 +23,8 @@ class DocumentProcessor:
             text = self._process_docx(file_path)
         elif file_extension == '.txt':
             text = self._process_txt(file_path)
+        elif file_extension == '.json':
+            text = self._process_json(file_path)
         else:
             raise ValueError(f"Unsupported file type: {file_extension}")
         
@@ -85,6 +88,62 @@ class DocumentProcessor:
             raise Exception(f"Error processing TXT file: {str(e)}")
         
         return text.strip()
+    
+    def _process_json(self, file_path):
+        """Extract text from JSON file - intelligently flattens JSON structure into readable text"""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as file:
+                data = json.load(file)
+                print(f" DEBUG: JSON file loaded successfully")
+            
+            # Convert JSON to readable text format
+            text = self._json_to_text(data)
+            print(f" DEBUG: Converted JSON to text: {len(text)} characters")
+            
+            return text.strip()
+            
+        except json.JSONDecodeError as e:
+            raise Exception(f"Error processing JSON file: Invalid JSON format - {str(e)}")
+        except Exception as e:
+            raise Exception(f"Error processing JSON file: {str(e)}")
+    
+    def _json_to_text(self, data, indent=0, parent_key=''):
+        """
+        Recursively convert JSON data to readable text format
+        Handles objects, arrays, and nested structures intelligently
+        """
+        text_parts = []
+        indent_str = "  " * indent
+        
+        if isinstance(data, dict):
+            # Handle dictionary/object
+            for key, value in data.items():
+                full_key = f"{parent_key}.{key}" if parent_key else key
+                
+                if isinstance(value, (dict, list)):
+                    # Nested structure
+                    text_parts.append(f"{indent_str}{key}:")
+                    text_parts.append(self._json_to_text(value, indent + 1, full_key))
+                else:
+                    # Simple key-value pair
+                    text_parts.append(f"{indent_str}{key}: {value}")
+        
+        elif isinstance(data, list):
+            # Handle array
+            for i, item in enumerate(data):
+                if isinstance(item, (dict, list)):
+                    # Nested structure in array
+                    text_parts.append(f"{indent_str}Item {i + 1}:")
+                    text_parts.append(self._json_to_text(item, indent + 1, f"{parent_key}[{i}]"))
+                else:
+                    # Simple array item
+                    text_parts.append(f"{indent_str}- {item}")
+        
+        else:
+            # Simple value (string, number, boolean, null)
+            text_parts.append(f"{indent_str}{data}")
+        
+        return "\n".join(text_parts)
     
     def chunk_text(self, text, chunk_size=1000, overlap=100):
         """
