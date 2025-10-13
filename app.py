@@ -1360,8 +1360,12 @@ Best regards,
             # Commit document processing status first
             db.session.commit()
             
-            # Train the chatbot
-            chatbot_trainer.train_chatbot(chatbot_id, all_text)
+            # Train the chatbot with knowledge base generation
+            chatbot_info = {
+                'name': chatbot.name,
+                'description': chatbot.description or ''
+            }
+            chatbot_trainer.train_chatbot(chatbot_id, all_text, use_knowledge_base=True, chatbot_info=chatbot_info)
             chatbot.is_trained = True
             db.session.commit()
             
@@ -2192,7 +2196,12 @@ The platform is designed to be user-friendly while providing powerful AI capabil
 """
         
         try:
-            chatbot_trainer.train_chatbot(demo_chatbot.id, demo_content)
+            # Train demo chatbot with knowledge base generation
+            demo_chatbot_info = {
+                'name': demo_chatbot.name,
+                'description': demo_chatbot.description or ''
+            }
+            chatbot_trainer.train_chatbot(demo_chatbot.id, demo_content, use_knowledge_base=True, chatbot_info=demo_chatbot_info)
             demo_chatbot.is_trained = True
             db.session.commit()
             print(f"[OK] Demo chatbot created and trained with embed code: {demo_embed_code}")

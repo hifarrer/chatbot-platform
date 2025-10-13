@@ -193,10 +193,21 @@ class ChatServiceOpenAI:
     
     def _get_relevant_context(self, chatbot_id, user_message, max_context_length=2000):
         """
-        Get relevant context from training data using similarity search
+        Get relevant context from training data.
+        Uses knowledge base format if available, otherwise falls back to similarity search.
         """
         print(f" DEBUG: Getting relevant context for chatbot {chatbot_id}")
         print(f" DEBUG: User message: '{user_message}'")
+        
+        # First check if we have knowledge base format
+        training_data = self.trainer.get_training_data(chatbot_id)
+        
+        if training_data and self.trainer.is_knowledge_base_format(training_data):
+            print(" DEBUG: Using knowledge base format for context")
+            return self._get_context_from_knowledge_base(chatbot_id, user_message, max_context_length)
+        
+        # Fall back to legacy similarity search
+        print(" DEBUG: Using legacy similarity search for context")
         
         # Find similar content
         similar_content = self.trainer.find_similar_content(chatbot_id, user_message, top_k=5)
@@ -256,6 +267,89 @@ class ChatServiceOpenAI:
                     break
         
         print(f" DEBUG: Final context has {len(context_passages)} passages, total length: {total_length}")
+        for i, passage in enumerate(context_passages):
+            print(f"   Context {i+1}: {passage[:100]}...")
+        
+        return context_passages
+    
+    def _get_context_from_knowledge_base(self, chatbot_id, user_message, max_context_length=2000):
+        """
+        Get relevant context from knowledge base format
+        """
+        print(f" DEBUG: Querying knowledge base for context")
+        
+        # Query the knowledge base
+        kb_results = self.trainer.query_knowledge_base(chatbot_id, user_message, top_k=5)
+        
+        if not kb_results or not kb_results.get('matches'):
+            print(" DEBUG: No matches found in knowledge base")
+            return None
+        
+        matches = kb_results['matches']
+        brand = kb_results.get('brand', {})
+        
+        print(f" DEBUG: Found {len(matches)} matches in knowledge base")
+        
+        # Build context from matches
+        context_passages = []
+        total_length = 0
+        
+        for match in matches:
+            match_type = match['type']
+            score = match['score']
+            
+            # Build passage based on match type
+            if match_type == 'qa_pattern':
+                # QA Pattern match - use the response directly
+                intent_id = match['intent_id']
+                response = match.get('response_inline', '')
+                
+                # If there's a reference to a KB fact, include that too
+                if match.get('response_ref'):
+                    ref_id = match['response_ref']
+                    # Find the referenced fact
+                    training_data = self.trainer.get_training_data(chatbot_id)
+                    for fact in training_data.get('kb_facts', []):
+                        if fact['id'] == ref_id:
+                            response = f"{response}\n\nDetails: {fact['answer_long']}"
+                            break
+                
+                passage = f"[Relevance: {score:.2f}] [Intent: {intent_id}]\n{response}"
+                
+            elif match_type == 'kb_fact':
+                # KB Fact match - use the detailed answer
+                fact_id = match['fact_id']
+                title = match['title']
+                answer_long = match['answer_long']
+                
+                passage = f"[Relevance: {score:.2f}] [Topic: {title}]\n{answer_long}"
+            
+            else:
+                continue
+            
+            # Add passage if it fits in context length
+            if total_length + len(passage) < max_context_length:
+                context_passages.append(passage)
+                total_length += len(passage)
+                print(f" DEBUG: Added knowledge base passage (length: {len(passage)})")
+            else:
+                break
+        
+        # If no passages fit, include at least the top match (truncated if necessary)
+        if not context_passages and matches:
+            top_match = matches[0]
+            if top_match['type'] == 'qa_pattern':
+                passage = f"[Relevance: {top_match['score']:.2f}] {top_match.get('response_inline', '')}"
+            else:
+                passage = f"[Relevance: {top_match['score']:.2f}] {top_match.get('answer_long', top_match.get('answer_short', ''))}"
+            
+            if len(passage) > max_context_length:
+                passage = passage[:max_context_length] + "..."
+            
+            context_passages.append(passage)
+            print(f" DEBUG: Added truncated top match")
+        
+        print(f" DEBUG: Final knowledge base context has {len(context_passages)} passages, total length: {total_length}")
         for i, passage in enumerate(context_passages):
             print(f"   Context {i+1}: {passage[:100]}...")
         

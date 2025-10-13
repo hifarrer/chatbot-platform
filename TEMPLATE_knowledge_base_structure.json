@@ -1,0 +1,190 @@
+{
+  "_comment": "THIS IS A TEMPLATE FILE FOR REFERENCE ONLY",
+  "_warning": "This file shows the structure format for knowledge bases but is NEVER used in training",
+  "_note": "All chatbot knowledge bases are generated from uploaded documents only - no sample data is used",
+  "_usage": "This file is for developers to understand the JSON structure. It is not loaded by the system.",
+  
+  "version": "1.0",
+  "brand": {
+    "name": "Owlbee.AI",
+    "mission": "Help businesses build and deploy intelligent, custom chatbots in minutes to improve customer engagement and reduce administrative burden.",
+    "target_audience": "Businesses seeking to streamline customer experience by automating website visitor inquiries."
+  },
+  "routing_hints": {
+    "global_keywords": [
+      "Owlbee",
+      "Owlbee.ai",
+      "AI chatbot",
+      "AI assistant",
+      "intelligent chatbot",
+      "pricing",
+      "plans",
+      "subscriptions",
+      "tiers",
+      "cost",
+      "how it works",
+      "setup",
+      "embed",
+      "training",
+      "documents",
+      "register",
+      "login",
+      "support",
+      "analytics",
+      "branding",
+      "API",
+      "knowledge base"
+    ],
+    "urls": {
+      "login": "/login",
+      "register": "/register",
+      "dashboard": "/dashboard",
+      "plans": "/plans",
+      "contact": "/contact"
+    }
+  },
+  "kb_facts": [
+    {
+      "id": "overview-what-is-owlbee",
+      "title": "What is Owlbee.AI?",
+      "keywords": [
+        "what is owlbee",
+        "about owlbee",
+        "company overview",
+        "platform overview",
+        "mission"
+      ],
+      "answer_short": "Owlbee.AI is a platform to build and deploy custom, AI-powered chatbots trained on your own content.",
+      "answer_long": "Owlbee.AI enables businesses to build and deploy intelligent, custom chatbots (AI assistants) trained on their own PDF/DOCX/TXT content. The goal is to improve customer engagement and reduce admin workload by answering visitor questions instantly and consistently."
+    },
+    {
+      "id": "technology",
+      "title": "What technology powers Owlbee chatbots?",
+      "keywords": [
+        "technology",
+        "openai",
+        "gpt",
+        "nlp",
+        "language model",
+        "ai model"
+      ],
+      "answer_short": "Owlbee chatbots use OpenAI GPT technology for natural-language understanding and responses.",
+      "answer_long": "Under the hood, Owlbee leverages OpenAI GPT for AI-powered understanding and generation. Your chatbot mirrors your processes and can answer based on the documents you upload."
+    },
+    {
+      "id": "how-it-works",
+      "title": "How it works (5 steps)",
+      "keywords": [
+        "how it works",
+        "setup",
+        "onboarding",
+        "steps",
+        "installation",
+        "train",
+        "embed",
+        "go live"
+      ],
+      "answer_short": "Create bot → Upload docs → Train → Copy embed code → Paste on your site.",
+      "answer_long": "1) Create your chatbot: name and describe it. 2) Upload documents: PDF, DOCX, or TXT with your business info. 3) Train your bot: click 'Train' to process your content. 4) Get embed code: copy the snippet. 5) Go live: paste the embed code into your website and your chatbot is ready."
+    },
+    {
+      "id": "plan-free",
+      "title": "Free Plan Details",
+      "keywords": [
+        "free plan",
+        "free tier",
+        "no cost",
+        "trial"
+      ],
+      "answer_short": "Free plan: Up to 2 chatbots, 10MB file uploads, basic support.",
+      "answer_long": "The Free plan is perfect for getting started. It includes up to 2 chatbots, 10MB file upload limit, basic support, standard response time, and community forum access. Price: Free forever."
+    },
+    {
+      "id": "plan-starter",
+      "title": "Starter Plan Details",
+      "keywords": [
+        "starter plan",
+        "starter",
+        "small business",
+        "$29.99"
+      ],
+      "answer_short": "Starter plan: 5 chatbots, 50MB uploads, priority support. $29.99/mo or $299/yr.",
+      "answer_long": "The Starter plan is perfect for small and starter businesses. It includes 5 custom chatbots, 50MB file upload limit, priority support, faster response time, advanced analytics, custom branding, API access, and email support. Price: $29.99/month or $299/year."
+    },
+    {
+      "id": "plan-premium",
+      "title": "Premium Plan Details",
+      "keywords": [
+        "premium plan",
+        "premium",
+        "unlimited",
+        "$49.99"
+      ],
+      "answer_short": "Premium plan: Unlimited chatbots, 100MB uploads, advanced features. $49.99/mo or $499/yr.",
+      "answer_long": "The Premium plan is perfect for growing small to medium businesses. It includes unlimited chatbots, 100MB file upload limit, priority support, faster response time, advanced analytics, custom branding, API access, and email support. Price: $49.99/month or $499/year."
+    },
+    {
+      "id": "plan-ultra",
+      "title": "Ultra Plan Details",
+      "keywords": [
+        "ultra plan",
+        "ultra",
+        "enterprise",
+        "white label",
+        "$99.99"
+      ],
+      "answer_short": "Ultra plan: Enterprise-grade with 1GB uploads, 24/7 support, white-label. $99.99/mo or $999.99/yr.",
+      "answer_long": "The Ultra plan is an enterprise-grade solution for large organizations. It includes unlimited chatbots, 1GB file upload limit, 24/7 dedicated support, instant response time, advanced analytics & reporting, full custom branding, full API access, phone & email support, custom integrations, white-label solution, SLA guarantee, and a dedicated account manager. Price: $99.99/month or $999.99/year."
+    }
+  ],
+  "qa_patterns": [
+    {
+      "intent_id": "plans-general",
+      "triggers": [
+        "what are the available plans",
+        "what plans do you have",
+        "pricing plans",
+        "subscription options",
+        "tiers",
+        "compare plans",
+        "price list",
+        "how much does it cost"
+      ],
+      "response_inline": "We offer 4 plans: Free (up to 2 chatbots, 10MB uploads), Starter ($29.99/mo - 5 chatbots, 50MB), Premium ($49.99/mo - unlimited chatbots, 100MB), and Ultra ($99.99/mo - enterprise features, 1GB). All paid plans include priority support and advanced features.",
+      "response_ref": null
+    },
+    {
+      "intent_id": "plan-free-details",
+      "triggers": [
+        "free plan details",
+        "what's included in the free plan",
+        "free tier features"
+      ],
+      "response_ref": "plan-free"
+    },
+    {
+      "intent_id": "plan-starter-details",
+      "triggers": [
+        "starter plan details",
+        "starter features",
+        "is starter right for me"
+      ],
+      "response_ref": "plan-starter"
+    },
+    {
+      "intent_id": "how-to-start",
+      "triggers": [
+        "how do i start",
+        "get started",
+        "start building",
+        "create account"
+      ],
+      "response_inline": "Getting started is easy! 1) Click 'Get Started Free' or visit /register to create your account. 2) Create a new chatbot from your dashboard. 3) Upload your training documents (PDF, DOCX, or TXT). 4) Click 'Train' to process your content. 5) Copy the embed code and paste it on your website. You're live!",
+      "response_ref": "how-it-works"
+    }
+  ],
+  "response_templates": {
+    "plans_table_markdown": "### Owlbee.AI Plans\n| Plan | Price | Key Features |\n|---|---|---|\n| Free | Free | Up to 2 chatbots; 10MB uploads |\n| Starter | $29.99/mo | 5 chatbots; 50MB uploads; Priority support |\n| Premium | $49.99/mo | Unlimited chatbots; 100MB uploads |\n| Ultra | $99.99/mo | Enterprise features; 1GB uploads |"
+  }
+}
+

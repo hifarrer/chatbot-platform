@@ -1,6 +1,7 @@
 import os
 import pickle
 import json
+from openai import OpenAI
 
 # Optional imports for AI functionality
 try:
@@ -26,13 +27,198 @@ class ChatbotTrainer:
             self.model = None
         self.data_dir = 'training_data'
         os.makedirs(self.data_dir, exist_ok=True)
+        
+        # Initialize OpenAI client for knowledge base generation
+        self.api_key = os.getenv('OPENAI_API_KEY')
+        if self.api_key:
+            self.openai_client = OpenAI(api_key=self.api_key)
+        else:
+            self.openai_client = None
+            print("WARNING: OPENAI_API_KEY not found. Knowledge base generation will not be available.")
     
-    def train_chatbot(self, chatbot_id, text):
+    def generate_knowledge_base(self, text, chatbot_info=None):
         """
-        Train a chatbot with the provided text by creating embeddings
+        Use OpenAI to convert raw document text into a structured JSON knowledge base.
+        
+        IMPORTANT: This method generates a knowledge base ONLY from the provided document text.
+        It does NOT use any sample data or templates - only the structure format is specified.
+        The sample_knowledge_base.json file is for reference/documentation only and is NEVER loaded or used.
+        
+        Args:
+            text (str): The document text to convert (from uploaded documents only)
+            chatbot_info (dict): Chatbot metadata (name, description)
+            
+        Returns:
+            dict: Structured knowledge base generated from the document text
+        """
+        if not self.openai_client:
+            raise ValueError("OpenAI client not initialized. Please set OPENAI_API_KEY.")
+        
+        print(f" DEBUG: Generating knowledge base from {len(text)} characters of text")
+        print(f" DEBUG: Using ONLY the provided document text - no sample data will be used")
+        
+        # Create the prompt for OpenAI to generate the knowledge base
+        brand_name = chatbot_info.get('name', 'the business') if chatbot_info else 'the business'
+        brand_desc = chatbot_info.get('description', '') if chatbot_info else ''
+        
+        prompt = f"""You are an AI assistant that converts raw document text into a structured JSON knowledge base for a chatbot.
+
+The chatbot is for: {brand_name}
+Description: {brand_desc}
+
+CRITICAL INSTRUCTIONS:
+- You MUST extract information ONLY from the document text provided below
+- DO NOT use any example data, sample data, or placeholder information
+- DO NOT invent or fabricate any information not present in the documents
+- If the documents don't contain certain information, omit those sections or use minimal placeholder text
+- All kb_facts and qa_patterns must be derived exclusively from the actual document content
+
+Convert the following document text into a structured JSON knowledge base that the chatbot can use to answer questions.
+
+The JSON should follow this exact structure (but use ONLY data from the documents, not this example structure):
+{{
+  "version": "1.0",
+  "brand": {{
+    "name": "Business Name",
+    "mission": "Mission statement",
+    "target_audience": "Target audience description"
+  }},
+  "routing_hints": {{
+    "global_keywords": ["keyword1", "keyword2", "..."],
+    "urls": {{
+      "page_name": "/url-path"
+    }}
+  }},
+  "kb_facts": [
+    {{
+      "id": "unique-id",
+      "title": "Fact title or question",
+      "keywords": ["keyword1", "keyword2"],
+      "answer_short": "Brief answer",
+      "answer_long": "Detailed answer"
+    }}
+  ],
+  "qa_patterns": [
+    {{
+      "intent_id": "unique-intent-id",
+      "triggers": ["question variation 1", "question variation 2"],
+      "response_inline": "Direct answer text",
+      "response_ref": "kb_facts id to reference (optional)"
+    }}
+  ]
+}}
+
+Important guidelines:
+1. Extract all important information ONLY from the document text below
+2. Create comprehensive kb_facts entries for key concepts, features, prices, plans, etc. found in the documents
+3. Generate qa_patterns for common questions users might ask based on the document content
+4. Include relevant keywords for each fact to help with matching
+5. Provide both short and long answers for flexibility
+6. If the document contains pricing information, create detailed entries for each plan
+7. If the document contains process information (how-to, steps), structure it clearly
+8. Extract any URLs or links mentioned in the documents
+9. DO NOT include any sample data, placeholder data, or information from examples
+10. If certain information is not in the documents, leave those sections minimal or empty
+
+REMEMBER: Use ONLY the document text below. No external information, no sample data, no examples.
+
+Document text to convert (THIS IS THE ONLY SOURCE OF INFORMATION):
+---BEGIN DOCUMENT TEXT---
+{text}
+---END DOCUMENT TEXT---
+
+Return ONLY the JSON structure with data extracted from the document text above. No additional explanation, no sample data."""
+
+        print(" DEBUG: Sending request to OpenAI for knowledge base generation...")
+        
+        try:
+            # Get model from settings or use default
+            try:
+                from app import Settings
+                setting = Settings.query.filter_by(key='openai_model').first()
+                model = setting.value if setting else 'gpt-4o'
+            except:
+                model = 'gpt-4o'
+            
+            print(f" DEBUG: Using OpenAI model: {model}")
+            
+            # Call OpenAI API
+            response = self.openai_client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "You are an expert at converting documents into structured knowledge bases for chatbots."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,  # Lower temperature for more consistent structure
+                max_tokens=4000   # Enough for comprehensive knowledge base
+            )
+            
+            # Extract the JSON response
+            kb_json_str = response.choices[0].message.content.strip()
+            
+            # Remove markdown code blocks if present
+            if kb_json_str.startswith('```json'):
+                kb_json_str = kb_json_str[7:]
+            if kb_json_str.startswith('```'):
+                kb_json_str = kb_json_str[3:]
+            if kb_json_str.endswith('```'):
+                kb_json_str = kb_json_str[:-3]
+            kb_json_str = kb_json_str.strip()
+            
+            print(f" DEBUG: Received knowledge base JSON: {len(kb_json_str)} characters")
+            
+            # Parse and validate JSON
+            kb_data = json.loads(kb_json_str)
+            
+            print(f" DEBUG: Knowledge base generated successfully")
+            print(f"   - Brand: {kb_data.get('brand', {}).get('name', 'N/A')}")
+            print(f"   - KB Facts: {len(kb_data.get('kb_facts', []))}")
+            print(f"   - QA Patterns: {len(kb_data.get('qa_patterns', []))}")
+            print(f"   - Global Keywords: {len(kb_data.get('routing_hints', {}).get('global_keywords', []))}")
+            
+            return kb_data
+            
+        except json.JSONDecodeError as e:
+            print(f" ERROR: Failed to parse JSON from OpenAI response: {e}")
+            print(f" Response was: {kb_json_str[:500]}...")
+            raise ValueError(f"OpenAI returned invalid JSON: {str(e)}")
+        except Exception as e:
+            print(f" ERROR: Failed to generate knowledge base: {e}")
+            raise
+    
+    def train_chatbot(self, chatbot_id, text, use_knowledge_base=True, chatbot_info=None):
+        """
+        Train a chatbot with the provided text.
+        
+        If use_knowledge_base=True (default), uses OpenAI to convert text into structured JSON knowledge base.
+        If use_knowledge_base=False, uses the legacy sentence-based approach with embeddings.
         """
         print(f"DEBUG: Starting training for chatbot {chatbot_id}")
         print(f"DEBUG: Text length: {len(text)} characters")
+        print(f"DEBUG: Use knowledge base: {use_knowledge_base}")
+        
+        if use_knowledge_base and self.openai_client:
+            # NEW APPROACH: Generate structured knowledge base using OpenAI
+            try:
+                print(" DEBUG: Using new knowledge base generation approach")
+                kb_data = self.generate_knowledge_base(text, chatbot_info)
+                
+                # Save the knowledge base
+                file_path = os.path.join(self.data_dir, f'chatbot_{chatbot_id}.json')
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(kb_data, f, ensure_ascii=False, indent=2)
+                
+                print(f" DEBUG: Saved knowledge base to {file_path}")
+                print(f" DEBUG: Chatbot {chatbot_id} trained with knowledge base successfully")
+                return
+                
+            except Exception as e:
+                print(f" ERROR: Knowledge base generation failed: {e}")
+                print(" DEBUG: Falling back to legacy sentence-based approach")
+                # Fall through to legacy approach
+        
+        # LEGACY APPROACH: Split into sentences and generate embeddings
+        print(" DEBUG: Using legacy sentence-based training approach")
         print(f"DEBUG: AI_AVAILABLE = {AI_AVAILABLE}")
         print(f"DEBUG: Model available = {self.model is not None}")
         
@@ -49,9 +235,10 @@ class ChatbotTrainer:
         if not sentences:
             raise ValueError("No content found to train the chatbot")
         
-        # Save training data
+        # Save training data in legacy format
         training_data = {
-            'sentences': sentences
+            'sentences': sentences,
+            'legacy_format': True  # Mark as legacy format
         }
         
         # Generate embeddings only if AI libraries are available
@@ -77,7 +264,7 @@ class ChatbotTrainer:
             json.dump(training_data, f, ensure_ascii=False, indent=2)
         
         print(f" DEBUG: Saved training data to {file_path}")
-        print(f" DEBUG: Chatbot {chatbot_id} trained with {len(sentences)} sentences")
+        print(f" DEBUG: Chatbot {chatbot_id} trained with {len(sentences)} sentences (legacy format)")
     
     def _split_into_sentences(self, text):
         """
@@ -176,7 +363,8 @@ class ChatbotTrainer:
     
     def get_training_data(self, chatbot_id):
         """
-        Load training data for a specific chatbot
+        Load training data for a specific chatbot.
+        Returns either knowledge base format or legacy sentence-based format.
         """
         file_path = os.path.join(self.data_dir, f'chatbot_{chatbot_id}.json')
         
@@ -188,20 +376,155 @@ class ChatbotTrainer:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
-            print(f" DEBUG: Loaded training data: {len(data['sentences'])} sentences")
-            
-            # Convert embeddings back to numpy array if available
-            embeddings_data = data.get('embeddings')
-            if embeddings_data is not None and len(embeddings_data) > 0 and AI_AVAILABLE:
-                data['embeddings'] = np.array(embeddings_data)
-                print(f" DEBUG: Loaded {len(embeddings_data)} embeddings")
+            # Check if this is knowledge base format or legacy format
+            if 'kb_facts' in data or 'qa_patterns' in data:
+                print(f" DEBUG: Loaded knowledge base format")
+                print(f"   - KB Facts: {len(data.get('kb_facts', []))}")
+                print(f"   - QA Patterns: {len(data.get('qa_patterns', []))}")
+                return data
             else:
-                print(f" DEBUG: No embeddings available (embeddings_data: {embeddings_data is not None})")
-            
-            return data
+                # Legacy format
+                print(f" DEBUG: Loaded legacy training data: {len(data.get('sentences', []))} sentences")
+                
+                # Convert embeddings back to numpy array if available
+                embeddings_data = data.get('embeddings')
+                if embeddings_data is not None and len(embeddings_data) > 0 and AI_AVAILABLE:
+                    data['embeddings'] = np.array(embeddings_data)
+                    print(f" DEBUG: Loaded {len(embeddings_data)} embeddings")
+                else:
+                    print(f" DEBUG: No embeddings available")
+                
+                return data
         except Exception as e:
             print(f" DEBUG: Error loading training data: {e}")
             return None
+    
+    def is_knowledge_base_format(self, training_data):
+        """
+        Check if training data is in knowledge base format or legacy format
+        """
+        if not training_data:
+            return False
+        return 'kb_facts' in training_data or 'qa_patterns' in training_data
+    
+    def query_knowledge_base(self, chatbot_id, user_query, top_k=3):
+        """
+        Query the knowledge base for relevant information based on user query.
+        Returns matching facts and QA patterns.
+        """
+        training_data = self.get_training_data(chatbot_id)
+        
+        if not training_data:
+            print(" DEBUG: No training data available")
+            return None
+        
+        if not self.is_knowledge_base_format(training_data):
+            print(" DEBUG: Training data is in legacy format, not knowledge base")
+            return None
+        
+        print(f" DEBUG: Querying knowledge base for: '{user_query}'")
+        
+        # Extract components from knowledge base
+        kb_facts = training_data.get('kb_facts', [])
+        qa_patterns = training_data.get('qa_patterns', [])
+        global_keywords = training_data.get('routing_hints', {}).get('global_keywords', [])
+        
+        # Normalize user query
+        query_lower = user_query.lower().strip()
+        query_words = set(query_lower.split())
+        
+        # Match against QA patterns first (most specific)
+        qa_matches = []
+        for pattern in qa_patterns:
+            intent_id = pattern.get('intent_id', '')
+            triggers = pattern.get('triggers', [])
+            
+            # Check if any trigger matches the query
+            for trigger in triggers:
+                trigger_lower = trigger.lower()
+                # Calculate match score
+                trigger_words = set(trigger_lower.split())
+                word_overlap = len(query_words.intersection(trigger_words))
+                
+                # Exact phrase match gets highest score
+                if query_lower in trigger_lower or trigger_lower in query_lower:
+                    match_score = 1.0
+                elif word_overlap >= len(query_words) * 0.6:  # 60% word overlap
+                    match_score = 0.7 + (word_overlap / len(query_words)) * 0.3
+                elif word_overlap > 0:
+                    match_score = word_overlap / max(len(query_words), len(trigger_words))
+                else:
+                    continue
+                
+                qa_matches.append({
+                    'type': 'qa_pattern',
+                    'intent_id': intent_id,
+                    'trigger': trigger,
+                    'score': match_score,
+                    'response_inline': pattern.get('response_inline'),
+                    'response_ref': pattern.get('response_ref'),
+                    'data': pattern
+                })
+                print(f"   QA Pattern match: {intent_id} (score: {match_score:.3f})")
+                break  # Only count one match per pattern
+        
+        # Match against KB facts (broader knowledge)
+        kb_matches = []
+        for fact in kb_facts:
+            fact_id = fact.get('id', '')
+            title = fact.get('title', '')
+            keywords = fact.get('keywords', [])
+            
+            # Calculate match score based on keywords and title
+            match_score = 0.0
+            
+            # Check title match
+            title_lower = title.lower()
+            if query_lower in title_lower or title_lower in query_lower:
+                match_score += 0.5
+            else:
+                title_words = set(title_lower.split())
+                title_overlap = len(query_words.intersection(title_words))
+                if title_overlap > 0:
+                    match_score += (title_overlap / len(query_words)) * 0.3
+            
+            # Check keyword matches
+            keyword_matches = 0
+            for keyword in keywords:
+                keyword_lower = keyword.lower()
+                if keyword_lower in query_lower or any(kw in keyword_lower for kw in query_words):
+                    keyword_matches += 1
+            
+            if keyword_matches > 0:
+                match_score += (keyword_matches / len(keywords)) * 0.5
+            
+            if match_score > 0.1:  # Only include if there's some match
+                kb_matches.append({
+                    'type': 'kb_fact',
+                    'fact_id': fact_id,
+                    'title': title,
+                    'score': match_score,
+                    'answer_short': fact.get('answer_short'),
+                    'answer_long': fact.get('answer_long'),
+                    'keywords': keywords,
+                    'data': fact
+                })
+                print(f"   KB Fact match: {fact_id} (score: {match_score:.3f})")
+        
+        # Combine and sort all matches by score
+        all_matches = qa_matches + kb_matches
+        all_matches.sort(key=lambda x: x['score'], reverse=True)
+        
+        # Return top k matches
+        top_matches = all_matches[:top_k]
+        
+        print(f" DEBUG: Found {len(all_matches)} total matches, returning top {len(top_matches)}")
+        
+        return {
+            'matches': top_matches,
+            'brand': training_data.get('brand', {}),
+            'routing_hints': training_data.get('routing_hints', {})
+        }
     
     def diagnose_training_data(self, chatbot_id):
         """
