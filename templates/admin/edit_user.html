@@ -76,6 +76,35 @@
                             </div>
                         </div>
                         
+                        <!-- Plan Management Section -->
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="form-group">
+                                    <label for="plan_id" class="form-label">
+                                        <strong>User Plan</strong>
+                                    </label>
+                                    <select class="form-control" id="plan_id" name="plan_id">
+                                        <option value="current">Keep Current Plan</option>
+                                        {% for plan in plans %}
+                                            <option value="{{ plan.id }}" 
+                                                    {% set current_plan = get_user_plan(user) %}
+                                                    {% if current_plan and current_plan.id == plan.id %}selected{% endif %}>
+                                                {{ plan.name }} - ${{ "%.2f"|format(plan.monthly_price) }}/month
+                                                {% if plan.chatbot_limit == 999999 %}
+                                                    (Unlimited chatbots)
+                                                {% else %}
+                                                    ({{ plan.chatbot_limit }} chatbots)
+                                                {% endif %}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                    <small class="form-text text-muted">
+                                        Select a plan to upgrade or downgrade this user. Admin users automatically get unlimited access.
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <div class="row">
                             <div class="col-md-12">
                                 <div class="form-group">

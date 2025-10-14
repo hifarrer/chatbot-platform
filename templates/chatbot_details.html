@@ -170,15 +170,85 @@
                 <h5><i class="fas fa-upload me-2"></i>Upload Training Documents</h5>
             </div>
             <div class="card-body">
-                <form action="{{ url_for('upload_document', chatbot_id=chatbot.id) }}" method="POST" enctype="multipart/form-data">
-                    <div class="mb-3">
-                        <input type="file" class="form-control" name="file" accept=".pdf,.docx,.txt,.json" required>
-                        <div class="form-text">Supported formats: PDF, DOCX, TXT, JSON (Max {{ current_user.user_plan.file_size_limit_mb }}MB for your {{ current_user.user_plan.name }} plan)</div>
+                <!-- File Upload Tab -->
+                <ul class="nav nav-tabs mb-3" id="uploadTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="file-upload-tab" data-bs-toggle="tab" data-bs-target="#file-upload" type="button" role="tab" aria-controls="file-upload" aria-selected="true">
+                            <i class="fas fa-file me-1"></i>Upload File
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="google-docs-tab" data-bs-toggle="tab" data-bs-target="#google-docs" type="button" role="tab" aria-controls="google-docs" aria-selected="false">
+                            <i class="fab fa-google me-1"></i>Google Docs
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="google-sheets-tab" data-bs-toggle="tab" data-bs-target="#google-sheets" type="button" role="tab" aria-controls="google-sheets" aria-selected="false">
+                            <i class="fas fa-table me-1"></i>Google Sheets
+                        </button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content" id="uploadTabsContent">
+                    <!-- File Upload Tab Content -->
+                    <div class="tab-pane fade show active" id="file-upload" role="tabpanel" aria-labelledby="file-upload-tab">
+                        <form action="{{ url_for('upload_document', chatbot_id=chatbot.id) }}" method="POST" enctype="multipart/form-data">
+                            <div class="mb-3">
+                                <input type="file" class="form-control" name="file" accept=".pdf,.docx,.txt,.json,.xlsx" required>
+                                <div class="form-text">Supported formats: PDF, DOCX, TXT, JSON, XLSX (Max {{ current_user.user_plan.file_size_limit_mb }}MB for your {{ current_user.user_plan.name }} plan)</div>
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-upload me-2"></i>Upload Document
+                            </button>
+                        </form>
                     </div>
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-upload me-2"></i>Upload Document
-                    </button>
-                </form>
+                    
+                    <!-- Google Docs Tab Content -->
+                    <div class="tab-pane fade" id="google-docs" role="tabpanel" aria-labelledby="google-docs-tab">
+                        <form action="{{ url_for('upload_google_doc', chatbot_id=chatbot.id) }}" method="POST">
+                            <div class="mb-3">
+                                <label for="google_doc_url" class="form-label">Google Docs URL</label>
+                                <input type="url" class="form-control" id="google_doc_url" name="google_doc_url" placeholder="https://docs.google.com/document/d/YOUR_DOC_ID/edit" required>
+                                <div class="form-text">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    The Google Doc must be shared with "Anyone with the link can view" permissions.
+                                    <br>
+                                    <i class="fas fa-share-alt me-1"></i>
+                                    To share: Click "Share" → Change "Restricted" to "Anyone with the link"
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-success">
+                                <i class="fab fa-google me-2"></i>Import from Google Docs
+                            </button>
+                        </form>
+                    </div>
+                    
+                    <!-- Google Sheets Tab Content -->
+                    <div class="tab-pane fade" id="google-sheets" role="tabpanel" aria-labelledby="google-sheets-tab">
+                        <form action="{{ url_for('upload_google_sheet', chatbot_id=chatbot.id) }}" method="POST">
+                            <div class="mb-3">
+                                <label for="google_sheet_url" class="form-label">Google Sheets URL</label>
+                                <input type="url" class="form-control" id="google_sheet_url" name="google_sheet_url" placeholder="https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit" required>
+                                <div class="form-text">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    The Google Sheet must be shared with "Anyone with the link can view" permissions.
+                                    <br>
+                                    <i class="fas fa-lightbulb me-1"></i>
+                                    <strong>Perfect for:</strong> Pricing plans, product catalogs, FAQs, inventory lists, and other structured data.
+                                    <br>
+                                    <i class="fas fa-share-alt me-1"></i>
+                                    To share: Click "Share" → Change "Restricted" to "Anyone with the link"
+                                    <br>
+                                    <i class="fas fa-magic me-1"></i>
+                                    Data will be automatically converted to JSON format for optimal AI training.
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-info">
+                                <i class="fas fa-table me-2"></i>Import from Google Sheets
+                            </button>
+                        </form>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -427,7 +497,7 @@ ChatbotEmbed.init({
     apiUrl: '${domain}/api/chat/${embedCode}',
     containerId: 'chatbot-${embedCode}',
     title: '{{ chatbot.name }}',
-    avatarUrl: '{% if chatbot.avatar_filename %}{{ domain }}/static/uploads/{{ chatbot.avatar_filename }}{% endif %}',
+    avatarUrl: '{% if chatbot.avatar_filename %}{{ domain }}{{ get_avatar_url(chatbot.avatar_filename) }}{% endif %}',
     greetingMessage: '{{ chatbot.greeting_message or "Hi! I'm here to help. Ask me anything!" }}'
 });
 <\/script>`;
@@ -1475,5 +1545,27 @@ document.addEventListener('DOMContentLoaded', function() {
 }
 
 </style>
+
+<!-- Platform Assistant Chatbot -->
+{% if homepage_chatbot %}
+<div id="chatbot-container"></div>
+<script src="{{ url_for('static', filename='js/chatbot-embed.js') }}"></script>
+<script>
+window.addEventListener('load', function() {
+    // Initialize the Platform Assistant chatbot
+    ChatbotEmbed.init({
+        embedCode: '{{ homepage_chatbot.embed_code }}',
+        apiUrl: '{{ request.url_root }}api/chat/{{ homepage_chatbot.embed_code }}',
+        containerId: 'chatbot-container',
+        title: '{{ homepage_chatbot_title }}',
+        placeholder: '{{ homepage_chatbot_placeholder }}',
+        avatarUrl: '{% if homepage_chatbot.avatar_filename %}{{ get_avatar_url(homepage_chatbot.avatar_filename) }}{% endif %}',
+        greetingMessage: '{{ homepage_chatbot.greeting_message or "Hi! I\'m here to help. Ask me anything!" }}',
+        theme: 'light',
+        position: 'bottom-right'
+    });
+});
+</script>
+{% endif %}
 
 {% endblock %} 

@@ -38,12 +38,20 @@ OPENAI_API_KEY=your-openai-api-key-here (optional)
 RENDER_DISK_PATH=/uploads (if using persistent disk)
 ```
 
-### **3.1. Persistent File Storage (Optional)**
-If you need persistent file storage (recommended for production):
-1. Add a **Disk** to your Render service
-2. Set the disk path to `/uploads`
-3. Add environment variable: `RENDER_DISK_PATH=/uploads`
-4. Files will persist across deployments
+### **3.1. Persistent File Storage (REQUIRED for avatars and documents)**
+To ensure uploaded files persist across deployments:
+1. Add a **Disk** to your Render service:
+   - Go to your service settings
+   - Click "Disks" in the left sidebar
+   - Click "Add Disk"
+   - Set the mount path to `/uploads`
+   - Choose a disk size (1GB+ recommended)
+2. Add environment variable: `RENDER_DISK_PATH=/uploads`
+3. Files will persist across deployments:
+   - Custom chatbot avatars → `/uploads/avatars/`
+   - Uploaded documents → `/uploads/`
+
+**Note**: Without this disk, uploaded avatars and documents will disappear on each deployment!
 
 ### **4. Database Setup**
 Render will automatically:

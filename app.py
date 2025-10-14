@@ -160,6 +160,25 @@ def load_user(user_id):
 
 def get_user_plan(user):
     """Get the user's current plan based on active subscription, else Free."""
+    # Admin users get unlimited access
+    if user.is_admin:
+        # Create or get admin plan with unlimited access
+        admin_plan = Plan.query.filter_by(name='Admin', is_active=True).first()
+        if not admin_plan:
+            admin_plan = Plan(
+                name='Admin',
+                description='Admin plan with unlimited access',
+                monthly_price=0.0,
+                yearly_price=0.0,
+                chatbot_limit=999999,  # Effectively unlimited
+                file_size_limit_mb=999999,  # Effectively unlimited
+                features=json.dumps(['Unlimited chatbots', 'Unlimited file uploads', 'Admin access']),
+                is_active=True
+            )
+            db.session.add(admin_plan)
+            db.session.commit()
+        return admin_plan
+    
     try:
         sub = UserSubscription.query.filter_by(user_id=user.id, status='active').order_by(UserSubscription.created_at.desc()).first()
         if sub:
@@ -366,6 +385,20 @@ def create_app():
         except:
             return []
     
+    # Helper function to get avatar upload directory
+    def get_avatar_upload_dir():
+        """Returns the directory where avatars should be stored"""
+        # Use Render disk path if available (persistent storage)
+        render_disk_path = os.environ.get('RENDER_DISK_PATH', '/uploads')
+        if os.path.exists(render_disk_path) and render_disk_path != 'uploads':
+            avatar_dir = os.path.join(render_disk_path, 'avatars')
+        else:
+            # Local development: use static/uploads
+            avatar_dir = os.path.join(app.root_path, 'static', 'uploads')
+        
+        os.makedirs(avatar_dir, exist_ok=True)
+        return avatar_dir
+    
     # Add custom Jinja2 function for avatar URL
     @app.template_global()
     def get_avatar_url(avatar_filename):
@@ -377,7 +410,8 @@ def create_app():
         if avatar_filename in allowed_predefined:
             return url_for('static', filename='avatars/' + avatar_filename)
         else:
-            return url_for('static', filename='uploads/' + avatar_filename)
+            # Custom uploaded avatars are served from /uploads/<filename> route
+            return url_for('uploaded_file', filename=avatar_filename)
     
     # Add custom Jinja2 function for getting settings
     @app.template_global()
@@ -1009,9 +1043,8 @@ Best regards,
                     if '.' in avatar_file.filename and \
                        avatar_file.filename.rsplit('.', 1)[1].lower() in allowed_extensions:
                         
-                        # Create uploads directory if it doesn't exist
-                        upload_dir = os.path.join(app.root_path, 'static', 'uploads')
-                        os.makedirs(upload_dir, exist_ok=True)
+                        # Get avatar upload directory (persistent storage on Render)
+                        upload_dir = get_avatar_upload_dir()
                         
                         # Generate secure filename
                         filename = secure_filename(avatar_file.filename)
@@ -1077,7 +1110,26 @@ Best regards,
         documents = Document.query.filter_by(chatbot_id=chatbot_id).all()
         conversations = Conversation.query.filter_by(chatbot_id=chatbot_id).order_by(Conversation.timestamp.desc()).limit(50).all()
         
-        return render_template('chatbot_details.html', chatbot=chatbot, documents=documents, conversations=conversations)
+        # Get homepage chatbot settings
+        homepage_chatbot_id = get_setting('homepage_chatbot_id')
+        homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
+        homepage_chatbot_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+        
+        # Get homepage chatbot
+        homepage_chatbot = None
+        if homepage_chatbot_id:
+            homepage_chatbot = Chatbot.query.get(homepage_chatbot_id)
+        
+        if not homepage_chatbot:
+            homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
+        
+        return render_template('chatbot_details.html', 
+                             chatbot=chatbot, 
+                             documents=documents, 
+                             conversations=conversations,
+                             homepage_chatbot=homepage_chatbot,
+                             homepage_chatbot_title=homepage_chatbot_title,
+                             homepage_chatbot_placeholder=homepage_chatbot_placeholder)
 
     @app.route('/chatbot/<int:chatbot_id>/update', methods=['POST'])
     @login_required
@@ -1105,7 +1157,7 @@ Best regards,
             if selected_avatar in allowed_predefined:
                 # Delete old custom avatar if exists (only if it's not a predefined one)
                 if chatbot.avatar_filename and not chatbot.avatar_filename in allowed_predefined:
-                    upload_dir = os.path.join(app.root_path, 'static', 'uploads')
+                    upload_dir = get_avatar_upload_dir()
                     old_avatar_path = os.path.join(upload_dir, chatbot.avatar_filename)
                     if os.path.exists(old_avatar_path):
                         os.remove(old_avatar_path)
@@ -1123,9 +1175,8 @@ Best regards,
                 if '.' in avatar_file.filename and \
                    avatar_file.filename.rsplit('.', 1)[1].lower() in allowed_extensions:
                     
-                    # Create uploads directory if it doesn't exist
-                    upload_dir = os.path.join(app.root_path, 'static', 'uploads')
-                    os.makedirs(upload_dir, exist_ok=True)
+                    # Get avatar upload directory (persistent storage on Render)
+                    upload_dir = get_avatar_upload_dir()
                     
                     # Delete old avatar if exists (only if it's a custom upload, not predefined)
                     if chatbot.avatar_filename:
@@ -1248,6 +1299,158 @@ Best regards,
                     return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
         else:
             flash('Invalid file type. Please upload PDF, DOCX, TXT, or JSON files.')
+        
+        return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+
+    @app.route('/upload_google_doc/<int:chatbot_id>', methods=['POST'])
+    @login_required
+    def upload_google_doc(chatbot_id):
+        chatbot = Chatbot.query.filter_by(id=chatbot_id, user_id=current_user.id).first_or_404()
+        
+        google_doc_url = request.form.get('google_doc_url', '').strip()
+        
+        if not google_doc_url:
+            flash('Please enter a Google Docs URL')
+            return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+        
+        try:
+            # Fetch the Google Doc content
+            text = document_processor.fetch_google_doc(google_doc_url)
+            
+            if not text:
+                flash('The Google Doc appears to be empty.')
+                return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+            
+            # Extract document ID for naming
+            doc_id = document_processor.extract_google_doc_id(google_doc_url)
+            original_filename = f"Google_Doc_{doc_id}.txt"
+            
+            # Check if a document with the same Google Doc ID already exists
+            existing_document = Document.query.filter_by(
+                original_filename=original_filename, 
+                chatbot_id=chatbot_id
+            ).first()
+            
+            # Save the text content as a file
+            unique_filename = f"{uuid.uuid4()}_{original_filename}"
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+            
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(text)
+            
+            # Verify file was saved
+            if not os.path.exists(file_path):
+                raise OSError("Failed to save Google Doc content")
+            
+            if existing_document:
+                # Delete the old file
+                try:
+                    if os.path.exists(existing_document.file_path):
+                        os.remove(existing_document.file_path)
+                except OSError:
+                    pass
+                
+                # Update existing document
+                existing_document.filename = unique_filename
+                existing_document.file_path = file_path
+                existing_document.uploaded_at = datetime.utcnow()
+                existing_document.processed = False
+                
+                db.session.commit()
+                flash(f'Google Doc has been updated successfully!')
+            else:
+                # Create new document record
+                document = Document(
+                    filename=unique_filename,
+                    original_filename=original_filename,
+                    file_path=file_path,
+                    chatbot_id=chatbot_id
+                )
+                
+                db.session.add(document)
+                db.session.commit()
+                
+                flash('Google Doc imported successfully!')
+                
+        except Exception as e:
+            flash(f'Error importing Google Doc: {str(e)}')
+            print(f"Error importing Google Doc: {str(e)}")
+        
+        return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+
+    @app.route('/upload_google_sheet/<int:chatbot_id>', methods=['POST'])
+    @login_required
+    def upload_google_sheet(chatbot_id):
+        chatbot = Chatbot.query.filter_by(id=chatbot_id, user_id=current_user.id).first_or_404()
+        
+        google_sheet_url = request.form.get('google_sheet_url', '').strip()
+        
+        if not google_sheet_url:
+            flash('Please enter a Google Sheets URL')
+            return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+        
+        try:
+            # Fetch the Google Sheet content (already formatted as JSON + text)
+            text = document_processor.fetch_google_sheet(google_sheet_url)
+            
+            if not text:
+                flash('The Google Sheet appears to be empty.')
+                return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+            
+            # Extract sheet ID for naming
+            sheet_id = document_processor.extract_google_sheet_id(google_sheet_url)
+            original_filename = f"Google_Sheet_{sheet_id}.txt"
+            
+            # Check if a document with the same Google Sheet ID already exists
+            existing_document = Document.query.filter_by(
+                original_filename=original_filename, 
+                chatbot_id=chatbot_id
+            ).first()
+            
+            # Save the text content as a file
+            unique_filename = f"{uuid.uuid4()}_{original_filename}"
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+            
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(text)
+            
+            # Verify file was saved
+            if not os.path.exists(file_path):
+                raise OSError("Failed to save Google Sheet content")
+            
+            if existing_document:
+                # Delete the old file
+                try:
+                    if os.path.exists(existing_document.file_path):
+                        os.remove(existing_document.file_path)
+                except OSError:
+                    pass
+                
+                # Update existing document
+                existing_document.filename = unique_filename
+                existing_document.file_path = file_path
+                existing_document.uploaded_at = datetime.utcnow()
+                existing_document.processed = False
+                
+                db.session.commit()
+                flash(f'Google Sheet has been updated successfully!')
+            else:
+                # Create new document record
+                document = Document(
+                    filename=unique_filename,
+                    original_filename=original_filename,
+                    file_path=file_path,
+                    chatbot_id=chatbot_id
+                )
+                
+                db.session.add(document)
+                db.session.commit()
+                
+                flash('Google Sheet imported successfully!')
+                
+        except Exception as e:
+            flash(f'Error importing Google Sheet: {str(e)}')
+            print(f"Error importing Google Sheet: {str(e)}")
         
         return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
 
@@ -1393,6 +1596,18 @@ Best regards,
                     os.remove(document.file_path)
             except Exception as e:
                 print(f"Error deleting file {document.file_path}: {e}")
+        
+        # Delete custom avatar if exists (not predefined)
+        if chatbot.avatar_filename:
+            allowed_predefined = ['1.png', '2.png', '3.png', '4.png', '5.png', '6.png']
+            if chatbot.avatar_filename not in allowed_predefined:
+                try:
+                    upload_dir = get_avatar_upload_dir()
+                    avatar_path = os.path.join(upload_dir, chatbot.avatar_filename)
+                    if os.path.exists(avatar_path):
+                        os.remove(avatar_path)
+                except Exception as e:
+                    print(f"Error deleting avatar {chatbot.avatar_filename}: {e}")
         
         # Delete chatbot training data
         try:
@@ -1545,8 +1760,9 @@ Best regards,
     
     @app.route('/uploads/<filename>')
     def uploaded_file(filename):
-        """Serve uploaded avatar images"""
-        return send_from_directory(os.path.join(app.root_path, 'static', 'uploads'), filename)
+        """Serve uploaded avatar images from persistent storage"""
+        upload_dir = get_avatar_upload_dir()
+        return send_from_directory(upload_dir, filename)
     
     @app.route('/preview/<embed_code>')
     def preview_chatbot(embed_code):
@@ -1706,7 +1922,7 @@ Best regards,
         page = request.args.get('page', 1, type=int)
         users = User.query.order_by(User.created_at.desc()).paginate(
             page=page, per_page=20, error_out=False)
-        return render_template('admin/users.html', users=users)
+        return render_template('admin/users.html', users=users, get_user_plan=get_user_plan)
 
     @app.route('/admin/users/<int:user_id>/edit', methods=['GET', 'POST'])
     @admin_required
@@ -1726,6 +1942,35 @@ Best regards,
             # Handle admin status
             user.is_admin = 'is_admin' in request.form
             
+            # Handle plan management
+            new_plan_id = request.form.get('plan_id')
+            if new_plan_id and new_plan_id != 'current':
+                # Get the selected plan
+                selected_plan = Plan.query.get(new_plan_id)
+                if selected_plan:
+                    # Cancel any existing active subscription
+                    existing_sub = UserSubscription.query.filter_by(
+                        user_id=user.id, 
+                        status='active'
+                    ).first()
+                    if existing_sub:
+                        existing_sub.status = 'cancelled'
+                    
+                    # Create new subscription for the selected plan
+                    new_subscription = UserSubscription(
+                        user_id=user.id,
+                        plan_id=selected_plan.id,
+                        status='active',
+                        created_at=datetime.utcnow()
+                    )
+                    db.session.add(new_subscription)
+                    flash(f'User plan updated to {selected_plan.name}!')
+                else:
+                    flash('Invalid plan selected!', 'error')
+            elif new_plan_id == 'current':
+                # Keep current plan (no change)
+                pass
+            
             # Check for username/email conflicts
             existing_user = User.query.filter(
                 User.username == user.username,
@@ -1733,7 +1978,7 @@ Best regards,
             ).first()
             if existing_user:
                 flash('Username already exists!')
-                return render_template('admin/edit_user.html', user=user)
+                return render_template('admin/edit_user.html', user=user, plans=Plan.query.filter_by(is_active=True).all(), get_user_plan=get_user_plan)
             
             existing_email = User.query.filter(
                 User.email == user.email,
@@ -1741,13 +1986,15 @@ Best regards,
             ).first()
             if existing_email:
                 flash('Email already exists!')
-                return render_template('admin/edit_user.html', user=user)
+                return render_template('admin/edit_user.html', user=user, plans=Plan.query.filter_by(is_active=True).all(), get_user_plan=get_user_plan)
             
             db.session.commit()
             flash(f'User {user.username} updated successfully!')
             return redirect(url_for('admin_users'))
         
-        return render_template('admin/edit_user.html', user=user)
+        # Get all active plans for the dropdown
+        plans = Plan.query.filter_by(is_active=True).all()
+        return render_template('admin/edit_user.html', user=user, plans=plans, get_user_plan=get_user_plan)
 
     @app.route('/admin/users/<int:user_id>/toggle-admin', methods=['POST'])
     @admin_required
@@ -1836,6 +2083,18 @@ Best regards,
                     os.remove(document.file_path)
             except Exception as e:
                 print(f"Error deleting file {document.file_path}: {e}")
+        
+        # Delete custom avatar if exists (not predefined)
+        if chatbot.avatar_filename:
+            allowed_predefined = ['1.png', '2.png', '3.png', '4.png', '5.png', '6.png']
+            if chatbot.avatar_filename not in allowed_predefined:
+                try:
+                    upload_dir = get_avatar_upload_dir()
+                    avatar_path = os.path.join(upload_dir, chatbot.avatar_filename)
+                    if os.path.exists(avatar_path):
+                        os.remove(avatar_path)
+                except Exception as e:
+                    print(f"Error deleting avatar {chatbot.avatar_filename}: {e}")
         
         # Delete chatbot training data
         try:
@@ -2044,7 +2303,7 @@ Best regards,
             return {'success': False, 'message': f'Error updating training prompt: {str(e)}'}, 500
 
     def allowed_file(filename):
-        ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx', 'json'}
+        ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx', 'json', 'xlsx'}
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
     def create_demo_chatbot_internal():

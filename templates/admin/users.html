@@ -24,6 +24,7 @@
                             <th>Username</th>
                             <th>Email</th>
                             <th>Role</th>
+                            <th>Plan</th>
                             <th>Chatbots</th>
                             <th>Created</th>
                             <th>Actions</th>
@@ -65,6 +66,24 @@
                                             </button>
                                         </form>
                                     {% endif %}
+                                </td>
+                                <td>
+                                    {% set user_plan = get_user_plan(user) %}
+                                    <span class="badge 
+                                        {% if user_plan.name == 'Admin' %}bg-danger
+                                        {% elif user_plan.name == 'Ultra' %}bg-purple
+                                        {% elif user_plan.name == 'Premium' %}bg-success
+                                        {% elif user_plan.name == 'Starter' %}bg-primary
+                                        {% else %}bg-secondary{% endif %}">
+                                        {{ user_plan.name }}
+                                    </span>
+                                    <small class="text-muted d-block">
+                                        {% if user_plan.chatbot_limit == 999999 %}
+                                            Unlimited
+                                        {% else %}
+                                            {{ user_plan.chatbot_limit }} limit
+                                        {% endif %}
+                                    </small>
                                 </td>
                                 <td>
                                     <span class="badge bg-info">{{ user.chatbots|length }}</span>

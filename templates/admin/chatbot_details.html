@@ -283,7 +283,7 @@ ChatbotEmbed.init({
     apiUrl: '${domain}/api/chat/${embedCode}',
     containerId: 'chatbot-${embedCode}',
     title: '{{ chatbot.name }}',
-    avatarUrl: '{% if chatbot.avatar_filename %}{{ domain }}/static/uploads/{{ chatbot.avatar_filename }}{% endif %}',
+    avatarUrl: '{% if chatbot.avatar_filename %}{{ domain }}{{ get_avatar_url(chatbot.avatar_filename) }}{% endif %}',
     greetingMessage: '{{ chatbot.greeting_message or "Hi! I'm here to help. Ask me anything!" }}'
 });
 <\/script>`;
