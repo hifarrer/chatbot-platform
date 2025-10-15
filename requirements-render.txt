@@ -1,0 +1,45 @@
+# Render.com Deployment Requirements (Python 3.11 Compatible)
+# This version is optimized for Render deployment with Python 3.11
+
+# Core Flask dependencies
+Flask>=2.3.0,<3.0.0
+Flask-SQLAlchemy>=3.0.0,<4.0.0
+Flask-Login>=0.6.0,<1.0.0
+Werkzeug>=2.3.0,<3.0.0
+
+# Database support
+psycopg2-binary>=2.9.0,<3.0.0
+
+# Document processing
+PyPDF2>=3.0.0,<4.0.0
+python-docx>=0.8.11,<1.0.0
+openpyxl>=3.0.0,<4.0.0
+
+# Web scraping - using compatible versions
+trafilatura>=1.6.0,<2.0.0
+httpx>=0.24.0,<1.0.0
+beautifulsoup4>=4.12.0,<5.0.0
+# Use lxml with specific version for Python 3.11 compatibility
+lxml>=4.9.0,<4.10.0
+
+# Production server
+gunicorn>=21.0.0,<22.0.0
+
+# Environment management
+python-dotenv>=1.0.0,<2.0.0
+
+# OpenAI API for chat
+openai>=1.0.0,<2.0.0
+
+# CORS support for embedded chatbots
+Flask-CORS>=4.0.0,<5.0.0
+
+# Email service
+resend>=0.8.0,<1.0.0
+
+# Basic utilities
+requests>=2.31.0,<3.0.0
+setuptools>=65.0.0
+
+# Stripe for payments
+stripe>=7.0.0,<8.0.0

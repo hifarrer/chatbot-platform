@@ -646,8 +646,12 @@ Scraped At: {time.strftime('%Y-%m-%d %H:%M:%S')}
                         if response.status_code == 200:
                             print(f"   ✓ Found sitemap: {sitemap_url}")
                             
-                            # Parse XML
-                            soup = BeautifulSoup(response.content, 'lxml-xml')
+                            # Parse XML - try lxml first, fallback to built-in xml parser
+                            try:
+                                soup = BeautifulSoup(response.content, 'lxml-xml')
+                            except Exception:
+                                # Fallback to built-in XML parser if lxml fails
+                                soup = BeautifulSoup(response.content, 'xml')
                             
                             # Look for <loc> tags (standard sitemap format)
                             loc_tags = soup.find_all('loc')
