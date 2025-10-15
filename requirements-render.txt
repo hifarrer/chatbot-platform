@@ -15,12 +15,11 @@ PyPDF2>=3.0.0,<4.0.0
 python-docx>=0.8.11,<1.0.0
 openpyxl>=3.0.0,<4.0.0
 
-# Web scraping - using compatible versions
+# Web scraping - using compatible versions (lxml removed for Python 3.13 compatibility)
 trafilatura>=1.6.0,<2.0.0
 httpx>=0.24.0,<1.0.0
 beautifulsoup4>=4.12.0,<5.0.0
-# Use lxml with specific version for Python 3.11 compatibility
-lxml>=4.9.0,<4.10.0
+# lxml removed - using built-in XML parser instead
 
 # Production server
 gunicorn>=21.0.0,<22.0.0

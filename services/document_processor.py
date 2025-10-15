@@ -628,6 +628,7 @@ Scraped At: {time.strftime('%Y-%m-%d %H:%M:%S')}
         """
         Try to extract URLs from sitemap.xml
         Returns list of URLs found in sitemap
+        Uses multiple parsing approaches for maximum compatibility
         """
         urls = []
         sitemap_urls = [
@@ -646,31 +647,75 @@ Scraped At: {time.strftime('%Y-%m-%d %H:%M:%S')}
                         if response.status_code == 200:
                             print(f"   ✓ Found sitemap: {sitemap_url}")
                             
-                            # Parse XML - try lxml first, fallback to built-in xml parser
-                            try:
-                                soup = BeautifulSoup(response.content, 'lxml-xml')
-                            except Exception:
-                                # Fallback to built-in XML parser if lxml fails
-                                soup = BeautifulSoup(response.content, 'xml')
-                            
-                            # Look for <loc> tags (standard sitemap format)
-                            loc_tags = soup.find_all('loc')
-                            for loc in loc_tags:
-                                url = loc.text.strip()
-                                if url and url.startswith('http'):
-                                    urls.append(url)
-                                    if len(urls) >= max_urls:
-                                        break
-                            
-                            if urls:
-                                print(f"   ✓ Extracted {len(urls)} URLs from sitemap")
-                                return urls[:max_urls]
-                    except:
+                            # Try multiple parsing approaches
+                            urls_found = self._parse_sitemap_content(response.content, max_urls)
+                            if urls_found:
+                                urls.extend(urls_found)
+                                print(f"   ✓ Extracted {len(urls_found)} URLs from sitemap")
+                                if len(urls) >= max_urls:
+                                    return urls[:max_urls]
+                    except Exception as e:
+                        print(f"   ✗ Error parsing sitemap {sitemap_url}: {str(e)}")
                         continue
         except Exception as e:
             print(f"   ✗ No sitemap found: {str(e)}")
         
-        return urls
+        return urls[:max_urls]
+    
+    def _parse_sitemap_content(self, content, max_urls=50):
+        """
+        Parse sitemap content using multiple approaches for maximum compatibility
+        """
+        urls = []
+        
+        # Approach 1: Try BeautifulSoup with built-in XML parser
+        try:
+            soup = BeautifulSoup(content, 'xml')
+            loc_tags = soup.find_all('loc')
+            for loc in loc_tags:
+                url = loc.text.strip()
+                if url and url.startswith('http'):
+                    urls.append(url)
+                    if len(urls) >= max_urls:
+                        break
+            if urls:
+                return urls
+        except Exception as e:
+            print(f"   ✗ BeautifulSoup XML parsing failed: {str(e)}")
+        
+        # Approach 2: Try BeautifulSoup with HTML parser (fallback)
+        try:
+            soup = BeautifulSoup(content, 'html.parser')
+            loc_tags = soup.find_all('loc')
+            for loc in loc_tags:
+                url = loc.text.strip()
+                if url and url.startswith('http'):
+                    urls.append(url)
+                    if len(urls) >= max_urls:
+                        break
+            if urls:
+                return urls
+        except Exception as e:
+            print(f"   ✗ BeautifulSoup HTML parsing failed: {str(e)}")
+        
+        # Approach 3: Simple regex extraction (most compatible)
+        try:
+            import re
+            # Look for URLs in <loc> tags using regex
+            url_pattern = r'<loc>(https?://[^<]+)</loc>'
+            matches = re.findall(url_pattern, content.decode('utf-8', errors='ignore'))
+            for url in matches:
+                url = url.strip()
+                if url and url.startswith('http'):
+                    urls.append(url)
+                    if len(urls) >= max_urls:
+                        break
+            if urls:
+                return urls
+        except Exception as e:
+            print(f"   ✗ Regex parsing failed: {str(e)}")
+        
+        return []
     
     def _crawl_website(self, start_url, base_domain, max_urls=50):
         """
