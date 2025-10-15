@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from services.document_processor import DocumentProcessor
 from services.chatbot_trainer import ChatbotTrainer
 from services.chat_service_openai import ChatServiceOpenAI
+from services.analytics_service import AnalyticsService
 
 # Optional Stripe dependency (guarded)
 try:
@@ -1131,6 +1132,41 @@ Best regards,
                              homepage_chatbot_title=homepage_chatbot_title,
                              homepage_chatbot_placeholder=homepage_chatbot_placeholder)
 
+    @app.route('/chatbot/<int:chatbot_id>/analytics')
+    @login_required
+    def chatbot_analytics(chatbot_id):
+        """Display analytics for a chatbot's conversations"""
+        chatbot = Chatbot.query.filter_by(id=chatbot_id, user_id=current_user.id).first_or_404()
+        
+        # Get all conversations for this chatbot
+        conversations = Conversation.query.filter_by(chatbot_id=chatbot_id).order_by(Conversation.timestamp.desc()).all()
+        
+        # Initialize analytics service
+        analytics_service = AnalyticsService()
+        
+        # Get analytics data
+        analytics_data = analytics_service.get_conversation_analytics(conversations)
+        
+        # Get homepage chatbot settings (for platform assistant)
+        homepage_chatbot_id = get_setting('homepage_chatbot_id')
+        homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
+        homepage_chatbot_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+        
+        # Get homepage chatbot
+        homepage_chatbot = None
+        if homepage_chatbot_id:
+            homepage_chatbot = Chatbot.query.get(homepage_chatbot_id)
+        
+        if not homepage_chatbot:
+            homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
+        
+        return render_template('analytics.html',
+                             chatbot=chatbot,
+                             analytics=analytics_data,
+                             homepage_chatbot=homepage_chatbot,
+                             homepage_chatbot_title=homepage_chatbot_title,
+                             homepage_chatbot_placeholder=homepage_chatbot_placeholder)
+
     @app.route('/chatbot/<int:chatbot_id>/update', methods=['POST'])
     @login_required
     def update_chatbot(chatbot_id):
@@ -1451,6 +1487,89 @@ Best regards,
         except Exception as e:
             flash(f'Error importing Google Sheet: {str(e)}')
             print(f"Error importing Google Sheet: {str(e)}")
+        
+        return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+
+    @app.route('/scrape_website/<int:chatbot_id>', methods=['POST'])
+    @login_required
+    def scrape_website(chatbot_id):
+        """Handle website scraping and save as training document"""
+        chatbot = Chatbot.query.filter_by(id=chatbot_id, user_id=current_user.id).first_or_404()
+        
+        website_url = request.form.get('website_url', '').strip()
+        
+        if not website_url:
+            flash('Please enter a website URL')
+            return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+        
+        try:
+            # Scrape the website
+            print(f"Starting website scrape for: {website_url}")
+            text = document_processor.scrape_website(website_url, max_pages=50, timeout=120)
+            
+            if not text or len(text.strip()) < 100:
+                flash('The website appears to be empty or inaccessible.')
+                return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+            
+            # Extract domain for naming
+            from urllib.parse import urlparse
+            parsed_url = urlparse(website_url)
+            domain = parsed_url.netloc.replace('www.', '')
+            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            original_filename = f"WebScrape_{domain}_{timestamp}.txt"
+            
+            # Check if a document with similar name already exists
+            existing_document = Document.query.filter(
+                Document.chatbot_id == chatbot_id,
+                Document.original_filename.like(f"WebScrape_{domain}%")
+            ).first()
+            
+            # Save the text content as a file
+            unique_filename = f"{uuid.uuid4()}_{original_filename}"
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+            
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(text)
+            
+            # Verify file was saved
+            if not os.path.exists(file_path):
+                raise OSError("Failed to save website content")
+            
+            if existing_document:
+                # Delete the old file
+                try:
+                    if os.path.exists(existing_document.file_path):
+                        os.remove(existing_document.file_path)
+                except OSError:
+                    pass
+                
+                # Update existing document
+                existing_document.filename = unique_filename
+                existing_document.file_path = file_path
+                existing_document.uploaded_at = datetime.utcnow()
+                existing_document.processed = False
+                
+                db.session.commit()
+                flash(f'Website content has been updated successfully! Scraped from: {website_url}')
+            else:
+                # Create new document record
+                document = Document(
+                    filename=unique_filename,
+                    original_filename=original_filename,
+                    file_path=file_path,
+                    chatbot_id=chatbot_id
+                )
+                
+                db.session.add(document)
+                db.session.commit()
+                
+                flash(f'Website scraped successfully! Pages extracted from: {website_url}')
+                
+        except Exception as e:
+            flash(f'Error scraping website: {str(e)}')
+            print(f"Error scraping website: {str(e)}")
+            import traceback
+            traceback.print_exc()
         
         return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
 

@@ -8,6 +8,11 @@ import csv
 from io import StringIO
 from pathlib import Path
 from openpyxl import load_workbook
+from urllib.parse import urljoin, urlparse
+from bs4 import BeautifulSoup
+import httpx
+import trafilatura
+from collections import deque
 
 class DocumentProcessor:
     def __init__(self):
@@ -488,4 +493,274 @@ class DocumentProcessor:
         lines.append("")
         lines.append("=== End of Sheet Data ===")
         
-        return "\n".join(lines) 
+        return "\n".join(lines)
+    
+    def scrape_website(self, url, max_pages=50, timeout=120):
+        """
+        Scrape a website and extract clean text content from up to max_pages pages.
+        
+        Strategy:
+        1. Try to parse sitemap.xml first for fastest discovery
+        2. If no sitemap, crawl from homepage (breadth-first)
+        3. Use httpx for fetching (fast, modern)
+        4. Use trafilatura for content extraction (best-in-class)
+        5. Limit to max_pages to respect OpenAI context limits
+        
+        Args:
+            url (str): The website URL to scrape
+            max_pages (int): Maximum number of pages to scrape (default 50)
+            timeout (int): Maximum time in seconds for entire operation (default 120)
+            
+        Returns:
+            str: Combined text from all scraped pages
+        """
+        print(f" DEBUG: Starting website scraping for: {url}")
+        print(f" DEBUG: Max pages: {max_pages}, Timeout: {timeout}s")
+        
+        import time
+        start_time = time.time()
+        
+        try:
+            # Normalize URL
+            if not url.startswith(('http://', 'https://')):
+                url = 'https://' + url
+            
+            parsed_url = urlparse(url)
+            base_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"
+            
+            print(f" DEBUG: Base domain: {base_domain}")
+            
+            # Step 1: Try to get URLs from sitemap.xml
+            urls_to_scrape = self._get_urls_from_sitemap(base_domain, max_pages)
+            
+            # Step 2: If no sitemap or insufficient URLs, crawl the site
+            if len(urls_to_scrape) < max_pages:
+                print(f" DEBUG: Sitemap provided {len(urls_to_scrape)} URLs, crawling for more...")
+                crawled_urls = self._crawl_website(url, base_domain, max_pages - len(urls_to_scrape))
+                urls_to_scrape.extend(crawled_urls)
+            
+            # Remove duplicates and limit to max_pages
+            urls_to_scrape = list(dict.fromkeys(urls_to_scrape))[:max_pages]
+            
+            print(f" DEBUG: Will scrape {len(urls_to_scrape)} pages")
+            
+            # Step 3: Fetch and extract content from each URL
+            all_content = []
+            successful_scrapes = 0
+            
+            with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+                for idx, page_url in enumerate(urls_to_scrape, 1):
+                    # Check timeout
+                    if time.time() - start_time > timeout:
+                        print(f" WARNING: Timeout reached after {idx-1} pages")
+                        break
+                    
+                    try:
+                        print(f" DEBUG: [{idx}/{len(urls_to_scrape)}] Fetching: {page_url}")
+                        
+                        # Fetch the page
+                        response = client.get(
+                            page_url,
+                            headers={
+                                'User-Agent': 'Mozilla/5.0 (compatible; OwlbeeChatbotTrainer/1.0; +https://owlbee.ai)'
+                            }
+                        )
+                        
+                        if response.status_code == 200:
+                            # Extract clean text using trafilatura
+                            extracted_text = trafilatura.extract(
+                                response.text,
+                                include_comments=False,
+                                include_tables=True,
+                                no_fallback=False
+                            )
+                            
+                            if extracted_text and len(extracted_text.strip()) > 100:
+                                # Add page metadata
+                                page_content = f"\n\n=== PAGE: {page_url} ===\n\n{extracted_text}\n\n=== END OF PAGE ===\n"
+                                all_content.append(page_content)
+                                successful_scrapes += 1
+                                print(f"   ✓ Extracted {len(extracted_text)} characters")
+                            else:
+                                print(f"   ✗ No content extracted or content too short")
+                        else:
+                            print(f"   ✗ HTTP {response.status_code}")
+                        
+                        # Be polite - rate limiting
+                        time.sleep(0.5)
+                        
+                    except Exception as e:
+                        print(f"   ✗ Error fetching {page_url}: {str(e)}")
+                        continue
+            
+            if not all_content:
+                raise Exception("No content could be extracted from the website. The site may be blocking automated access or the content may not be accessible.")
+            
+            # Combine all content
+            combined_text = "\n".join(all_content)
+            
+            # Add summary header
+            summary = f"""=== WEBSITE SCRAPE SUMMARY ===
+Source: {url}
+Base Domain: {base_domain}
+Pages Scraped: {successful_scrapes} of {len(urls_to_scrape)} attempted
+Total Characters: {len(combined_text)}
+Scraped At: {time.strftime('%Y-%m-%d %H:%M:%S')}
+=== END SUMMARY ===
+
+"""
+            
+            final_text = summary + combined_text
+            
+            elapsed_time = time.time() - start_time
+            print(f" DEBUG: Scraping complete!")
+            print(f"   - Successful: {successful_scrapes}/{len(urls_to_scrape)} pages")
+            print(f"   - Total content: {len(final_text)} characters")
+            print(f"   - Time elapsed: {elapsed_time:.1f}s")
+            
+            return final_text
+            
+        except Exception as e:
+            print(f" ERROR: Website scraping failed: {str(e)}")
+            raise Exception(f"Failed to scrape website: {str(e)}")
+    
+    def _get_urls_from_sitemap(self, base_url, max_urls=50):
+        """
+        Try to extract URLs from sitemap.xml
+        Returns list of URLs found in sitemap
+        """
+        urls = []
+        sitemap_urls = [
+            f"{base_url}/sitemap.xml",
+            f"{base_url}/sitemap_index.xml",
+            f"{base_url}/sitemap1.xml"
+        ]
+        
+        print(f" DEBUG: Checking for sitemap...")
+        
+        try:
+            with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+                for sitemap_url in sitemap_urls:
+                    try:
+                        response = client.get(sitemap_url)
+                        if response.status_code == 200:
+                            print(f"   ✓ Found sitemap: {sitemap_url}")
+                            
+                            # Parse XML
+                            soup = BeautifulSoup(response.content, 'lxml-xml')
+                            
+                            # Look for <loc> tags (standard sitemap format)
+                            loc_tags = soup.find_all('loc')
+                            for loc in loc_tags:
+                                url = loc.text.strip()
+                                if url and url.startswith('http'):
+                                    urls.append(url)
+                                    if len(urls) >= max_urls:
+                                        break
+                            
+                            if urls:
+                                print(f"   ✓ Extracted {len(urls)} URLs from sitemap")
+                                return urls[:max_urls]
+                    except:
+                        continue
+        except Exception as e:
+            print(f"   ✗ No sitemap found: {str(e)}")
+        
+        return urls
+    
+    def _crawl_website(self, start_url, base_domain, max_urls=50):
+        """
+        Crawl website starting from start_url using breadth-first search.
+        Only follows internal links within the same domain.
+        
+        Returns list of URLs discovered
+        """
+        print(f" DEBUG: Crawling website from: {start_url}")
+        
+        visited = set()
+        to_visit = deque([start_url])
+        discovered_urls = []
+        
+        try:
+            with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+                while to_visit and len(discovered_urls) < max_urls:
+                    current_url = to_visit.popleft()
+                    
+                    # Skip if already visited
+                    if current_url in visited:
+                        continue
+                    
+                    visited.add(current_url)
+                    
+                    try:
+                        print(f"   Crawling: {current_url}")
+                        response = client.get(
+                            current_url,
+                            headers={
+                                'User-Agent': 'Mozilla/5.0 (compatible; OwlbeeChatbotTrainer/1.0; +https://owlbee.ai)'
+                            }
+                        )
+                        
+                        if response.status_code == 200 and 'text/html' in response.headers.get('content-type', ''):
+                            discovered_urls.append(current_url)
+                            
+                            # Parse HTML to find more links
+                            soup = BeautifulSoup(response.text, 'html.parser')
+                            
+                            # Find all links
+                            for link in soup.find_all('a', href=True):
+                                href = link['href']
+                                
+                                # Convert relative URLs to absolute
+                                absolute_url = urljoin(current_url, href)
+                                
+                                # Only add if it's from the same domain and not visited
+                                parsed = urlparse(absolute_url)
+                                if (parsed.netloc == urlparse(base_domain).netloc and
+                                    absolute_url not in visited and
+                                    absolute_url not in to_visit and
+                                    not self._should_skip_url(absolute_url)):
+                                    to_visit.append(absolute_url)
+                        
+                        # Be polite
+                        time.sleep(0.3)
+                        
+                    except Exception as e:
+                        print(f"   ✗ Error crawling {current_url}: {str(e)}")
+                        continue
+        except Exception as e:
+            print(f" ERROR: Crawling failed: {str(e)}")
+        
+        print(f"   ✓ Discovered {len(discovered_urls)} URLs via crawling")
+        return discovered_urls
+    
+    def _should_skip_url(self, url):
+        """
+        Check if URL should be skipped (e.g., files, common non-content pages)
+        """
+        skip_extensions = [
+            '.pdf', '.jpg', '.jpeg', '.png', '.gif', '.zip', '.tar', '.gz',
+            '.mp4', '.mp3', '.avi', '.mov', '.doc', '.docx', '.xls', '.xlsx',
+            '.css', '.js', '.xml', '.json', '.ico', '.svg', '.woff', '.ttf'
+        ]
+        
+        skip_patterns = [
+            '/feed/', '/rss/', '/atom/', '/wp-json/', '/api/',
+            '/login', '/logout', '/signin', '/signup', '/register',
+            '/cart', '/checkout', '/account', '/admin',
+            '#', 'javascript:', 'mailto:', 'tel:'
+        ]
+        
+        url_lower = url.lower()
+        
+        # Skip if has file extension we want to avoid
+        for ext in skip_extensions:
+            if url_lower.endswith(ext):
+                return True
+        
+        # Skip if matches patterns
+        for pattern in skip_patterns:
+            if pattern in url_lower:
+                return True
+        
+        return False 

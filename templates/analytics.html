@@ -1,0 +1,577 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics - {{ chatbot.name }} - owlbee.ai{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>
+        <i class="fas fa-chart-line me-2"></i>Analytics for {{ chatbot.name }}
+    </h2>
+    <div>
+        <a href="{{ url_for('chatbot_details', chatbot_id=chatbot.id) }}" class="btn btn-outline-primary">
+            <i class="fas fa-arrow-left me-1"></i>Back to Chatbot
+        </a>
+    </div>
+</div>
+
+{% if analytics.total_conversations == 0 %}
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle me-2"></i>
+        <strong>No conversations yet!</strong> Analytics will appear once users start interacting with your chatbot.
+    </div>
+{% else %}
+
+<!-- Key Metrics -->
+<div class="row mb-4">
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card bg-primary text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1 opacity-75">Total Interactions</h6>
+                        <h2 class="mb-0">{{ analytics.total_conversations }}</h2>
+                    </div>
+                    <div class="opacity-75">
+                        <i class="fas fa-comments fa-3x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card bg-success text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1 opacity-75">Resolved</h6>
+                        <h2 class="mb-0">{{ analytics.resolved_count }}</h2>
+                    </div>
+                    <div class="opacity-75">
+                        <i class="fas fa-check-circle fa-3x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card bg-info text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1 opacity-75">Resolution Rate</h6>
+                        <h2 class="mb-0">{{ analytics.resolution_rate }}%</h2>
+                    </div>
+                    <div class="opacity-75">
+                        <i class="fas fa-percent fa-3x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card bg-warning text-dark h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1 opacity-75">Avg. Message Length</h6>
+                        <h2 class="mb-0">{{ analytics.avg_message_length|int }}</h2>
+                        <small>characters</small>
+                    </div>
+                    <div class="opacity-50">
+                        <i class="fas fa-text-width fa-3x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Conversation Trends Chart -->
+    <div class="col-lg-8 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-area me-2 text-primary"></i>Conversation Trends (Last 30 Days)
+                </h5>
+            </div>
+            <div class="card-body">
+                <canvas id="trendsChart"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Status Breakdown Chart -->
+    <div class="col-lg-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-pie me-2 text-success"></i>Status Breakdown
+                </h5>
+            </div>
+            <div class="card-body d-flex align-items-center justify-content-center">
+                <canvas id="statusChart"></canvas>
+            </div>
+            <div class="card-footer bg-white">
+                <div class="row text-center">
+                    <div class="col-4">
+                        <div class="badge bg-success mb-1">Resolved</div>
+                        <div class="fw-bold">{{ analytics.status_breakdown.resolved }}</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="badge bg-primary mb-1">Active</div>
+                        <div class="fw-bold">{{ analytics.status_breakdown.active }}</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="badge bg-warning mb-1">Pending</div>
+                        <div class="fw-bold">{{ analytics.status_breakdown.pending }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Top Questions -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-question-circle me-2 text-info"></i>Top Questions Asked
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if analytics.top_questions %}
+                    <div class="list-group list-group-flush">
+                        {% for question in analytics.top_questions %}
+                        <div class="list-group-item px-0">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="flex-grow-1 me-3">
+                                    <div class="fw-semibold mb-1">{{ question.question }}</div>
+                                    <div class="progress" style="height: 5px;">
+                                        <div class="progress-bar bg-info" role="progressbar" 
+                                             style="width: {{ question.percentage }}%" 
+                                             aria-valuenow="{{ question.percentage }}" 
+                                             aria-valuemin="0" 
+                                             aria-valuemax="100">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-info rounded-pill">{{ question.count }}</span>
+                                    <small class="text-muted d-block">{{ question.percentage }}%</small>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-question-circle fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">No frequently asked questions yet</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Keyword Cloud -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-tags me-2 text-warning"></i>AI-Powered Keyword Analysis
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if analytics.keywords %}
+                    <div id="keywordCloud" class="p-3">
+                        {% for keyword in analytics.keywords %}
+                            <span class="keyword-tag" 
+                                  data-score="{{ keyword.score }}"
+                                  style="font-size: {{ 0.8 + (keyword.score / 100) * 1.5 }}rem; 
+                                         opacity: {{ 0.6 + (keyword.score / 100) * 0.4 }};">
+                                {{ keyword.keyword }}
+                            </span>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-tags fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">No keywords extracted yet</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Time Analytics -->
+<div class="row">
+    <div class="col-lg-12 mb-4">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-clock me-2 text-danger"></i>Activity Patterns
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center mb-4">
+                    <div class="col-md-4">
+                        <div class="p-3 bg-light rounded">
+                            <i class="fas fa-sun fa-2x text-warning mb-2"></i>
+                            <h6 class="text-uppercase text-muted mb-1">Busiest Hour</h6>
+                            <h4 class="mb-0">{{ analytics.time_analytics.busiest_hour }}</h4>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 bg-light rounded">
+                            <i class="fas fa-calendar-day fa-2x text-primary mb-2"></i>
+                            <h6 class="text-uppercase text-muted mb-1">Busiest Day</h6>
+                            <h4 class="mb-0">{{ analytics.time_analytics.busiest_day }}</h4>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 bg-light rounded">
+                            <i class="fas fa-chart-bar fa-2x text-success mb-2"></i>
+                            <h6 class="text-uppercase text-muted mb-1">Total Patterns</h6>
+                            <h4 class="mb-0">{{ analytics.time_analytics.hourly_distribution|length }}</h4>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Hourly Distribution Chart -->
+                <canvas id="hourlyChart" height="80"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<script>
+// Only initialize charts if we have data
+{% if analytics.total_conversations > 0 %}
+
+// Trends Chart
+const trendsCtx = document.getElementById('trendsChart').getContext('2d');
+const trendsChart = new Chart(trendsCtx, {
+    type: 'line',
+    data: {
+        labels: {{ analytics.trends.labels | tojson }},
+        datasets: [{
+            label: 'Conversations',
+            data: {{ analytics.trends.data | tojson }},
+            borderColor: 'rgb(54, 162, 235)',
+            backgroundColor: 'rgba(54, 162, 235, 0.1)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.4,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            pointBackgroundColor: 'rgb(54, 162, 235)',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+            legend: {
+                display: false
+            },
+            tooltip: {
+                mode: 'index',
+                intersect: false,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                padding: 12,
+                cornerRadius: 4
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    precision: 0
+                },
+                grid: {
+                    color: 'rgba(0, 0, 0, 0.05)'
+                }
+            },
+            x: {
+                grid: {
+                    display: false
+                }
+            }
+        },
+        interaction: {
+            mode: 'nearest',
+            axis: 'x',
+            intersect: false
+        }
+    }
+});
+
+// Status Breakdown Chart
+const statusCtx = document.getElementById('statusChart').getContext('2d');
+const statusChart = new Chart(statusCtx, {
+    type: 'doughnut',
+    data: {
+        labels: ['Resolved', 'Active', 'Pending'],
+        datasets: [{
+            data: [
+                {{ analytics.status_breakdown.resolved }},
+                {{ analytics.status_breakdown.active }},
+                {{ analytics.status_breakdown.pending }}
+            ],
+            backgroundColor: [
+                'rgb(40, 167, 69)',
+                'rgb(13, 110, 253)',
+                'rgb(255, 193, 7)'
+            ],
+            borderWidth: 2,
+            borderColor: '#fff'
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+            legend: {
+                display: false
+            },
+            tooltip: {
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                padding: 12,
+                cornerRadius: 4,
+                callbacks: {
+                    label: function(context) {
+                        const label = context.label || '';
+                        const value = context.parsed || 0;
+                        const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                        const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                        return label + ': ' + value + ' (' + percentage + '%)';
+                    }
+                }
+            }
+        }
+    }
+});
+
+// Hourly Distribution Chart
+const hourlyCtx = document.getElementById('hourlyChart').getContext('2d');
+const hourlyData = {{ analytics.time_analytics.hourly_distribution | tojson }};
+const hourlyLabels = hourlyData.map(item => item.hour);
+const hourlyCounts = hourlyData.map(item => item.count);
+
+const hourlyChart = new Chart(hourlyCtx, {
+    type: 'bar',
+    data: {
+        labels: hourlyLabels,
+        datasets: [{
+            label: 'Conversations',
+            data: hourlyCounts,
+            backgroundColor: 'rgba(220, 53, 69, 0.7)',
+            borderColor: 'rgb(220, 53, 69)',
+            borderWidth: 1,
+            borderRadius: 4
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+            legend: {
+                display: false
+            },
+            tooltip: {
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                padding: 12,
+                cornerRadius: 4
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    precision: 0
+                },
+                grid: {
+                    color: 'rgba(0, 0, 0, 0.05)'
+                }
+            },
+            x: {
+                grid: {
+                    display: false
+                },
+                ticks: {
+                    maxRotation: 45,
+                    minRotation: 45
+                }
+            }
+        }
+    }
+});
+
+{% endif %}
+</script>
+
+<!-- Platform Assistant Chatbot -->
+{% if homepage_chatbot %}
+<div id="chatbot-container"></div>
+<script src="{{ url_for('static', filename='js/chatbot-embed.js') }}"></script>
+<script>
+window.addEventListener('load', function() {
+    // Initialize the Platform Assistant chatbot
+    ChatbotEmbed.init({
+        embedCode: '{{ homepage_chatbot.embed_code }}',
+        apiUrl: '{{ request.url_root }}api/chat/{{ homepage_chatbot.embed_code }}',
+        containerId: 'chatbot-container',
+        title: '{{ homepage_chatbot_title }}',
+        placeholder: '{{ homepage_chatbot_placeholder }}',
+        avatarUrl: '{% if homepage_chatbot.avatar_filename %}{{ get_avatar_url(homepage_chatbot.avatar_filename) }}{% endif %}',
+        greetingMessage: '{{ homepage_chatbot.greeting_message or "Hi! I\'m here to help. Ask me anything!" }}',
+        theme: 'light',
+        position: 'bottom-right'
+    });
+});
+</script>
+{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* Keyword Cloud Styles */
+#keywordCloud {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    min-height: 200px;
+}
+
+.keyword-tag {
+    display: inline-block;
+    padding: 8px 16px;
+    margin: 5px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 25px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.keyword-tag:hover {
+    transform: scale(1.1) translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+/* Card Animations */
+.card {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    border: none;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* Progress Bar Animation */
+.progress-bar {
+    transition: width 1s ease;
+}
+
+/* Metric Cards */
+.card.bg-primary, .card.bg-success, .card.bg-info, .card.bg-warning {
+    border: none;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+/* List Group Items */
+.list-group-item {
+    border-left: none;
+    border-right: none;
+    transition: background-color 0.2s ease;
+}
+
+.list-group-item:hover {
+    background-color: rgba(0,0,0,0.02);
+}
+
+.list-group-item:first-child {
+    border-top: none;
+}
+
+/* Badge Styles */
+.badge {
+    font-weight: 500;
+    padding: 0.5em 0.8em;
+}
+
+/* Time Analytics Cards */
+.bg-light.rounded {
+    transition: all 0.3s ease;
+}
+
+.bg-light.rounded:hover {
+    background-color: #e9ecef !important;
+    transform: translateY(-2px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Chart Canvas */
+canvas {
+    max-height: 400px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .keyword-tag {
+        font-size: 0.85rem !important;
+        padding: 6px 12px;
+    }
+    
+    #keywordCloud {
+        gap: 5px;
+    }
+}
+
+/* Animation for cards on load */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.card {
+    animation: fadeInUp 0.6s ease both;
+}
+
+.card:nth-child(1) { animation-delay: 0.1s; }
+.card:nth-child(2) { animation-delay: 0.2s; }
+.card:nth-child(3) { animation-delay: 0.3s; }
+.card:nth-child(4) { animation-delay: 0.4s; }
+</style>
+{% endblock %}
+
