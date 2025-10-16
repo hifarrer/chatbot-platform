@@ -163,21 +163,38 @@ def get_user_plan(user):
     """Get the user's current plan based on active subscription, else Free."""
     # Admin users get unlimited access
     if user.is_admin:
-        # Create or get admin plan with unlimited access
-        admin_plan = Plan.query.filter_by(name='Admin', is_active=True).first()
+        # Get admin plan with unlimited access
+        admin_plan = Plan.query.filter_by(name='Admin').first()
         if not admin_plan:
-            admin_plan = Plan(
-                name='Admin',
-                description='Admin plan with unlimited access',
-                monthly_price=0.0,
-                yearly_price=0.0,
-                chatbot_limit=999999,  # Effectively unlimited
-                file_size_limit_mb=999999,  # Effectively unlimited
-                features=json.dumps(['Unlimited chatbots', 'Unlimited file uploads', 'Admin access']),
-                is_active=True
-            )
-            db.session.add(admin_plan)
-            db.session.commit()
+            try:
+                admin_plan = Plan(
+                    name='Admin',
+                    description='Admin plan with unlimited access',
+                    monthly_price=0.0,
+                    yearly_price=0.0,
+                    chatbot_limit=999999,  # Effectively unlimited
+                    file_size_limit_mb=999999,  # Effectively unlimited
+                    features=json.dumps(['Unlimited chatbots', 'Unlimited file uploads', 'Admin access']),
+                    is_active=True
+                )
+                db.session.add(admin_plan)
+                db.session.commit()
+            except Exception as e:
+                db.session.rollback()
+                # If creation fails, try to get existing admin plan
+                admin_plan = Plan.query.filter_by(name='Admin').first()
+                if not admin_plan:
+                    # If still no plan, create a fallback plan object
+                    admin_plan = Plan(
+                        name='Admin',
+                        description='Admin plan with unlimited access',
+                        monthly_price=0.0,
+                        yearly_price=0.0,
+                        chatbot_limit=999999,
+                        file_size_limit_mb=999999,
+                        features=json.dumps(['Unlimited chatbots', 'Unlimited file uploads', 'Admin access']),
+                        is_active=True
+                    )
         return admin_plan
     
     try:
@@ -3145,6 +3162,18 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
         # Extend later with DB updates when subscription model is added
 
         return ('', 200)
+
+    @app.errorhandler(Exception)
+    def handle_exception(e):
+        """Global exception handler to handle database session rollback errors"""
+        # Check if it's a database session rollback error
+        if 'PendingRollbackError' in str(type(e)) or 'PendingRollbackError' in str(e):
+            db.session.rollback()
+            flash('A database error occurred. Please try again.', 'error')
+            return redirect(url_for('index'))
+        
+        # For other exceptions, let Flask handle them normally
+        raise e
 
     with app.app_context():
         db.create_all()
