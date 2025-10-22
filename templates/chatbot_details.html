@@ -447,6 +447,50 @@
                 {% endif %}
             </div>
         </div>
+
+        <!-- Used On Widget -->
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-globe me-2"></i>Used On</h5>
+            </div>
+            <div class="card-body">
+                {% if usage_data %}
+                    <div style="max-height: 400px; overflow-y: auto;">
+                        {% for usage in usage_data %}
+                        <div class="border-bottom pb-2 mb-2">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="flex-grow-1">
+                                    <div class="d-flex align-items-center mb-1">
+                                        <i class="fas fa-external-link-alt me-2 text-primary"></i>
+                                        <a href="{{ usage.website_url }}" target="_blank" class="text-decoration-none fw-bold">
+                                            {{ usage.website_domain }}
+                                        </a>
+                                    </div>
+                                    <div class="small text-muted">
+                                        <i class="fas fa-clock me-1"></i>
+                                        Last seen: {{ usage.last_seen.strftime('%Y-%m-%d %H:%M') }}
+                                    </div>
+                                    <div class="small text-muted">
+                                        <i class="fas fa-chart-line me-1"></i>
+                                        {{ usage.usage_count }} interaction{{ 's' if usage.usage_count != 1 else '' }}
+                                    </div>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-success">Active</span>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-3">
+                        <i class="fas fa-globe fa-2x text-muted mb-2"></i>
+                        <p class="text-muted small">No websites detected yet</p>
+                        <p class="text-muted small">Usage tracking will appear here once your chatbot is embedded on websites</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
     </div>
 </div>
 

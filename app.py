@@ -79,6 +79,20 @@ class Conversation(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     response_status = db.Column(db.String(20), default='active')  # 'active', 'resolved', 'pending'
 
+class ChatbotUsage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    chatbot_id = db.Column(db.Integer, db.ForeignKey('chatbot.id'), nullable=False)
+    website_url = db.Column(db.String(500), nullable=False)
+    website_domain = db.Column(db.String(255), nullable=False)
+    website_title = db.Column(db.String(255), nullable=True)
+    first_seen = db.Column(db.DateTime, default=datetime.utcnow)
+    last_seen = db.Column(db.DateTime, default=datetime.utcnow)
+    usage_count = db.Column(db.Integer, default=1)
+    is_active = db.Column(db.Boolean, default=True)
+    
+    # Relationships
+    chatbot = db.relationship('Chatbot', backref='usage_tracking')
+
 class Plan(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False)
@@ -420,6 +434,49 @@ def is_valid_chatbot_name(name):
         return False, "Chatbot name cannot contain consecutive spaces"
     
     return True, "Valid"
+
+def track_chatbot_usage(chatbot_id, website_url):
+    """Track where a chatbot is being used"""
+    try:
+        from urllib.parse import urlparse
+        
+        # Parse the URL to get domain
+        parsed_url = urlparse(website_url)
+        domain = parsed_url.netloc
+        
+        # Skip tracking for localhost and our own domain
+        if domain in ['localhost', '127.0.0.1', '0.0.0.0'] or domain.endswith('.local'):
+            return
+        
+        # Check if usage already exists
+        existing_usage = ChatbotUsage.query.filter_by(
+            chatbot_id=chatbot_id, 
+            website_domain=domain
+        ).first()
+        
+        if existing_usage:
+            # Update existing usage
+            existing_usage.last_seen = datetime.utcnow()
+            existing_usage.usage_count += 1
+            existing_usage.is_active = True
+        else:
+            # Create new usage record
+            usage = ChatbotUsage(
+                chatbot_id=chatbot_id,
+                website_url=website_url,
+                website_domain=domain,
+                website_title=None,  # Could be populated later with web scraping
+                first_seen=datetime.utcnow(),
+                last_seen=datetime.utcnow(),
+                usage_count=1,
+                is_active=True
+            )
+            db.session.add(usage)
+        
+        db.session.commit()
+    except Exception as e:
+        print(f"Error tracking chatbot usage: {e}")
+        # Don't fail the main request if tracking fails
 
 def create_app():
     app = Flask(__name__)
@@ -1187,6 +1244,9 @@ Best regards,
         documents = Document.query.filter_by(chatbot_id=chatbot.id).all()
         conversations = Conversation.query.filter_by(chatbot_id=chatbot.id).order_by(Conversation.timestamp.desc()).limit(50).all()
         
+        # Get usage tracking data
+        usage_data = ChatbotUsage.query.filter_by(chatbot_id=chatbot.id, is_active=True).order_by(ChatbotUsage.last_seen.desc()).all()
+        
         # Get homepage chatbot settings
         homepage_chatbot_id = get_setting('homepage_chatbot_id')
         homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
@@ -1204,6 +1264,7 @@ Best regards,
                              chatbot=chatbot, 
                              documents=documents, 
                              conversations=conversations,
+                             usage_data=usage_data,
                              homepage_chatbot=homepage_chatbot,
                              homepage_chatbot_title=homepage_chatbot_title,
                              homepage_chatbot_placeholder=homepage_chatbot_placeholder)
@@ -1215,6 +1276,9 @@ Best regards,
         documents = Document.query.filter_by(chatbot_id=chatbot_id).all()
         conversations = Conversation.query.filter_by(chatbot_id=chatbot_id).order_by(Conversation.timestamp.desc()).limit(50).all()
         
+        # Get usage tracking data
+        usage_data = ChatbotUsage.query.filter_by(chatbot_id=chatbot_id, is_active=True).order_by(ChatbotUsage.last_seen.desc()).all()
+        
         # Get homepage chatbot settings
         homepage_chatbot_id = get_setting('homepage_chatbot_id')
         homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
@@ -1232,6 +1296,7 @@ Best regards,
                              chatbot=chatbot, 
                              documents=documents, 
                              conversations=conversations,
+                             usage_data=usage_data,
                              homepage_chatbot=homepage_chatbot,
                              homepage_chatbot_title=homepage_chatbot_title,
                              homepage_chatbot_placeholder=homepage_chatbot_placeholder)
@@ -1844,6 +1909,26 @@ Best regards,
         flash('Chatbot deleted successfully!')
         return redirect(url_for('dashboard'))
 
+    @app.route('/api/track-usage/<embed_code>', methods=['POST'])
+    def track_usage_api(embed_code):
+        """API endpoint to manually track chatbot usage"""
+        try:
+            chatbot = Chatbot.query.filter_by(embed_code=embed_code).first()
+            if not chatbot:
+                return jsonify({'error': 'Chatbot not found'}), 404
+            
+            data = request.get_json()
+            website_url = data.get('website_url') if data else request.headers.get('Referer')
+            
+            if website_url:
+                track_chatbot_usage(chatbot.id, website_url)
+                return jsonify({'success': True, 'message': 'Usage tracked successfully'})
+            else:
+                return jsonify({'error': 'No website URL provided'}), 400
+                
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     @app.route('/api/chat/<embed_code>', methods=['POST'])
     def chat_api(embed_code):
         try:
@@ -1854,6 +1939,11 @@ Best regards,
             # Allow chatbots with custom prompts to work even without training
             if not chatbot.is_trained and not chatbot.system_prompt:
                 return jsonify({'error': 'Chatbot is not trained yet. Please upload documents and train the chatbot first, or set a system prompt.'}), 400
+            
+            # Track usage if referer is provided
+            referer = request.headers.get('Referer')
+            if referer:
+                track_chatbot_usage(chatbot.id, referer)
             
             data = request.get_json()
             if not data:
