@@ -68,7 +68,7 @@
                 </div>
                 <div class="card-footer">
                     <div class="d-grid gap-2">
-                        <a href="{{ url_for('chatbot_details', chatbot_id=chatbot.id) }}" 
+                        <a href="{{ url_for('chatbot_details_by_name', username=current_user.username, chatbot_name=chatbot.url_name) }}" 
                            class="btn btn-outline-primary btn-sm">
                             <i class="fas fa-cog me-1"></i>Manage
                         </a>

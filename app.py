@@ -50,6 +50,7 @@ class User(UserMixin, db.Model):
 class Chatbot(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
+    url_name = db.Column(db.String(100), nullable=True)  # URL-friendly name (no spaces, special chars)
     description = db.Column(db.Text)
     system_prompt = db.Column(db.Text, default="You are a helpful AI assistant. Answer questions based on the provided documents and your general knowledge.")
     embed_code = db.Column(db.String(36), unique=True, nullable=False)
@@ -390,6 +391,35 @@ def get_hero_icon_url(site_settings):
     elif site_settings.hero_icon_filename:
         return url_for('static', filename='uploads/' + site_settings.hero_icon_filename)
     return None
+
+# Utility functions
+def generate_url_name(name):
+    """Generate a URL-friendly name from a chatbot name"""
+    # Convert to lowercase and replace spaces with hyphens
+    url_name = re.sub(r'[^a-zA-Z0-9\-_]', '', name.lower().replace(' ', '-'))
+    # Remove multiple consecutive hyphens
+    url_name = re.sub(r'-+', '-', url_name)
+    # Remove leading/trailing hyphens
+    url_name = url_name.strip('-')
+    return url_name
+
+def is_valid_chatbot_name(name):
+    """Validate chatbot name for URL compatibility"""
+    if not name or len(name.strip()) == 0:
+        return False, "Chatbot name cannot be empty"
+    
+    if len(name) > 100:
+        return False, "Chatbot name must be 100 characters or less"
+    
+    # Check for invalid characters
+    if re.search(r'[<>:"/\\|?*]', name):
+        return False, "Chatbot name cannot contain special characters: < > : \" / \\ | ? *"
+    
+    # Check for consecutive spaces
+    if '  ' in name:
+        return False, "Chatbot name cannot contain consecutive spaces"
+    
+    return True, "Valid"
 
 def create_app():
     app = Flask(__name__)
@@ -1034,6 +1064,24 @@ Best regards,
             system_prompt = request.form.get('system_prompt', '').strip()
             greeting_message = request.form.get('greeting_message', '').strip()
             
+            # Validate chatbot name
+            is_valid, error_message = is_valid_chatbot_name(name)
+            if not is_valid:
+                flash(error_message, 'error')
+                return redirect(url_for('create_chatbot'))
+            
+            # Generate URL-friendly name
+            url_name = generate_url_name(name)
+            if not url_name:
+                flash('Chatbot name must contain at least one letter or number', 'error')
+                return redirect(url_for('create_chatbot'))
+            
+            # Check if URL name already exists for this user
+            existing_chatbot = Chatbot.query.filter_by(user_id=current_user.id, url_name=url_name).first()
+            if existing_chatbot:
+                flash('A chatbot with this name already exists. Please choose a different name.', 'error')
+                return redirect(url_for('create_chatbot'))
+            
             # Use default prompt if none provided
             if not system_prompt:
                 system_prompt = "You are a helpful AI assistant. Answer questions based on the provided documents and your general knowledge."
@@ -1080,6 +1128,7 @@ Best regards,
             
             chatbot = Chatbot(
                 name=name,
+                url_name=url_name,
                 description=description,
                 system_prompt=system_prompt,
                 embed_code=str(uuid.uuid4()),
@@ -1092,7 +1141,7 @@ Best regards,
             db.session.commit()
             
             flash('Chatbot created successfully!')
-            return redirect(url_for('chatbot_details', chatbot_id=chatbot.id))
+            return redirect(url_for('chatbot_details_by_name', username=current_user.username, chatbot_name=chatbot.url_name))
         
         # Get user's plan info for display
         user_plan = get_user_plan(current_user)
@@ -1117,6 +1166,44 @@ Best regards,
                              user_plan=user_plan, 
                              current_chatbot_count=current_chatbot_count,
                              remaining_chatbots=remaining_chatbots,
+                             homepage_chatbot=homepage_chatbot,
+                             homepage_chatbot_title=homepage_chatbot_title,
+                             homepage_chatbot_placeholder=homepage_chatbot_placeholder)
+
+    @app.route('/<username>/<chatbot_name>')
+    @login_required
+    def chatbot_details_by_name(username, chatbot_name):
+        # Find user by username
+        user = User.query.filter_by(username=username).first_or_404()
+        
+        # Find chatbot by url_name and user_id
+        chatbot = Chatbot.query.filter_by(url_name=chatbot_name, user_id=user.id).first_or_404()
+        
+        # Check if current user has access (owner or admin)
+        if chatbot.user_id != current_user.id and not current_user.is_admin:
+            flash('You do not have permission to access this chatbot.', 'error')
+            return redirect(url_for('dashboard'))
+        
+        documents = Document.query.filter_by(chatbot_id=chatbot.id).all()
+        conversations = Conversation.query.filter_by(chatbot_id=chatbot.id).order_by(Conversation.timestamp.desc()).limit(50).all()
+        
+        # Get homepage chatbot settings
+        homepage_chatbot_id = get_setting('homepage_chatbot_id')
+        homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
+        homepage_chatbot_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+        
+        # Get homepage chatbot
+        homepage_chatbot = None
+        if homepage_chatbot_id:
+            homepage_chatbot = Chatbot.query.get(homepage_chatbot_id)
+        
+        if not homepage_chatbot:
+            homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
+        
+        return render_template('chatbot_details.html', 
+                             chatbot=chatbot, 
+                             documents=documents, 
+                             conversations=conversations,
                              homepage_chatbot=homepage_chatbot,
                              homepage_chatbot_title=homepage_chatbot_title,
                              homepage_chatbot_placeholder=homepage_chatbot_placeholder)

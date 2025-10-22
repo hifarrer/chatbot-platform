@@ -40,8 +40,15 @@
                     <div class="mb-3">
                         <label for="name" class="form-label">Chatbot Name</label>
                         <input type="text" class="form-control" id="name" name="name" required
-                               placeholder="e.g., Customer Support Bot, FAQ Bot">
-                        <div class="form-text">Give your chatbot a descriptive name</div>
+                               placeholder="e.g., Customer Support Bot, FAQ Bot" 
+                               pattern="[^<>:\"/\\|?*]+" 
+                               title="Chatbot name cannot contain special characters: < > : \" / \ | ? *"
+                               maxlength="100">
+                        <div class="form-text">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Give your chatbot a descriptive name. Avoid special characters like < > : " / \ | ? *
+                        </div>
+                        <div id="name-validation" class="invalid-feedback" style="display: none;"></div>
                     </div>
                     
                     <div class="mb-3">
@@ -239,6 +246,66 @@ document.addEventListener('DOMContentLoaded', function() {
     justify-content: center;
 }
 </style>
+
+<!-- Form Validation Script -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const nameInput = document.getElementById('name');
+    const nameValidation = document.getElementById('name-validation');
+    const form = document.querySelector('form');
+    
+    // Real-time validation
+    nameInput.addEventListener('input', function() {
+        validateName();
+    });
+    
+    // Form submission validation
+    form.addEventListener('submit', function(e) {
+        if (!validateName()) {
+            e.preventDefault();
+        }
+    });
+    
+    function validateName() {
+        const name = nameInput.value.trim();
+        let isValid = true;
+        let errorMessage = '';
+        
+        // Check if empty
+        if (!name) {
+            isValid = false;
+            errorMessage = 'Chatbot name cannot be empty';
+        }
+        // Check length
+        else if (name.length > 100) {
+            isValid = false;
+            errorMessage = 'Chatbot name must be 100 characters or less';
+        }
+        // Check for invalid characters
+        else if (/[<>:"/\\|?*]/.test(name)) {
+            isValid = false;
+            errorMessage = 'Chatbot name cannot contain special characters: < > : " / \\ | ? *';
+        }
+        // Check for consecutive spaces
+        else if (name.includes('  ')) {
+            isValid = false;
+            errorMessage = 'Chatbot name cannot contain consecutive spaces';
+        }
+        
+        // Update UI
+        if (!isValid) {
+            nameInput.classList.add('is-invalid');
+            nameValidation.textContent = errorMessage;
+            nameValidation.style.display = 'block';
+        } else {
+            nameInput.classList.remove('is-invalid');
+            nameValidation.style.display = 'none';
+        }
+        
+        return isValid;
+    }
+});
+</script>
 
 <!-- Platform Assistant Chatbot -->
 {% if homepage_chatbot %}
