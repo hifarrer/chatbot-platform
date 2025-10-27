@@ -3340,9 +3340,19 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
 
         return ('', 200)
 
+    @app.route('/favicon.ico')
+    def favicon():
+        """Handle favicon requests to prevent 404 errors"""
+        return ('', 204)  # Return empty response with 204 No Content
+
     @app.errorhandler(Exception)
     def handle_exception(e):
         """Global exception handler to handle database session rollback errors"""
+        # Don't handle HTTP exceptions (like 404, 500, etc.) - let Flask handle them
+        from werkzeug.exceptions import HTTPException
+        if isinstance(e, HTTPException):
+            raise e
+            
         # Check if it's a database session rollback error
         if 'PendingRollbackError' in str(type(e)) or 'PendingRollbackError' in str(e):
             db.session.rollback()
