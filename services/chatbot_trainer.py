@@ -25,7 +25,8 @@ class ChatbotTrainer:
         else:
             print("DEBUG: AI libraries not available, using text-based search only")
             self.model = None
-        self.data_dir = 'training_data'
+        # Use absolute path to ensure we're always looking in the right directory
+        self.data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'training_data')
         os.makedirs(self.data_dir, exist_ok=True)
         
         # Initialize OpenAI client for knowledge base generation
@@ -367,6 +368,10 @@ Return ONLY the JSON structure with data extracted from the document text above.
         Returns either knowledge base format or legacy sentence-based format.
         """
         file_path = os.path.join(self.data_dir, f'chatbot_{chatbot_id}.json')
+        
+        print(f"DEBUG: Looking for training data at: {file_path}")
+        print(f"DEBUG: Data directory exists: {os.path.exists(self.data_dir)}")
+        print(f"DEBUG: Training file exists: {os.path.exists(file_path)}")
         
         if not os.path.exists(file_path):
             print(f" DEBUG: Training file not found: {file_path}")

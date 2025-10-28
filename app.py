@@ -2383,15 +2383,21 @@ Best regards,
         chatbot = Chatbot.query.get_or_404(chatbot_id)
         
         try:
+            # Debug: Print the data directory path
+            print(f"DEBUG: ChatbotTrainer data_dir: {chatbot_trainer.data_dir}")
+            print(f"DEBUG: Looking for training data for chatbot {chatbot_id}")
+            
             # Get training data from ChatbotTrainer
             training_data = chatbot_trainer.get_training_data(chatbot_id)
             
             if not training_data:
+                print(f"DEBUG: No training data found for chatbot {chatbot_id}")
                 return jsonify({
                     'success': False, 
                     'error': 'No training data found for this chatbot'
                 }), 404
             
+            print(f"DEBUG: Successfully loaded training data for chatbot {chatbot_id}")
             return jsonify({
                 'success': True,
                 'chatbot_name': chatbot.name,
@@ -2401,6 +2407,7 @@ Best regards,
             })
             
         except Exception as e:
+            print(f"DEBUG: Error loading training data for chatbot {chatbot_id}: {str(e)}")
             return jsonify({
                 'success': False,
                 'error': f'Error loading training data: {str(e)}'
