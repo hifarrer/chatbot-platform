@@ -181,7 +181,6 @@ Return ONLY the JSON structure with data extracted from the document text above.
                     {"role": "system", "content": "You are an expert at converting documents into structured knowledge bases for chatbots."},
                     {"role": "user", "content": prompt}
                 ],
-                "temperature": 0.3,  # Lower temperature for more consistent structure
             }
             
             # Check if it's a newer model that requires max_completion_tokens
@@ -189,6 +188,14 @@ Return ONLY the JSON structure with data extracted from the document text above.
                 api_params["max_completion_tokens"] = 4000
             else:
                 api_params["max_tokens"] = 4000
+            
+            # Set temperature based on model capabilities
+            # gpt-5 only supports default temperature (1), others can use 0.3 for consistency
+            if model.startswith('gpt-5'):
+                # gpt-5 only supports default temperature
+                pass  # Don't set temperature parameter, use default
+            else:
+                api_params["temperature"] = 0.3  # Lower temperature for more consistent structure
             
             response = self.openai_client.chat.completions.create(**api_params)
             
