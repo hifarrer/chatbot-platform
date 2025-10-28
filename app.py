@@ -2376,6 +2376,36 @@ Best regards,
             page=page, per_page=20, error_out=False)
         return render_template('admin/chatbots.html', chatbots=chatbots)
 
+    @app.route('/admin/chatbots/<int:chatbot_id>/training-data')
+    @admin_required
+    def admin_chatbot_training_data(chatbot_id):
+        """Admin view of chatbot training data JSON"""
+        chatbot = Chatbot.query.get_or_404(chatbot_id)
+        
+        try:
+            # Get training data from ChatbotTrainer
+            training_data = chatbot_trainer.get_training_data(chatbot_id)
+            
+            if not training_data:
+                return jsonify({
+                    'success': False, 
+                    'error': 'No training data found for this chatbot'
+                }), 404
+            
+            return jsonify({
+                'success': True,
+                'chatbot_name': chatbot.name,
+                'chatbot_id': chatbot_id,
+                'training_data': training_data,
+                'is_knowledge_base': chatbot_trainer.is_knowledge_base_format(training_data)
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': f'Error loading training data: {str(e)}'
+            }), 500
+
     @app.route('/admin/chatbots/<int:chatbot_id>')
     @admin_required
     def admin_chatbot_details(chatbot_id):
