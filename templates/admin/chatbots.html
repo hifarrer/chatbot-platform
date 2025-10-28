@@ -231,7 +231,7 @@
                             <span class="badge bg-info" id="trainingDataType"></span>
                             <span class="text-muted ms-2" id="trainingDataInfo"></span>
                         </div>
-                        <button class="btn btn-outline-secondary btn-sm" onclick="copyTrainingData()">
+                        <button class="btn btn-outline-secondary btn-sm" id="copyJsonBtn" onclick="copyTrainingData()">
                             <i class="fas fa-copy me-1"></i>Copy JSON
                         </button>
                     </div>
@@ -243,7 +243,7 @@
                 
                 <div id="trainingDataError" style="display: none;" class="alert alert-danger">
                     <i class="fas fa-exclamation-triangle me-2"></i>
-                    <span id="trainingDataErrorMessage"></span>
+                    <div id="trainingDataErrorMessage" style="white-space: pre-line;"></div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -336,6 +336,9 @@ function showTrainingData(chatbotId, chatbotName) {
     document.getElementById('trainingDataError').style.display = 'none';
     document.getElementById('trainingDataChatbotName').textContent = chatbotName;
     
+    // Clear any previous training data
+    window.currentTrainingData = null;
+    
     // Show modal
     const modal = new bootstrap.Modal(document.getElementById('trainingDataModal'));
     modal.show();
@@ -380,9 +383,20 @@ function showTrainingData(chatbotId, chatbotName) {
                 window.currentTrainingData = data.training_data;
                 
             } else {
-                // Show error
+                // Show error with more detailed information
                 document.getElementById('trainingDataError').style.display = 'block';
-                document.getElementById('trainingDataErrorMessage').textContent = data.error || 'Unknown error occurred';
+                let errorMessage = data.error || 'Unknown error occurred';
+                
+                // Add additional context if available
+                if (data.is_trained_in_db !== undefined) {
+                    if (data.is_trained_in_db) {
+                        errorMessage += '\n\n💡 Solution: The chatbot needs to be retrained in production. Upload documents and click "Train Chatbot" to regenerate the training data.';
+                    } else {
+                        errorMessage += '\n\n💡 Solution: Upload training documents and train the chatbot first.';
+                    }
+                }
+                
+                document.getElementById('trainingDataErrorMessage').textContent = errorMessage;
             }
         })
         .catch(error => {
@@ -411,8 +425,41 @@ function copyTrainingData() {
             }, 2000);
         }).catch(function(err) {
             console.error('Failed to copy: ', err);
-            alert('Failed to copy to clipboard');
+            
+            // Fallback: Try to select the text in the pre element
+            const preElement = document.getElementById('trainingDataJson');
+            if (preElement) {
+                try {
+                    // Create a range and select the text
+                    const range = document.createRange();
+                    range.selectNodeContents(preElement);
+                    const selection = window.getSelection();
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    
+                    // Show fallback message
+                    const btn = event.target.closest('button');
+                    const originalText = btn.innerHTML;
+                    btn.innerHTML = '<i class="fas fa-mouse-pointer me-1"></i>Text Selected';
+                    btn.classList.remove('btn-outline-secondary');
+                    btn.classList.add('btn-warning');
+                    
+                    setTimeout(function() {
+                        btn.innerHTML = originalText;
+                        btn.classList.remove('btn-warning');
+                        btn.classList.add('btn-outline-secondary');
+                        selection.removeAllRanges();
+                    }, 2000);
+                } catch (fallbackErr) {
+                    console.error('Fallback copy failed: ', fallbackErr);
+                    alert('Failed to copy to clipboard. Please manually select and copy the text.');
+                }
+            } else {
+                alert('No training data available to copy.');
+            }
         });
+    } else {
+        alert('No training data available to copy.');
     }
 }
 </script>

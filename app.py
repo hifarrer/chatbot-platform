@@ -2391,10 +2391,18 @@ Best regards,
             training_data = chatbot_trainer.get_training_data(chatbot_id)
             
             if not training_data:
+                # Check if chatbot is marked as trained but no training data exists
+                if chatbot.is_trained:
+                    error_msg = f"Chatbot '{chatbot.name}' is marked as trained in the database, but no training data file was found. This commonly happens when deploying to production - the database was migrated but training data files weren't transferred."
+                else:
+                    error_msg = f"Chatbot '{chatbot.name}' has not been trained yet. Please upload documents and train the chatbot first."
+                
                 print(f"DEBUG: No training data found for chatbot {chatbot_id}")
                 return jsonify({
                     'success': False, 
-                    'error': 'No training data found for this chatbot'
+                    'error': error_msg,
+                    'chatbot_name': chatbot.name,
+                    'is_trained_in_db': chatbot.is_trained
                 }), 404
             
             print(f"DEBUG: Successfully loaded training data for chatbot {chatbot_id}")
@@ -2410,7 +2418,8 @@ Best regards,
             print(f"DEBUG: Error loading training data for chatbot {chatbot_id}: {str(e)}")
             return jsonify({
                 'success': False,
-                'error': f'Error loading training data: {str(e)}'
+                'error': f'Error loading training data: {str(e)}',
+                'chatbot_name': chatbot.name
             }), 500
 
     @app.route('/admin/chatbots/<int:chatbot_id>')

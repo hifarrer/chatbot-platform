@@ -81,8 +81,26 @@ The JSON should follow this exact structure (but use ONLY data from the document
   "version": "1.0",
   "brand": {{
     "name": "Business Name",
-    "mission": "Mission statement",
-    "target_audience": "Target audience description"
+    "mission": "Mission statement or business purpose",
+    "target_audience": "Target audience description",
+    "location": "Business location if mentioned",
+    "contact_info": "Contact information if available",
+    "website": "Website URL if mentioned"
+  }},
+  "business_info": {{
+    "products": ["Product 1", "Product 2"],
+    "services": ["Service 1", "Service 2"],
+    "plans": [
+      {{
+        "name": "Plan Name",
+        "price": "Price",
+        "features": ["Feature 1", "Feature 2"],
+        "description": "Plan description"
+      }}
+    ],
+    "pricing": "Pricing information",
+    "hours": "Business hours if mentioned",
+    "specialties": ["Specialty 1", "Specialty 2"]
   }},
   "routing_hints": {{
     "global_keywords": ["keyword1", "keyword2", "..."],
@@ -96,7 +114,8 @@ The JSON should follow this exact structure (but use ONLY data from the document
       "title": "Fact title or question",
       "keywords": ["keyword1", "keyword2"],
       "answer_short": "Brief answer",
-      "answer_long": "Detailed answer"
+      "answer_long": "Detailed answer",
+      "category": "Product|Service|Pricing|General|Support"
     }}
   ],
   "qa_patterns": [
@@ -109,17 +128,28 @@ The JSON should follow this exact structure (but use ONLY data from the document
   ]
 }}
 
-Important guidelines:
-1. Extract all important information ONLY from the document text below
-2. Create comprehensive kb_facts entries for key concepts, features, prices, plans, etc. found in the documents
-3. Generate qa_patterns for common questions users might ask based on the document content
-4. Include relevant keywords for each fact to help with matching
-5. Provide both short and long answers for flexibility
-6. If the document contains pricing information, create detailed entries for each plan
-7. If the document contains process information (how-to, steps), structure it clearly
-8. Extract any URLs or links mentioned in the documents
-9. DO NOT include any sample data, placeholder data, or information from examples
-10. If certain information is not in the documents, leave those sections minimal or empty
+IMPORTANT EXTRACTION GUIDELINES:
+1. BUSINESS IDENTIFICATION: Extract the business name, what they do, their mission/purpose
+2. PRODUCTS & SERVICES: Identify all products, services, plans, or offerings mentioned
+3. PRICING INFORMATION: Extract any pricing, plans, packages, or cost information
+4. LOCATION & CONTACT: Find business location, contact information, hours of operation
+5. SPECIALTIES: Identify what makes this business unique or their areas of expertise
+6. PROCESSES: Extract any how-to information, procedures, or step-by-step processes
+7. FAQ CONTENT: Convert Q&A pairs into structured kb_facts and qa_patterns
+8. KEYWORDS: Generate relevant keywords for each fact to improve search matching
+9. CATEGORIZATION: Categorize each fact (Product, Service, Pricing, General, Support)
+10. COMPREHENSIVE COVERAGE: Create entries for all important information, not just Q&A pairs
+
+SPECIFIC EXTRACTION PRIORITIES:
+- Business name and description (even if not explicitly stated)
+- All products, services, or offerings mentioned
+- Pricing information, plans, packages
+- Business location and contact details
+- Hours of operation or availability
+- Unique selling points or specialties
+- Common questions and their answers
+- Process or procedure information
+- Any URLs, links, or references
 
 REMEMBER: Use ONLY the document text below. No external information, no sample data, no examples.
 
