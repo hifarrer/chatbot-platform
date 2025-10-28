@@ -353,7 +353,7 @@
                                                 <i class="fas fa-robot text-muted"></i>
                                             {% endif %}
                                         </div>
-                                        <a href="{{ url_for('chatbot_details', chatbot_id=current_chatbot.id) }}" class="btn btn-outline-primary btn-sm">
+                                        <a href="{% if current_chatbot.url_name and current_chatbot.owner %}{{ url_for('chatbot_details_by_name', username=current_chatbot.owner.username, chatbot_name=current_chatbot.url_name) }}{% else %}{{ url_for('chatbot_details', chatbot_id=current_chatbot.id) }}{% endif %}" class="btn btn-outline-primary btn-sm">
                                             <i class="fas fa-edit me-1"></i>
                                             Update Avatar
                                         </a>
@@ -365,7 +365,7 @@
                                 <div class="mb-3">
                                     <label class="form-label">Training Documents</label>
                                     <div>
-                                        <a href="{{ url_for('chatbot_details', chatbot_id=current_chatbot.id) }}" class="btn btn-outline-success btn-sm">
+                                        <a href="{% if current_chatbot.url_name and current_chatbot.owner %}{{ url_for('chatbot_details_by_name', username=current_chatbot.owner.username, chatbot_name=current_chatbot.url_name) }}{% else %}{{ url_for('chatbot_details', chatbot_id=current_chatbot.id) }}{% endif %}" class="btn btn-outline-success btn-sm">
                                             <i class="fas fa-upload me-1"></i>
                                             Upload Documents
                                         </a>

@@ -417,6 +417,14 @@ def generate_url_name(name):
     url_name = url_name.strip('-')
     return url_name
 
+def get_chatbot_url(chatbot):
+    """Get the correct URL for a chatbot (new format: /username/chatbotname)"""
+    if chatbot.url_name and chatbot.owner:
+        return url_for('chatbot_details_by_name', username=chatbot.owner.username, chatbot_name=chatbot.url_name)
+    else:
+        # Fallback to old format if url_name is missing
+        return url_for('chatbot_details', chatbot_id=chatbot.id)
+
 def is_valid_chatbot_name(name):
     """Validate chatbot name for URL compatibility"""
     if not name or len(name.strip()) == 0:
@@ -1370,7 +1378,7 @@ Best regards,
                 chatbot.avatar_filename = selected_avatar
             else:
                 flash('Invalid predefined avatar selection.', 'error')
-                return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+                return redirect(get_chatbot_url(chatbot))
         
         elif 'avatar' in request.files:
             avatar_file = request.files['avatar']
@@ -1404,12 +1412,12 @@ Best regards,
                     chatbot.avatar_filename = avatar_filename
                 else:
                     flash('Invalid avatar file type. Please upload PNG, JPG, GIF, or SVG files.', 'error')
-                    return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+                    return redirect(get_chatbot_url(chatbot))
         
         db.session.commit()
         flash('Chatbot updated successfully!')
         
-        return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+        return redirect(get_chatbot_url(chatbot))
 
     @app.route('/upload_document/<int:chatbot_id>', methods=['POST'])
     @login_required
@@ -1418,12 +1426,12 @@ Best regards,
         
         if 'file' not in request.files:
             flash('No file selected')
-            return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+            return redirect(get_chatbot_url(chatbot))
         
         file = request.files['file']
         if file.filename == '':
             flash('No file selected')
-            return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+            return redirect(get_chatbot_url(chatbot))
         
         if file and allowed_file(file.filename):
             # Check file size limit based on user's plan
@@ -1437,7 +1445,7 @@ Best regards,
             
             if file_size > file_size_limit_bytes:
                 flash(f'File size ({file_size / (1024*1024):.1f}MB) exceeds your plan limit ({user_plan.file_size_limit_mb}MB). Please upgrade your plan or use a smaller file.', 'error')
-                return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+                return redirect(get_chatbot_url(chatbot))
             
             filename = secure_filename(file.filename)
             
@@ -1475,7 +1483,7 @@ Best regards,
                 except Exception as e:
                     db.session.rollback()
                     flash(f'Error saving file: {str(e)}. Please try again.')
-                    return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+                    return redirect(get_chatbot_url(chatbot))
             else:
                 # Create new document
                 unique_filename = f"{uuid.uuid4()}_{filename}"
@@ -1501,11 +1509,11 @@ Best regards,
                 except Exception as e:
                     db.session.rollback()
                     flash(f'Error saving file: {str(e)}. Please try again.')
-                    return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+                    return redirect(get_chatbot_url(chatbot))
         else:
             flash('Invalid file type. Please upload PDF, DOCX, TXT, or JSON files.')
         
-        return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+        return redirect(get_chatbot_url(chatbot))
 
     @app.route('/upload_google_doc/<int:chatbot_id>', methods=['POST'])
     @login_required
@@ -1516,7 +1524,7 @@ Best regards,
         
         if not google_doc_url:
             flash('Please enter a Google Docs URL')
-            return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+            return redirect(get_chatbot_url(chatbot))
         
         try:
             # Fetch the Google Doc content
@@ -1524,7 +1532,7 @@ Best regards,
             
             if not text:
                 flash('The Google Doc appears to be empty.')
-                return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+                return redirect(get_chatbot_url(chatbot))
             
             # Extract document ID for naming
             doc_id = document_processor.extract_google_doc_id(google_doc_url)
@@ -1581,7 +1589,7 @@ Best regards,
             flash(f'Error importing Google Doc: {str(e)}')
             print(f"Error importing Google Doc: {str(e)}")
         
-        return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+        return redirect(get_chatbot_url(chatbot))
 
     @app.route('/upload_google_sheet/<int:chatbot_id>', methods=['POST'])
     @login_required
@@ -1592,7 +1600,7 @@ Best regards,
         
         if not google_sheet_url:
             flash('Please enter a Google Sheets URL')
-            return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+            return redirect(get_chatbot_url(chatbot))
         
         try:
             # Fetch the Google Sheet content (already formatted as JSON + text)
@@ -1600,7 +1608,7 @@ Best regards,
             
             if not text:
                 flash('The Google Sheet appears to be empty.')
-                return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+                return redirect(get_chatbot_url(chatbot))
             
             # Extract sheet ID for naming
             sheet_id = document_processor.extract_google_sheet_id(google_sheet_url)
@@ -1657,7 +1665,7 @@ Best regards,
             flash(f'Error importing Google Sheet: {str(e)}')
             print(f"Error importing Google Sheet: {str(e)}")
         
-        return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+        return redirect(get_chatbot_url(chatbot))
 
     @app.route('/scrape_website/<int:chatbot_id>', methods=['POST'])
     @login_required
@@ -1669,7 +1677,7 @@ Best regards,
         
         if not website_url:
             flash('Please enter a website URL')
-            return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+            return redirect(get_chatbot_url(chatbot))
         
         try:
             # Scrape the website
@@ -1678,7 +1686,7 @@ Best regards,
             
             if not text or len(text.strip()) < 100:
                 flash('The website appears to be empty or inaccessible.')
-                return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+                return redirect(get_chatbot_url(chatbot))
             
             # Extract domain for naming
             from urllib.parse import urlparse
@@ -1740,7 +1748,7 @@ Best regards,
             import traceback
             traceback.print_exc()
         
-        return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+        return redirect(get_chatbot_url(chatbot))
 
     @app.route('/delete_document/<int:document_id>', methods=['POST'])
     @login_required
@@ -1769,7 +1777,7 @@ Best regards,
         except Exception as e:
             flash(f'Error deleting document: {str(e)}')
         
-        return redirect(url_for('chatbot_details', chatbot_id=chatbot.id))
+        return redirect(get_chatbot_url(chatbot))
 
     @app.route('/download_document/<int:document_id>')
     @login_required
@@ -1796,7 +1804,7 @@ Best regards,
                     file_path = alt_path
                 else:
                     flash(f'File not found on server. Please re-upload the document.')
-                    return redirect(url_for('chatbot_details', chatbot_id=chatbot.id))
+                    return redirect(get_chatbot_url(chatbot))
         
         try:
             return send_file(
@@ -1807,7 +1815,7 @@ Best regards,
             )
         except Exception as e:
             flash(f'Error downloading file: {str(e)}')
-            return redirect(url_for('chatbot_details', chatbot_id=chatbot.id))
+            return redirect(get_chatbot_url(chatbot))
 
     @app.route('/train_chatbot/<int:chatbot_id>', methods=['POST'])
     @login_required
@@ -1819,7 +1827,7 @@ Best regards,
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'success': False, 'error': 'Please upload at least one document before training.'})
             flash('Please upload at least one document before training.')
-            return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+            return redirect(get_chatbot_url(chatbot))
         
         try:
             # Process all documents for this chatbot
@@ -1863,14 +1871,14 @@ Best regards,
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'success': True, 'message': 'Chatbot trained successfully!'})
             flash('Chatbot trained successfully!')
-            return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+            return redirect(get_chatbot_url(chatbot))
             
         except Exception as e:
             # Even if training fails, documents are already marked as processed
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'success': False, 'error': str(e)})
             flash(f'Training failed: {str(e)}')
-            return redirect(url_for('chatbot_details', chatbot_id=chatbot_id))
+            return redirect(get_chatbot_url(chatbot))
 
     @app.route('/delete_chatbot/<int:chatbot_id>', methods=['POST'])
     @login_required
@@ -3345,21 +3353,16 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
         """Handle favicon requests to prevent 404 errors"""
         return ('', 204)  # Return empty response with 204 No Content
 
-    @app.errorhandler(Exception)
-    def handle_exception(e):
-        """Global exception handler to handle database session rollback errors"""
-        # Don't handle HTTP exceptions (like 404, 500, etc.) - let Flask handle them
-        from werkzeug.exceptions import HTTPException
-        if isinstance(e, HTTPException):
-            raise e
-            
+    @app.errorhandler(500)
+    def handle_500_error(e):
+        """Handle 500 errors specifically for database rollback issues"""
         # Check if it's a database session rollback error
         if 'PendingRollbackError' in str(type(e)) or 'PendingRollbackError' in str(e):
             db.session.rollback()
             flash('A database error occurred. Please try again.', 'error')
             return redirect(url_for('index'))
         
-        # For other exceptions, let Flask handle them normally
+        # For other 500 errors, let Flask handle them normally
         raise e
 
     with app.app_context():
