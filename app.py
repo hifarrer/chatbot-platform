@@ -10,6 +10,7 @@ import json
 import uuid
 import secrets
 import resend
+import re
 from datetime import datetime, timedelta
 from services.document_processor import DocumentProcessor
 from services.chatbot_trainer import ChatbotTrainer
