@@ -20,6 +20,9 @@
         <button class="btn btn-info me-2" onclick="showEmbedCode('{{ chatbot.embed_code }}')">
             <i class="fas fa-code me-1"></i>Get Embed Code
         </button>
+        <button class="btn btn-outline-warning me-2" onclick="showTrainingData({{ chatbot.id }}, '{{ chatbot.name }}')" title="View Training Data">
+            <i class="fas fa-database me-1"></i>View Training Data
+        </button>
         <a href="{{ url_for('preview_chatbot', embed_code=chatbot.embed_code) }}" target="_blank" class="btn btn-success me-2" style="display: none;">
             <i class="fas fa-eye me-1"></i>Preview
         </a>
@@ -552,6 +555,53 @@
                         {% endif %}
                     </span>
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Training Data Modal -->
+<div class="modal fade" id="trainingDataModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-database me-2"></i>
+                    Training Data - <span id="trainingDataChatbotName"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="trainingDataLoading" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Loading training data...</p>
+                </div>
+                
+                <div id="trainingDataContent" style="display: none;">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div>
+                            <span class="badge bg-info" id="trainingDataType"></span>
+                            <span class="text-muted ms-2" id="trainingDataInfo"></span>
+                        </div>
+                        <button class="btn btn-outline-secondary btn-sm" id="copyJsonBtn" onclick="copyTrainingData()">
+                            <i class="fas fa-copy me-1"></i>Copy JSON
+                        </button>
+                    </div>
+                    
+                    <div class="bg-light border rounded p-3" style="max-height: 70vh; overflow-y: auto;">
+                        <pre id="trainingDataJson" class="mb-0" style="white-space: pre-wrap; word-wrap: break-word;"></pre>
+                    </div>
+                </div>
+                
+                <div id="trainingDataError" style="display: none;" class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <div id="trainingDataErrorMessage" style="white-space: pre-line;"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
@@ -1435,6 +1485,140 @@ function clearMessages() {
                 <i class="fas fa-robot me-2"></i>Hi! I'm your chatbot. Ask me anything based on the documents you've uploaded.
             </div>
         `;
+    }
+}
+
+function showTrainingData(chatbotId, chatbotName) {
+    // Reset modal state
+    document.getElementById('trainingDataLoading').style.display = 'block';
+    document.getElementById('trainingDataContent').style.display = 'none';
+    document.getElementById('trainingDataError').style.display = 'none';
+    document.getElementById('trainingDataChatbotName').textContent = chatbotName;
+    
+    // Clear any previous training data
+    window.currentTrainingData = null;
+    
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('trainingDataModal'));
+    modal.show();
+    
+    // Fetch training data
+    fetch(`/chatbot/${chatbotId}/training-data`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('trainingDataLoading').style.display = 'none';
+            
+            if (data.success) {
+                // Display training data
+                document.getElementById('trainingDataContent').style.display = 'block';
+                
+                // Set data type badge
+                const typeBadge = document.getElementById('trainingDataType');
+                if (data.is_knowledge_base) {
+                    typeBadge.textContent = 'Knowledge Base Format';
+                    typeBadge.className = 'badge bg-success';
+                } else {
+                    typeBadge.textContent = 'Legacy Format';
+                    typeBadge.className = 'badge bg-warning';
+                }
+                
+                // Set info text
+                const infoText = document.getElementById('trainingDataInfo');
+                if (data.is_knowledge_base) {
+                    const kbFacts = data.training_data.kb_facts ? data.training_data.kb_facts.length : 0;
+                    const qaPatterns = data.training_data.qa_patterns ? data.training_data.qa_patterns.length : 0;
+                    infoText.textContent = `${kbFacts} KB Facts, ${qaPatterns} QA Patterns`;
+                } else {
+                    const sentences = data.training_data.sentences ? data.training_data.sentences.length : 0;
+                    const hasEmbeddings = data.training_data.embeddings ? 'Yes' : 'No';
+                    infoText.textContent = `${sentences} sentences, Embeddings: ${hasEmbeddings}`;
+                }
+                
+                // Display JSON with pretty formatting
+                const jsonElement = document.getElementById('trainingDataJson');
+                jsonElement.textContent = JSON.stringify(data.training_data, null, 2);
+                
+                // Store data for copying
+                window.currentTrainingData = data.training_data;
+                
+            } else {
+                // Show error with more detailed information
+                document.getElementById('trainingDataError').style.display = 'block';
+                let errorMessage = data.error || 'Unknown error occurred';
+                
+                // Add additional context if available
+                if (data.is_trained_in_db !== undefined) {
+                    if (data.is_trained_in_db) {
+                        errorMessage += '\n\n💡 Solution: The chatbot needs to be retrained. Upload documents and click "Train Chatbot" to regenerate the training data.';
+                    } else {
+                        errorMessage += '\n\n💡 Solution: Upload training documents and train the chatbot first.';
+                    }
+                }
+                
+                document.getElementById('trainingDataErrorMessage').textContent = errorMessage;
+            }
+        })
+        .catch(error => {
+            document.getElementById('trainingDataLoading').style.display = 'none';
+            document.getElementById('trainingDataError').style.display = 'block';
+            document.getElementById('trainingDataErrorMessage').textContent = 'Failed to load training data: ' + error.message;
+        });
+}
+
+function copyTrainingData() {
+    if (window.currentTrainingData) {
+        const jsonText = JSON.stringify(window.currentTrainingData, null, 2);
+        
+        navigator.clipboard.writeText(jsonText).then(function() {
+            // Show success feedback
+            const btn = event.target.closest('button');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
+            btn.classList.remove('btn-outline-secondary');
+            btn.classList.add('btn-success');
+            
+            setTimeout(function() {
+                btn.innerHTML = originalText;
+                btn.classList.remove('btn-success');
+                btn.classList.add('btn-outline-secondary');
+            }, 2000);
+        }).catch(function(err) {
+            console.error('Failed to copy: ', err);
+            
+            // Fallback: Try to select the text in the pre element
+            const preElement = document.getElementById('trainingDataJson');
+            if (preElement) {
+                try {
+                    // Create a range and select the text
+                    const range = document.createRange();
+                    range.selectNodeContents(preElement);
+                    const selection = window.getSelection();
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    
+                    // Show fallback message
+                    const btn = event.target.closest('button');
+                    const originalText = btn.innerHTML;
+                    btn.innerHTML = '<i class="fas fa-mouse-pointer me-1"></i>Text Selected';
+                    btn.classList.remove('btn-outline-secondary');
+                    btn.classList.add('btn-warning');
+                    
+                    setTimeout(function() {
+                        btn.innerHTML = originalText;
+                        btn.classList.remove('btn-warning');
+                        btn.classList.add('btn-outline-secondary');
+                        selection.removeAllRanges();
+                    }, 2000);
+                } catch (fallbackErr) {
+                    console.error('Fallback copy failed: ', fallbackErr);
+                    alert('Failed to copy to clipboard. Please manually select and copy the text.');
+                }
+            } else {
+                alert('No training data available to copy.');
+            }
+        });
+    } else {
+        alert('No training data available to copy.');
     }
 }
 

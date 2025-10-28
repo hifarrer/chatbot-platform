@@ -1918,6 +1918,46 @@ Best regards,
         flash('Chatbot deleted successfully!')
         return redirect(url_for('dashboard'))
 
+    @app.route('/chatbot/<int:chatbot_id>/training-data')
+    @login_required
+    def chatbot_training_data(chatbot_id):
+        """User view of their own chatbot training data JSON"""
+        chatbot = Chatbot.query.filter_by(id=chatbot_id, user_id=current_user.id).first_or_404()
+        
+        try:
+            # Get training data from ChatbotTrainer
+            training_data = chatbot_trainer.get_training_data(chatbot_id)
+            
+            if not training_data:
+                # Check if chatbot is marked as trained but no training data exists
+                if chatbot.is_trained:
+                    error_msg = f"Chatbot '{chatbot.name}' is marked as trained in the database, but no training data file was found. This commonly happens when deploying to production - the database was migrated but training data files weren't transferred."
+                else:
+                    error_msg = f"Chatbot '{chatbot.name}' has not been trained yet. Please upload documents and train the chatbot first."
+                
+                return jsonify({
+                    'success': False, 
+                    'error': error_msg,
+                    'chatbot_name': chatbot.name,
+                    'is_trained_in_db': chatbot.is_trained
+                }), 404
+            
+            return jsonify({
+                'success': True,
+                'chatbot_name': chatbot.name,
+                'chatbot_id': chatbot_id,
+                'training_data': training_data,
+                'is_knowledge_base': chatbot_trainer.is_knowledge_base_format(training_data)
+            })
+            
+        except Exception as e:
+            print(f"ERROR: Failed to load training data for chatbot {chatbot_id}: {e}")
+            return jsonify({
+                'success': False,
+                'error': f'Failed to load training data: {str(e)}',
+                'chatbot_name': chatbot.name
+            }), 500
+
     @app.route('/api/track-usage/<embed_code>', methods=['POST'])
     def track_usage_api(embed_code):
         """API endpoint to manually track chatbot usage"""
