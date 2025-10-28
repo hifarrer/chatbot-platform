@@ -3,7 +3,7 @@ services:
     name: chatbot-platform
     env: python
     plan: free
-    buildCommand: pip install -r requirements-render.txt
+    buildCommand: pip install -r requirements.txt
     startCommand: gunicorn run:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
     healthCheckPath: /health
     envVars:
@@ -15,6 +15,8 @@ services:
         fromDatabase:
           name: chatbot-db
           property: connectionString
+      - key: OPENAI_API_KEY
+        value: your-openai-api-key-here
     autoDeploy: true
 
 databases:
