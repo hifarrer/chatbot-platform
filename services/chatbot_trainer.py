@@ -174,15 +174,23 @@ Return ONLY the JSON structure with data extracted from the document text above.
             print(f" DEBUG: Using OpenAI model: {model}")
             
             # Call OpenAI API
-            response = self.openai_client.chat.completions.create(
-                model=model,
-                messages=[
+            # Use max_completion_tokens for newer models (gpt-5, etc.) and max_tokens for older models
+            api_params = {
+                "model": model,
+                "messages": [
                     {"role": "system", "content": "You are an expert at converting documents into structured knowledge bases for chatbots."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,  # Lower temperature for more consistent structure
-                max_tokens=4000   # Enough for comprehensive knowledge base
-            )
+                "temperature": 0.3,  # Lower temperature for more consistent structure
+            }
+            
+            # Check if it's a newer model that requires max_completion_tokens
+            if model.startswith('gpt-5') or model.startswith('gpt-4o-mini') or model.startswith('gpt-4o-2024'):
+                api_params["max_completion_tokens"] = 4000
+            else:
+                api_params["max_tokens"] = 4000
+            
+            response = self.openai_client.chat.completions.create(**api_params)
             
             # Extract the JSON response
             kb_json_str = response.choices[0].message.content.strip()
