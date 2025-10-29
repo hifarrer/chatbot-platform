@@ -1783,9 +1783,14 @@ Best regards,
     @app.route('/download_document/<int:document_id>')
     @login_required
     def download_document(document_id):
-        # Get the document and verify ownership
+        # Get the document
         document = Document.query.get_or_404(document_id)
-        chatbot = Chatbot.query.filter_by(id=document.chatbot_id, user_id=current_user.id).first_or_404()
+        
+        # Get the chatbot - admins can access any chatbot, regular users only their own
+        if current_user.is_admin:
+            chatbot = Chatbot.query.get_or_404(document.chatbot_id)
+        else:
+            chatbot = Chatbot.query.filter_by(id=document.chatbot_id, user_id=current_user.id).first_or_404()
         
         # Resolve the actual file path - handle both absolute and relative paths
         file_path = document.file_path
