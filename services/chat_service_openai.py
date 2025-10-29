@@ -288,11 +288,58 @@ class ChatServiceOpenAI:
         matches = kb_results['matches']
         brand = kb_results.get('brand', {})
         
+        # Get business info from training data if available
+        training_data = self.trainer.get_training_data(chatbot_id)
+        business_info = training_data.get('business_info', {}) if training_data else {}
+        
         print(f" DEBUG: Found {len(matches)} matches in knowledge base")
         
         # Build context from matches
         context_passages = []
         total_length = 0
+        
+        # Always include brand and business information at the beginning if available
+        business_context = []
+        
+        # Add brand information
+        if brand:
+            if brand.get('name'):
+                business_context.append(f"Business Name: {brand['name']}")
+            if brand.get('mission'):
+                business_context.append(f"Mission: {brand['mission']}")
+            if brand.get('target_audience'):
+                business_context.append(f"Target Audience: {brand['target_audience']}")
+            if brand.get('location'):
+                business_context.append(f"Location: {brand['location']}")
+            if brand.get('contact_info'):
+                business_context.append(f"Contact: {brand['contact_info']}")
+            if brand.get('website'):
+                business_context.append(f"Website: {brand['website']}")
+        
+        # Add business info
+        if business_info:
+            if business_info.get('products'):
+                products = business_info['products']
+                if products:
+                    business_context.append(f"Products: {', '.join(products)}")
+            if business_info.get('services'):
+                services = business_info['services']
+                if services:
+                    business_context.append(f"Services: {', '.join(services)}")
+            if business_info.get('specialties'):
+                specialties = business_info['specialties']
+                if specialties:
+                    business_context.append(f"Specialties: {', '.join(specialties)}")
+            if business_info.get('hours'):
+                business_context.append(f"Hours: {business_info['hours']}")
+            if business_info.get('pricing'):
+                business_context.append(f"Pricing: {business_info['pricing']}")
+        
+        if business_context:
+            business_passage = f"[Business Information]\n" + "\n".join(business_context)
+            context_passages.append(business_passage)
+            total_length += len(business_passage)
+            print(f" DEBUG: Added business information to context")
         
         for match in matches:
             match_type = match['type']
