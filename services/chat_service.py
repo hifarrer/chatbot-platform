@@ -34,12 +34,26 @@ class ChatService:
             print(f" DEBUG: No training data found for chatbot {chatbot_id} and no custom prompt")
             return "I haven't been trained yet. Please upload some documents and train me first!"
         
+        # Check if we have knowledge base format or legacy format
         if training_data:
-            print(f" DEBUG: Found training data with {len(training_data['sentences'])} sentences")
+            if self.trainer.is_knowledge_base_format(training_data):
+                print(f" DEBUG: Found knowledge base format training data")
+                # Use knowledge base query for better responses
+                kb_results = self.trainer.query_knowledge_base(chatbot_id, user_message, top_k=5)
+                if kb_results and kb_results.get('matches'):
+                    return self._generate_response_from_knowledge_base(kb_results, user_message, chatbot)
+                else:
+                    print(" DEBUG: No matches found in knowledge base")
+                    # Fall back to system prompt or default response
+                    if chatbot.system_prompt:
+                        return self._generate_custom_prompt_response(chatbot.system_prompt, user_message)
+                    return random.choice(self.default_responses)
+            else:
+                print(f" DEBUG: Found legacy format training data with {len(training_data.get('sentences', []))} sentences")
         else:
             print(f" DEBUG: No training data, but chatbot has custom prompt: {chatbot.system_prompt[:50]}...")
         
-        # Find similar content from training data
+        # Find similar content from training data (legacy format)
         similar_content = self.trainer.find_similar_content(chatbot_id, user_message, top_k=5)
         
         print(f" DEBUG: Found {len(similar_content)} similar content items")
@@ -298,6 +312,45 @@ class ChatService:
         """
         return getattr(self, '_current_chatbot_id', None)
     
+    def _generate_response_from_knowledge_base(self, kb_results, user_message, chatbot):
+        """
+        Generate a response from knowledge base results
+        """
+        matches = kb_results.get('matches', [])
+        brand = kb_results.get('brand', {})
+        
+        print(f" DEBUG: Generating response from {len(matches)} knowledge base matches")
+        
+        # Check for business name questions
+        user_lower = user_message.lower()
+        if any(word in user_lower for word in ['name', 'business', 'company', 'what is']):
+            business_name = brand.get('name', '')
+            if business_name:
+                print(f" DEBUG: Found business name in brand info: {business_name}")
+                return f"The business name is {business_name}."
+        
+        # Use the best match from knowledge base
+        if matches:
+            best_match = matches[0]
+            print(f" DEBUG: Using best match: {best_match.get('type', 'unknown')} with score {best_match.get('score', 0):.3f}")
+            
+            if best_match.get('type') == 'qa_pattern':
+                response = best_match.get('response_inline', '')
+                if response:
+                    return response
+            
+            elif best_match.get('type') == 'kb_fact':
+                # Prefer short answer, fall back to long answer
+                response = best_match.get('answer_short', '') or best_match.get('answer_long', '')
+                if response:
+                    return response
+        
+        # Fall back to system prompt if available
+        if chatbot.system_prompt:
+            return self._generate_custom_prompt_response(chatbot.system_prompt, user_message)
+        
+        return random.choice(self.default_responses)
+
     def _generate_custom_prompt_response(self, system_prompt, user_message):
         """
         Generate a response based on the custom system prompt when no training data is available
