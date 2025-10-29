@@ -3443,7 +3443,16 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
     @app.route('/favicon.ico')
     def favicon():
         """Serve favicon.ico file"""
-        return send_from_directory(app.static_folder, 'favicon.ico', mimetype='image/vnd.microsoft.icon')
+        try:
+            favicon_path = os.path.join(app.static_folder, 'favicon.ico')
+            if os.path.exists(favicon_path):
+                return send_from_directory(app.static_folder, 'favicon.ico', mimetype='image/vnd.microsoft.icon')
+            else:
+                # Return 204 No Content if favicon doesn't exist yet
+                return ('', 204)
+        except Exception:
+            # Return 204 No Content on any error to prevent deployment failures
+            return ('', 204)
 
     @app.errorhandler(500)
     def handle_500_error(e):
