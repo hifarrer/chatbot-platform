@@ -58,11 +58,41 @@ class ChatbotTrainer:
         print(f" DEBUG: Generating knowledge base from {len(text)} characters of text")
         print(f" DEBUG: Using ONLY the provided document text - no sample data will be used")
         
+        # Get model from settings or use default
+        try:
+            from app import Setting
+            setting = Setting.query.filter_by(key='openai_model').first()
+            model = setting.value if setting else 'gpt-4o'
+        except:
+            model = 'gpt-4o'
+        
+        print(f" DEBUG: Using OpenAI model: {model}")
+        
         # Create the prompt for OpenAI to generate the knowledge base
         brand_name = chatbot_info.get('name', 'the business') if chatbot_info else 'the business'
         brand_desc = chatbot_info.get('description', '') if chatbot_info else ''
         
-        prompt = f"""You are an AI assistant that converts raw document text into a structured JSON knowledge base for a chatbot.
+        # Create a simpler, more direct prompt for GPT-5 compatibility
+        if model.startswith('gpt-5'):
+            # Simplified prompt for GPT-5
+            prompt = f"""Convert this document into a structured JSON knowledge base for a chatbot.
+
+Business: {brand_name}
+Description: {brand_desc}
+
+Extract ONLY information from the document below. Create a JSON with:
+- brand: business name, mission, target audience
+- business_info: products, services, pricing, specialties
+- kb_facts: structured Q&A with categories
+- qa_patterns: question variations and responses
+
+Document:
+{text}
+
+Return valid JSON only."""
+        else:
+            # Original detailed prompt for other models
+            prompt = f"""You are an AI assistant that converts raw document text into a structured JSON knowledge base for a chatbot.
 
 The chatbot is for: {brand_name}
 Description: {brand_desc}
@@ -163,16 +193,6 @@ Return ONLY the JSON structure with data extracted from the document text above.
         print(" DEBUG: Sending request to OpenAI for knowledge base generation...")
         
         try:
-            # Get model from settings or use default
-            try:
-                from app import Settings
-                setting = Settings.query.filter_by(key='openai_model').first()
-                model = setting.value if setting else 'gpt-4o'
-            except:
-                model = 'gpt-4o'
-            
-            print(f" DEBUG: Using OpenAI model: {model}")
-            
             # Call OpenAI API
             # Use max_completion_tokens for newer models (gpt-5, etc.) and max_tokens for older models
             api_params = {
@@ -202,6 +222,11 @@ Return ONLY the JSON structure with data extracted from the document text above.
             # Extract the JSON response
             kb_json_str = response.choices[0].message.content.strip()
             
+            # Check for empty response
+            if not kb_json_str:
+                print(f" ERROR: OpenAI returned empty response for model {model}")
+                raise ValueError(f"OpenAI model {model} returned empty response. Try using a different model.")
+            
             # Remove markdown code blocks if present
             if kb_json_str.startswith('```json'):
                 kb_json_str = kb_json_str[7:]
@@ -212,6 +237,11 @@ Return ONLY the JSON structure with data extracted from the document text above.
             kb_json_str = kb_json_str.strip()
             
             print(f" DEBUG: Received knowledge base JSON: {len(kb_json_str)} characters")
+            
+            # Additional debugging for GPT-5
+            if model.startswith('gpt-5') and len(kb_json_str) < 100:
+                print(f" WARNING: GPT-5 returned very short response ({len(kb_json_str)} chars)")
+                print(f" Response preview: {kb_json_str[:200]}...")
             
             # Parse and validate JSON
             kb_data = json.loads(kb_json_str)
