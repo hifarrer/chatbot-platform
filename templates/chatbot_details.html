@@ -1106,6 +1106,9 @@ function createToastContainer() {
 function convertLinksToHtml(text) {
     if (!text) return text;
     
+    // Store original text for @ checking
+    const originalText = text;
+    
     let processedText = text;
     
     // Format text for better readability
@@ -1118,8 +1121,7 @@ function convertLinksToHtml(text) {
     const phoneRegex = /(\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})/gi;
     
     // URL regex pattern (matches http, https, www, and domain patterns)
-    // But exclude domains that are part of emails by using negative lookbehind
-    const urlRegex = /(?<!@)(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/gi;
+    const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/gi;
     
     // Process emails FIRST to avoid URL regex interfering with email domains
     processedText = processedText.replace(emailRegex, (match) => {
@@ -1136,6 +1138,15 @@ function convertLinksToHtml(text) {
         // Skip if this match is already inside a <strong> tag (email or phone)
         if (processedText.indexOf(`<strong>${match}</strong>`) !== -1) {
             return match;
+        }
+        
+        // Check if there's an @ symbol before this match in the ORIGINAL text
+        const matchIndex = originalText.indexOf(match);
+        if (matchIndex > 0) {
+            const beforeMatch = originalText.substring(0, matchIndex);
+            if (beforeMatch.includes('@')) {
+                return match; // Don't convert to link if @ is before it
+            }
         }
         
         let url = match;
