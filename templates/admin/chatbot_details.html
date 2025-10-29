@@ -324,21 +324,34 @@ function convertLinksToHtml(text) {
     // Email regex pattern
     const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi;
     
+    // Phone number regex pattern (matches various phone number formats)
+    const phoneRegex = /(\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})/gi;
+    
     let processedText = text;
     
-    // Convert URLs to clickable links
+    // Process emails FIRST to avoid URL regex interfering with email domains
+    processedText = processedText.replace(emailRegex, (match) => {
+        return `<strong>${match}</strong>`;
+    });
+    
+    // Process phone numbers SECOND to avoid URL regex interfering
+    processedText = processedText.replace(phoneRegex, (match) => {
+        return `<strong>${match}</strong>`;
+    });
+    
+    // Convert URLs to clickable links LAST (but exclude already processed emails and phones)
     processedText = processedText.replace(urlRegex, (match) => {
+        // Skip if this match is already inside a <strong> tag (email or phone)
+        if (processedText.indexOf(`<strong>${match}</strong>`) !== -1) {
+            return match;
+        }
+        
         let url = match;
         // Add https:// if the URL doesn't have a protocol
         if (!url.match(/^https?:\/\//i)) {
             url = 'https://' + url;
         }
         return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${match}</a>`;
-    });
-    
-    // Convert emails to clickable mailto links
-    processedText = processedText.replace(emailRegex, (match) => {
-        return `<a href="mailto:${match}" class="chatbot-link chatbot-email-link">${match}</a>`;
     });
     
     return processedText;
