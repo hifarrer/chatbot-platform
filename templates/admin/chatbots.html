@@ -406,23 +406,27 @@ function showTrainingData(chatbotId, chatbotName) {
         });
 }
 
-function copyTrainingData() {
+function copyTrainingData(event) {
     if (window.currentTrainingData) {
         const jsonText = JSON.stringify(window.currentTrainingData, null, 2);
         
+        // Get the button element - handle both event parameter and direct call
+        const btn = event ? event.target.closest('button') : document.getElementById('copyJsonBtn');
+        
         navigator.clipboard.writeText(jsonText).then(function() {
             // Show success feedback
-            const btn = event.target.closest('button');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
-            btn.classList.remove('btn-outline-secondary');
-            btn.classList.add('btn-success');
-            
-            setTimeout(function() {
-                btn.innerHTML = originalText;
-                btn.classList.remove('btn-success');
-                btn.classList.add('btn-outline-secondary');
-            }, 2000);
+            if (btn) {
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
+                btn.classList.remove('btn-outline-secondary');
+                btn.classList.add('btn-success');
+                
+                setTimeout(function() {
+                    btn.innerHTML = originalText;
+                    btn.classList.remove('btn-success');
+                    btn.classList.add('btn-outline-secondary');
+                }, 2000);
+            }
         }).catch(function(err) {
             console.error('Failed to copy: ', err);
             
@@ -438,18 +442,25 @@ function copyTrainingData() {
                     selection.addRange(range);
                     
                     // Show fallback message
-                    const btn = event.target.closest('button');
-                    const originalText = btn.innerHTML;
-                    btn.innerHTML = '<i class="fas fa-mouse-pointer me-1"></i>Text Selected';
-                    btn.classList.remove('btn-outline-secondary');
-                    btn.classList.add('btn-warning');
-                    
-                    setTimeout(function() {
-                        btn.innerHTML = originalText;
-                        btn.classList.remove('btn-warning');
-                        btn.classList.add('btn-outline-secondary');
-                        selection.removeAllRanges();
-                    }, 2000);
+                    if (btn) {
+                        const originalText = btn.innerHTML;
+                        btn.innerHTML = '<i class="fas fa-mouse-pointer me-1"></i>Text Selected';
+                        btn.classList.remove('btn-outline-secondary');
+                        btn.classList.add('btn-warning');
+                        
+                        setTimeout(function() {
+                            btn.innerHTML = originalText;
+                            btn.classList.remove('btn-warning');
+                            btn.classList.add('btn-outline-secondary');
+                            selection.removeAllRanges();
+                        }, 2000);
+                    } else {
+                        // If no button found, just show a simple alert
+                        alert('Text has been selected. Press Ctrl+C to copy.');
+                        setTimeout(function() {
+                            selection.removeAllRanges();
+                        }, 2000);
+                    }
                 } catch (fallbackErr) {
                     console.error('Fallback copy failed: ', fallbackErr);
                     alert('Failed to copy to clipboard. Please manually select and copy the text.');

@@ -16,20 +16,18 @@
         <a href="{{ url_for('chatbot_analytics', chatbot_id=chatbot.id) }}" class="btn btn-primary me-2">
             <i class="fas fa-chart-line me-1"></i>View Analytics
         </a>
-        {% if chatbot.is_trained %}
-        <button class="btn btn-info me-2" onclick="showEmbedCode('{{ chatbot.embed_code }}')">
+        <button class="btn btn-info me-2" onclick="showEmbedCode('{{ chatbot.embed_code }}')" style="display: {% if chatbot.is_trained %}inline-block{% else %}none{% endif %};">
             <i class="fas fa-code me-1"></i>Get Embed Code
         </button>
-        <button class="btn btn-outline-warning me-2" onclick="showTrainingData({{ chatbot.id }}, '{{ chatbot.name }}')" title="View Training Data">
+        <button class="btn btn-outline-warning me-2" onclick="showTrainingData({{ chatbot.id }}, '{{ chatbot.name }}')" title="View Training Data" style="display: {% if chatbot.is_trained %}inline-block{% else %}none{% endif %};">
             <i class="fas fa-database me-1"></i>View Training Data
         </button>
         <a href="{{ url_for('preview_chatbot', embed_code=chatbot.embed_code) }}" target="_blank" class="btn btn-success me-2" style="display: none;">
             <i class="fas fa-eye me-1"></i>Preview
         </a>
-        <a href="{{ url_for('web_preview_chatbot', embed_code=chatbot.embed_code) }}" target="_blank" class="btn btn-warning me-2">
+        <a href="{{ url_for('web_preview_chatbot', embed_code=chatbot.embed_code) }}" target="_blank" class="btn btn-warning me-2" style="display: {% if chatbot.is_trained %}inline-block{% else %}none{% endif %};">
             <i class="fas fa-globe me-1"></i>Web Preview
         </a>
-        {% endif %}
         <button class="btn btn-danger" onclick="confirmDelete()">
             <i class="fas fa-trash me-1"></i>Delete Chatbot
         </button>
@@ -1026,102 +1024,61 @@ function updateChatbotStatus(isTrained) {
 
 function showTrainedButtons() {
     // Find the button container in the header
-    const buttonContainer = document.querySelector('.d-flex.justify-content-between.align-items-center.mb-4 .d-flex');
+    const buttonContainer = document.querySelector('.d-flex.justify-content-between.align-items-center.mb-4 div:last-child');
     if (!buttonContainer) {
         console.log('Button container not found');
         return;
     }
     
-    // Find the Analytics button (it should always be visible)
-    const analyticsButton = buttonContainer.querySelector('a[href*="analytics"]');
-    if (!analyticsButton) {
-        console.log('Analytics button not found');
-        return;
-    }
-    
-    // Check if buttons are already visible
+    // Find the existing buttons that are hidden
     const embedButton = buttonContainer.querySelector('button[onclick*="showEmbedCode"]');
     const trainingDataButton = buttonContainer.querySelector('button[onclick*="showTrainingData"]');
+    const webPreviewButton = buttonContainer.querySelector('a[href*="web_preview"]');
     
-    if (embedButton && trainingDataButton) {
-        console.log('Buttons already visible');
-        return;
-    }
-    
-    // Create the buttons if they don't exist
-    if (!embedButton) {
-        const embedBtn = document.createElement('button');
-        embedBtn.className = 'btn btn-info me-2';
-        embedBtn.setAttribute('onclick', 'showEmbedCode(\'{{ chatbot.embed_code }}\')');
-        embedBtn.innerHTML = '<i class="fas fa-code me-1"></i>Get Embed Code';
-        
-        // Add animation class for smooth appearance
-        embedBtn.style.opacity = '0';
-        embedBtn.style.transform = 'translateY(-10px)';
-        
-        // Insert after analytics button
-        analyticsButton.insertAdjacentElement('afterend', embedBtn);
+    // Show the existing buttons with animations
+    if (embedButton) {
+        embedButton.style.display = 'inline-block';
+        embedButton.style.opacity = '0';
+        embedButton.style.transform = 'translateY(-10px)';
         
         // Animate in
         setTimeout(() => {
-            embedBtn.style.transition = 'all 0.3s ease';
-            embedBtn.style.opacity = '1';
-            embedBtn.style.transform = 'translateY(0)';
+            embedButton.style.transition = 'all 0.3s ease';
+            embedButton.style.opacity = '1';
+            embedButton.style.transform = 'translateY(0)';
         }, 100);
         
-        console.log('Embed Code button added');
+        console.log('Embed Code button shown');
     }
     
-    if (!trainingDataButton) {
-        const trainingDataBtn = document.createElement('button');
-        trainingDataBtn.className = 'btn btn-outline-warning me-2';
-        trainingDataBtn.setAttribute('onclick', 'showTrainingData({{ chatbot.id }}, \'{{ chatbot.name }}\')');
-        trainingDataBtn.setAttribute('title', 'View Training Data');
-        trainingDataBtn.innerHTML = '<i class="fas fa-database me-1"></i>View Training Data';
-        
-        // Add animation class for smooth appearance
-        trainingDataBtn.style.opacity = '0';
-        trainingDataBtn.style.transform = 'translateY(-10px)';
-        
-        // Insert after embed button (or analytics if embed doesn't exist)
-        const insertAfter = embedButton || analyticsButton;
-        insertAfter.insertAdjacentElement('afterend', trainingDataBtn);
+    if (trainingDataButton) {
+        trainingDataButton.style.display = 'inline-block';
+        trainingDataButton.style.opacity = '0';
+        trainingDataButton.style.transform = 'translateY(-10px)';
         
         // Animate in
         setTimeout(() => {
-            trainingDataBtn.style.transition = 'all 0.3s ease';
-            trainingDataBtn.style.opacity = '1';
-            trainingDataBtn.style.transform = 'translateY(0)';
+            trainingDataButton.style.transition = 'all 0.3s ease';
+            trainingDataButton.style.opacity = '1';
+            trainingDataButton.style.transform = 'translateY(0)';
         }, 200);
         
-        console.log('View Training Data button added');
+        console.log('View Training Data button shown');
     }
     
-    // Add Web Preview button if it doesn't exist
-    const webPreviewButton = buttonContainer.querySelector('a[href*="web_preview"]');
-    if (!webPreviewButton) {
-        const webPreviewBtn = document.createElement('a');
-        webPreviewBtn.href = '{{ url_for("web_preview_chatbot", embed_code=chatbot.embed_code) }}';
-        webPreviewBtn.target = '_blank';
-        webPreviewBtn.className = 'btn btn-warning me-2';
-        webPreviewBtn.innerHTML = '<i class="fas fa-globe me-1"></i>Web Preview';
-        
-        // Add animation class for smooth appearance
-        webPreviewBtn.style.opacity = '0';
-        webPreviewBtn.style.transform = 'translateY(-10px)';
-        
-        // Insert after training data button
-        const insertAfter = trainingDataButton || embedButton || analyticsButton;
-        insertAfter.insertAdjacentElement('afterend', webPreviewBtn);
+    if (webPreviewButton) {
+        webPreviewButton.style.display = 'inline-block';
+        webPreviewButton.style.opacity = '0';
+        webPreviewButton.style.transform = 'translateY(-10px)';
         
         // Animate in
         setTimeout(() => {
-            webPreviewBtn.style.transition = 'all 0.3s ease';
-            webPreviewBtn.style.opacity = '1';
-            webPreviewBtn.style.transform = 'translateY(0)';
+            webPreviewButton.style.transition = 'all 0.3s ease';
+            webPreviewButton.style.opacity = '1';
+            webPreviewButton.style.transform = 'translateY(0)';
         }, 300);
         
-        console.log('Web Preview button added');
+        console.log('Web Preview button shown');
     }
     
     console.log('All trained buttons are now visible');
@@ -1673,23 +1630,27 @@ function showTrainingData(chatbotId, chatbotName) {
         });
 }
 
-function copyTrainingData() {
+function copyTrainingData(event) {
     if (window.currentTrainingData) {
         const jsonText = JSON.stringify(window.currentTrainingData, null, 2);
         
+        // Get the button element - handle both event parameter and direct call
+        const btn = event ? event.target.closest('button') : document.getElementById('copyJsonBtn');
+        
         navigator.clipboard.writeText(jsonText).then(function() {
             // Show success feedback
-            const btn = event.target.closest('button');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
-            btn.classList.remove('btn-outline-secondary');
-            btn.classList.add('btn-success');
-            
-            setTimeout(function() {
-                btn.innerHTML = originalText;
-                btn.classList.remove('btn-success');
-                btn.classList.add('btn-outline-secondary');
-            }, 2000);
+            if (btn) {
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
+                btn.classList.remove('btn-outline-secondary');
+                btn.classList.add('btn-success');
+                
+                setTimeout(function() {
+                    btn.innerHTML = originalText;
+                    btn.classList.remove('btn-success');
+                    btn.classList.add('btn-outline-secondary');
+                }, 2000);
+            }
         }).catch(function(err) {
             console.error('Failed to copy: ', err);
             
@@ -1705,18 +1666,25 @@ function copyTrainingData() {
                     selection.addRange(range);
                     
                     // Show fallback message
-                    const btn = event.target.closest('button');
-                    const originalText = btn.innerHTML;
-                    btn.innerHTML = '<i class="fas fa-mouse-pointer me-1"></i>Text Selected';
-                    btn.classList.remove('btn-outline-secondary');
-                    btn.classList.add('btn-warning');
-                    
-                    setTimeout(function() {
-                        btn.innerHTML = originalText;
-                        btn.classList.remove('btn-warning');
-                        btn.classList.add('btn-outline-secondary');
-                        selection.removeAllRanges();
-                    }, 2000);
+                    if (btn) {
+                        const originalText = btn.innerHTML;
+                        btn.innerHTML = '<i class="fas fa-mouse-pointer me-1"></i>Text Selected';
+                        btn.classList.remove('btn-outline-secondary');
+                        btn.classList.add('btn-warning');
+                        
+                        setTimeout(function() {
+                            btn.innerHTML = originalText;
+                            btn.classList.remove('btn-warning');
+                            btn.classList.add('btn-outline-secondary');
+                            selection.removeAllRanges();
+                        }, 2000);
+                    } else {
+                        // If no button found, just show a simple alert
+                        alert('Text has been selected. Press Ctrl+C to copy.');
+                        setTimeout(function() {
+                            selection.removeAllRanges();
+                        }, 2000);
+                    }
                 } catch (fallbackErr) {
                     console.error('Fallback copy failed: ', fallbackErr);
                     alert('Failed to copy to clipboard. Please manually select and copy the text.');

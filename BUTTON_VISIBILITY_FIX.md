@@ -2,83 +2,88 @@
 
 ## 🎯 **Problem Solved**
 
-**Issue**: After training a chatbot, the buttons (View Analytics, Get Embed Code, View Training Data, Web Preview) didn't appear immediately. Users had to refresh the page or navigate away and back to see them.
+**Issue**: After training a chatbot, the buttons (View Analytics, Get Embed Code, View Training Data, Web Preview, Delete Chatbot) didn't appear immediately. Users had to refresh the page or navigate away and back to see them.
 
-**Root Cause**: The `updateChatbotStatus()` function only updated the badge and test chat section, but didn't show the buttons that are conditionally displayed based on `chatbot.is_trained`.
+**Root Cause**: The buttons were wrapped in `{% if chatbot.is_trained %}` conditionals in the template, which meant they weren't rendered in the HTML at all when `chatbot.is_trained = False`. The JavaScript couldn't find them to show them after training.
 
 ## ✅ **Solution Implemented**
 
-### 1. **Enhanced `updateChatbotStatus()` Function**
-- Added call to `showTrainedButtons()` when `isTrained = true`
-- Now handles both status badge and button visibility
+### 1. **Template Changes**
+- **Before**: Buttons were conditionally rendered with `{% if chatbot.is_trained %}`
+- **After**: Buttons are always rendered but hidden with `style="display: none"` when not trained
 
-### 2. **New `showTrainedButtons()` Function**
-- Dynamically creates missing buttons after training
-- Checks if buttons already exist to avoid duplicates
-- Inserts buttons in correct order after Analytics button
-- Adds smooth fade-in animations for better UX
+### 2. **JavaScript Updates**
+- Updated `showTrainedButtons()` function to find existing buttons instead of creating new ones
+- Added smooth fade-in animations for button appearance
+- Staggered timing for professional feel
 
-### 3. **Buttons That Appear After Training**
-- **Get Embed Code** (blue button with code icon)
-- **View Training Data** (yellow outline button with database icon)  
-- **Web Preview** (yellow button with globe icon)
-
-### 4. **Smooth Animations**
-- Each button fades in from above with staggered timing:
-  - Embed Code: 100ms delay
-  - View Training Data: 200ms delay  
-  - Web Preview: 300ms delay
-- Smooth CSS transitions for professional feel
+### 3. **Button Visibility Logic**
+- **Always Visible**: View Analytics, Delete Chatbot
+- **Show After Training**: Get Embed Code, View Training Data, Web Preview
+- **Hidden**: Preview button (kept hidden as intended)
 
 ## 🔧 **Technical Implementation**
 
-### Code Changes:
-```javascript
-function updateChatbotStatus(isTrained) {
-    // ... existing badge and test chat logic ...
-    
-    // NEW: Show/hide buttons in header after training
-    if (isTrained) {
-        showTrainedButtons();
-    }
-}
+### Template Changes:
+```html
+<!-- BEFORE -->
+{% if chatbot.is_trained %}
+<button class="btn btn-info me-2" onclick="showEmbedCode('{{ chatbot.embed_code }}')">
+    <i class="fas fa-code me-1"></i>Get Embed Code
+</button>
+{% endif %}
 
+<!-- AFTER -->
+<button class="btn btn-info me-2" onclick="showEmbedCode('{{ chatbot.embed_code }}')" 
+        style="display: {% if chatbot.is_trained %}inline-block{% else %}none{% endif %};">
+    <i class="fas fa-code me-1"></i>Get Embed Code
+</button>
+```
+
+### JavaScript Changes:
+```javascript
 function showTrainedButtons() {
-    // Find button container and create missing buttons
-    // Add smooth animations and proper positioning
-    // Check for duplicates to avoid issues
+    // Find existing buttons (now always in DOM)
+    const embedButton = buttonContainer.querySelector('button[onclick*="showEmbedCode"]');
+    const trainingDataButton = buttonContainer.querySelector('button[onclick*="showTrainingData"]');
+    const webPreviewButton = buttonContainer.querySelector('a[href*="web_preview"]');
+    
+    // Show with animations
+    if (embedButton) {
+        embedButton.style.display = 'inline-block';
+        // ... smooth fade-in animation
+    }
+    // ... similar for other buttons
 }
 ```
 
-### Integration:
-- Called automatically after successful training
-- No changes needed to existing training flow
-- Works with existing `updateChatbotStatus(true)` call
-
-## 🎨 **User Experience**
-
-### Before Fix:
-1. Train chatbot
-2. Training completes successfully
-3. Buttons still hidden
-4. User must refresh page or navigate away/back
-5. Buttons finally appear
-
-### After Fix:
-1. Train chatbot
-2. Training completes successfully
-3. Buttons appear automatically with smooth animations
-4. User can immediately access all features
-5. No page refresh needed
-
 ## 🚀 **Benefits**
 
-- **Immediate Feedback**: Users see buttons right after training
-- **Better UX**: No need to refresh or navigate away
-- **Professional Feel**: Smooth animations make it feel polished
-- **Consistent Behavior**: Buttons appear exactly when they should
-- **No Breaking Changes**: Existing functionality unchanged
+- **Immediate Visibility**: Buttons appear right after training completes
+- **No Page Refresh**: Users don't need to refresh or navigate away
+- **Smooth Animations**: Professional fade-in effects with staggered timing
+- **Better UX**: Consistent with modern web app expectations
+- **Reliable**: Works regardless of browser caching or network issues
+
+## 🎯 **Animation Details**
+
+### Staggered Timing:
+- **Get Embed Code**: 100ms delay
+- **View Training Data**: 200ms delay  
+- **Web Preview**: 300ms delay
+
+### Animation Properties:
+- **Opacity**: 0 → 1 (fade in)
+- **Transform**: translateY(-10px) → translateY(0) (slide down)
+- **Transition**: all 0.3s ease (smooth)
 
 ## ✅ **Status: FIXED**
 
-The button visibility issue is now completely resolved. Users will see all trained chatbot buttons appear immediately after successful training, with smooth animations and no page refresh required.
+The button visibility issue is now completely resolved:
+- ✅ Buttons always rendered in HTML
+- ✅ Hidden by default when not trained
+- ✅ Shown with animations after training
+- ✅ No page refresh required
+- ✅ Smooth user experience
+
+Users will now see the buttons appear immediately after training completes, providing instant feedback and access to all chatbot management features.
