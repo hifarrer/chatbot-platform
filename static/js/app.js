@@ -284,14 +284,15 @@ const Chat = {
     convertLinksToHtml: function(text) {
         if (!text) return text;
         
-        // URL regex pattern (matches http, https, www, and domain patterns)
-        const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/gi;
-        
         // Email regex pattern
         const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi;
         
         // Phone number regex pattern (matches various phone number formats)
         const phoneRegex = /(\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})/gi;
+        
+        // URL regex pattern (matches http, https, www, and domain patterns)
+        // But exclude domains that are part of emails by using negative lookbehind
+        const urlRegex = /(?<!@)(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/gi;
         
         let processedText = text;
         
@@ -305,7 +306,7 @@ const Chat = {
             return `<strong>${match}</strong>`;
         });
         
-        // Convert URLs to clickable links LAST (but exclude already processed emails and phones)
+        // Convert URLs to clickable links LAST
         processedText = processedText.replace(urlRegex, (match) => {
             // Skip if this match is already inside a <strong> tag (email or phone)
             if (processedText.indexOf(`<strong>${match}</strong>`) !== -1) {
