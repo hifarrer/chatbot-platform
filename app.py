@@ -3442,8 +3442,8 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
 
     @app.route('/favicon.ico')
     def favicon():
-        """Handle favicon requests to prevent 404 errors"""
-        return ('', 204)  # Return empty response with 204 No Content
+        """Serve favicon.ico file"""
+        return send_from_directory(app.static_folder, 'favicon.ico', mimetype='image/vnd.microsoft.icon')
 
     @app.errorhandler(500)
     def handle_500_error(e):
