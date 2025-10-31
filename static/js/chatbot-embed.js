@@ -138,6 +138,20 @@
             `;
 
             container.innerHTML = widgetHTML;
+            
+            // Initialize in minimized (circle) state by default
+            const toggle = document.getElementById(`chatbot-toggle-${this.config.embedCode}`);
+            const content = toggle.querySelector('.chatbot-toggle-content');
+            const minimizeBtn = toggle.querySelector('.chatbot-toggle-minimize');
+            
+            // Hide content and minimize button, add minimized-avatar class
+            content.style.display = 'none';
+            if (minimizeBtn) minimizeBtn.style.display = 'none';
+            toggle.classList.add('minimized-avatar');
+            
+            // Add minimized class to widget
+            const widget = document.getElementById(`chatbot-${this.config.embedCode}`);
+            widget.classList.add('minimized');
         },
 
         injectCSS: function() {
@@ -169,11 +183,39 @@
                     background: #007bff !important;
                     box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3) !important;
                     transition: all 0.3s ease !important;
+                    animation: pulse-circle 2s ease-in-out infinite !important;
+                    position: relative !important;
+                }
+
+                .chatbot-toggle.minimized-avatar::before {
+                    content: '';
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    width: 60px;
+                    height: 60px;
+                    border-radius: 50%;
+                    background: rgba(0, 123, 255, 0.3);
+                    transform: translate(-50%, -50%);
+                    animation: pulse-ring 2s ease-out infinite;
+                    pointer-events: none;
+                    z-index: -1;
                 }
 
                 .chatbot-toggle.minimized-avatar:hover {
-                    transform: translateY(-2px) scale(1.05) !important;
+                    animation: pulse-circle-hover 1s ease-in-out infinite !important;
                     box-shadow: 0 6px 20px rgba(0, 123, 255, 0.4) !important;
+                }
+
+                @keyframes pulse-circle-hover {
+                    0%, 100% {
+                        transform: translateY(-2px) scale(1.05);
+                        box-shadow: 0 6px 20px rgba(0, 123, 255, 0.4);
+                    }
+                    50% {
+                        transform: translateY(-2px) scale(1.08);
+                        box-shadow: 0 8px 25px rgba(0, 123, 255, 0.6);
+                    }
                 }
 
                 .chatbot-toggle.minimized-avatar .chatbot-toggle-avatar {
@@ -191,6 +233,11 @@
                     width: 100% !important;
                     height: 100% !important;
                     border-radius: 50% !important;
+                }
+
+                .chatbot-toggle.minimized-avatar .chatbot-toggle-content,
+                .chatbot-toggle.minimized-avatar .chatbot-toggle-minimize {
+                    display: none !important;
                 }
 
                 .chatbot-widget.closed {
@@ -695,6 +742,28 @@
                     30% {
                         transform: scale(1.2);
                         opacity: 1;
+                    }
+                }
+
+                @keyframes pulse-circle {
+                    0%, 100% {
+                        transform: scale(1);
+                        box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+                    }
+                    50% {
+                        transform: scale(1.05);
+                        box-shadow: 0 4px 20px rgba(0, 123, 255, 0.5);
+                    }
+                }
+
+                @keyframes pulse-ring {
+                    0% {
+                        transform: translate(-50%, -50%) scale(1);
+                        opacity: 0.7;
+                    }
+                    100% {
+                        transform: translate(-50%, -50%) scale(1.4);
+                        opacity: 0;
                     }
                 }
 

@@ -1316,8 +1316,12 @@ Best regards,
         """Display analytics for a chatbot's conversations"""
         chatbot = Chatbot.query.filter_by(id=chatbot_id, user_id=current_user.id).first_or_404()
         
-        # Get all conversations for this chatbot
-        conversations = Conversation.query.filter_by(chatbot_id=chatbot_id).order_by(Conversation.timestamp.desc()).all()
+        # Get conversations from the last 30 days only
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        conversations = Conversation.query.filter(
+            Conversation.chatbot_id == chatbot_id,
+            Conversation.timestamp >= thirty_days_ago
+        ).order_by(Conversation.timestamp.desc()).all()
         
         # Initialize analytics service
         analytics_service = AnalyticsService()

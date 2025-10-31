@@ -193,6 +193,7 @@
                         {% for keyword in analytics.keywords %}
                             <span class="keyword-tag" 
                                   data-score="{{ keyword.score }}"
+                                  data-index="{{ loop.index0 }}"
                                   style="font-size: {{ 0.8 + (keyword.score / 100) * 1.5 }}rem; 
                                          opacity: {{ 0.6 + (keyword.score / 100) * 0.4 }};">
                                 {{ keyword.keyword }}
@@ -425,6 +426,41 @@ const hourlyChart = new Chart(hourlyCtx, {
 });
 
 {% endif %}
+
+// Keyword Cloud Color Assignment
+{% if analytics.keywords %}
+document.addEventListener('DOMContentLoaded', function() {
+    // Color palette with various gradient combinations
+    const colorPalette = [
+        'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+        'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+        'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+        'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+        'linear-gradient(135deg, #30cfd0 0%, #330867 100%)',
+        'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
+        'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)',
+        'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)',
+        'linear-gradient(135deg, #ff8a80 0%, #ea6100 100%)',
+        'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)',
+        'linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%)',
+        'linear-gradient(135deg, #ff6e7f 0%, #bfe9ff 100%)',
+        'linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%)',
+        'linear-gradient(135deg, #fad961 0%, #f76b1c 100%)',
+        'linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%)',
+        'linear-gradient(135deg, #fbc2eb 0%, #a6c1ee 100%)',
+        'linear-gradient(135deg, #ff9a56 0%, #ff6a88 100%)',
+        'linear-gradient(135deg, #c471ed 0%, #f64f59 100%)',
+        'linear-gradient(135deg, #12c2e9 0%, #c471ed 50%, #f64f59 100%)'
+    ];
+    
+    const keywordTags = document.querySelectorAll('.keyword-tag');
+    keywordTags.forEach((tag, index) => {
+        const colorIndex = index % colorPalette.length;
+        tag.style.background = colorPalette[colorIndex];
+    });
+});
+{% endif %}
 </script>
 
 <!-- Platform Assistant Chatbot -->
@@ -466,7 +502,7 @@ window.addEventListener('load', function() {
     display: inline-block;
     padding: 8px 16px;
     margin: 5px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); /* Default fallback */
     color: white;
     border-radius: 25px;
     font-weight: 500;
