@@ -60,6 +60,8 @@ class Chatbot(db.Model):
     is_trained = db.Column(db.Boolean, default=False)
     avatar_filename = db.Column(db.String(255), nullable=True)  # Custom avatar image
     greeting_message = db.Column(db.String(500), nullable=True)  # Custom greeting message
+    homepage_url = db.Column(db.String(500), nullable=True)  # Homepage URL
+    contact_us_url = db.Column(db.String(500), nullable=True)  # Contact US URL
     documents = db.relationship('Document', backref='chatbot', lazy=True, cascade='all, delete-orphan')
     conversations = db.relationship('Conversation', backref='chatbot', lazy=True, cascade='all, delete-orphan')
 
@@ -1357,10 +1359,14 @@ Best regards,
         description = request.form.get('description', '').strip()
         system_prompt = request.form.get('system_prompt', '').strip()
         greeting_message = request.form.get('greeting_message', '').strip()
+        homepage_url = request.form.get('homepage_url', '').strip()
+        contact_us_url = request.form.get('contact_us_url', '').strip()
         
         # Update fields
         chatbot.description = description if description else None
         chatbot.greeting_message = greeting_message if greeting_message else None
+        chatbot.homepage_url = homepage_url if homepage_url else None
+        chatbot.contact_us_url = contact_us_url if contact_us_url else None
         
         if system_prompt:
             chatbot.system_prompt = system_prompt
@@ -2150,11 +2156,14 @@ Best regards,
         if not chatbot:
             return "Chatbot not found", 404
         
-        # Check if user has a website URL
-        if not chatbot.owner.website:
+        # Determine which URL to use: homepage_url first, then fall back to owner's website
+        website_url = chatbot.homepage_url or chatbot.owner.website
+        
+        # Check if we have a website URL
+        if not website_url:
             return render_template('web_preview_no_website.html', chatbot=chatbot)
         
-        return render_template('web_preview.html', embed_code=embed_code, chatbot=chatbot)
+        return render_template('web_preview.html', embed_code=embed_code, chatbot=chatbot, website_url=website_url)
     
     @app.route('/create-demo-chatbot')
     def create_demo_route():

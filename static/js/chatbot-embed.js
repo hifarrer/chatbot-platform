@@ -703,6 +703,41 @@
                     height: 14px;
                 }
 
+                .contact-us-btn {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: #007bff;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 10px 20px;
+                    font-size: 14px;
+                    font-weight: 500;
+                    text-decoration: none;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    margin-top: 8px;
+                }
+
+                .contact-us-btn:hover {
+                    background: #0056b3;
+                    transform: translateY(-1px);
+                    box-shadow: 0 4px 8px rgba(0, 123, 255, 0.3);
+                    color: white;
+                    text-decoration: none;
+                }
+
+                .contact-us-btn:active {
+                    transform: translateY(0);
+                }
+
+                .contact-us-btn svg {
+                    width: 16px;
+                    height: 16px;
+                    vertical-align: middle;
+                }
+
                 .typing-indicator {
                     display: flex;
                     align-items: center;
@@ -1211,8 +1246,36 @@
                     this.minimizeChat();
                 }, 5000);
             } else {
-                // Ask what other questions they have
-                this.addMessage("What other questions can I help you with?", 'bot');
+                // Show apology message and contact us option
+                const contactUsUrl = this.config.contactUsUrl || null;
+                let message = "I'm sorry I couldn't fully resolve your issue. ";
+                
+                if (contactUsUrl && contactUsUrl.trim() !== '') {
+                    message += "Please contact our team and we'll be happy to assist you further.";
+                    this.addMessage(message, 'bot');
+                    
+                    // Add Contact Us button
+                    const messagesContainer = document.querySelector(`#chatbot-messages-${embedCode}`);
+                    if (messagesContainer) {
+                        const buttonDiv = document.createElement('div');
+                        buttonDiv.className = 'chatbot-message chatbot-message-bot';
+                        buttonDiv.innerHTML = `
+                            <div class="text-center mt-2">
+                                <a href="${contactUsUrl}" target="_blank" rel="noopener noreferrer" class="contact-us-btn">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 5px;">
+                                        <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+                                    </svg>
+                                    Contact Us
+                                </a>
+                            </div>
+                        `;
+                        messagesContainer.appendChild(buttonDiv);
+                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                    }
+                } else {
+                    message += "Please reach out to our support team for further assistance.";
+                    this.addMessage(message, 'bot');
+                }
             }
             
             // Remove the Yes/No buttons

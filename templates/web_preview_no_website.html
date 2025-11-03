@@ -63,21 +63,33 @@
                         
                         <h3 class="text-muted mb-3">No Website URL Configured</h3>
                         <p class="text-muted mb-4">
-                            To use the Web Preview feature, the chatbot owner needs to add their business website URL to their profile.
+                            To use the Web Preview feature, you need to add a Homepage URL to your chatbot settings, or add your business website URL to your profile.
                         </p>
                         
                         <div class="alert alert-info text-start">
                             <h6><i class="fas fa-info-circle me-2"></i>How to enable Web Preview:</h6>
-                            <ol class="mb-0">
+                            <p><strong>Option 1 - Chatbot Homepage URL (Recommended):</strong></p>
+                            <ol>
+                                <li>Click "Edit" on the Chatbot Information section</li>
+                                <li>Enter your <strong>Homepage URL</strong> in the chatbot settings</li>
+                                <li>Save your changes</li>
+                                <li>Return here to use Web Preview</li>
+                            </ol>
+                            <p class="mt-3 mb-0"><strong>Option 2 - Profile Website:</strong></p>
+                            <ol>
                                 <li>Go to your <strong>Profile</strong> page</li>
                                 <li>Add your business website URL in the <strong>Website</strong> field</li>
                                 <li>Save your profile</li>
                                 <li>Return here to use Web Preview</li>
                             </ol>
+                            <p class="mt-3 mb-0"><small class="text-muted"><i class="fas fa-lightbulb me-1"></i><strong>Note:</strong> The chatbot Homepage URL takes priority over the profile website.</small></p>
                         </div>
                         
                         <div class="d-grid gap-2 d-md-flex justify-content-md-center mt-4">
-                            <a href="{{ url_for('profile') }}" class="btn btn-primary btn-lg">
+                            <a href="{% if chatbot.url_name and chatbot.owner %}{{ url_for('chatbot_details_by_name', username=chatbot.owner.username, chatbot_name=chatbot.url_name) }}{% else %}{{ url_for('chatbot_details', chatbot_id=chatbot.id) }}{% endif %}" class="btn btn-primary btn-lg">
+                                <i class="fas fa-edit me-2"></i>Edit Chatbot Settings
+                            </a>
+                            <a href="{{ url_for('profile') }}" class="btn btn-outline-primary btn-lg">
                                 <i class="fas fa-user-edit me-2"></i>Update Profile
                             </a>
                             <a href="{% if chatbot.url_name and chatbot.owner %}{{ url_for('chatbot_details_by_name', username=chatbot.owner.username, chatbot_name=chatbot.url_name) }}{% else %}{{ url_for('chatbot_details', chatbot_id=chatbot.id) }}{% endif %}" class="btn btn-outline-secondary btn-lg">

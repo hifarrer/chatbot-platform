@@ -52,6 +52,8 @@
                             <p><strong>Created:</strong> {{ chatbot.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
                             <p><strong>Embed Code:</strong> <code>{{ chatbot.embed_code }}</code></p>
                             <p><strong>Greeting Message:</strong> {{ chatbot.greeting_message or 'No custom greeting set' }}</p>
+                            <p><strong>Homepage URL:</strong> {% if chatbot.homepage_url %}<a href="{{ chatbot.homepage_url }}" target="_blank" rel="noopener noreferrer">{{ chatbot.homepage_url }}</a>{% else %}Not set{% endif %}</p>
+                            <p><strong>Contact US URL:</strong> {% if chatbot.contact_us_url %}<a href="{{ chatbot.contact_us_url }}" target="_blank" rel="noopener noreferrer">{{ chatbot.contact_us_url }}</a>{% else %}Not set{% endif %}</p>
                         </div>
                         <div class="col-md-4 text-center">
                             <div class="mb-3">
@@ -91,6 +93,20 @@
                                    value="{{ chatbot.greeting_message or '' }}" maxlength="500"
                                    placeholder="e.g., Need help? Ask me anything!">
                             <div class="form-text">Custom greeting message that appears when users first interact with your chatbot</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit-homepage-url" class="form-label">Homepage URL</label>
+                            <input type="url" class="form-control" id="edit-homepage-url" name="homepage_url" 
+                                   value="{{ chatbot.homepage_url or '' }}" maxlength="500"
+                                   placeholder="https://example.com">
+                            <div class="form-text">Enter your website homepage URL</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit-contact-us-url" class="form-label">Contact US URL</label>
+                            <input type="url" class="form-control" id="edit-contact-us-url" name="contact_us_url" 
+                                   value="{{ chatbot.contact_us_url or '' }}" maxlength="500"
+                                   placeholder="https://example.com/contact">
+                            <div class="form-text">Enter your contact page URL</div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Avatar</label>
@@ -646,7 +662,8 @@ ChatbotEmbed.init({
     containerId: 'chatbot-${embedCode}',
     title: '{{ chatbot.name }}',
     avatarUrl: '{% if chatbot.avatar_filename %}{{ domain }}{{ get_avatar_url(chatbot.avatar_filename) }}{% endif %}',
-    greetingMessage: '{{ chatbot.greeting_message or "Hi! I'm here to help. Ask me anything!" }}'
+    greetingMessage: '{{ chatbot.greeting_message or "Hi! I'm here to help. Ask me anything!" }}',
+    contactUsUrl: '{{ chatbot.contact_us_url or "" }}'
 });
 <\/script>`;
     
@@ -1526,10 +1543,28 @@ function handleEndConversationResponse(isResolved) {
             }
         }, 5000);
     } else {
-        // Ask what other questions they have
+        // Show apology message and contact us option
+        const contactUsUrl = '{{ chatbot.contact_us_url or "" }}';
         const botDiv = document.createElement('div');
         botDiv.className = 'mb-2';
-        botDiv.innerHTML = `<div class="d-inline-block bg-light rounded px-3 py-2" style="max-width: 70%;"><i class="fas fa-robot me-2 text-primary"></i>What other questions can I help you with?</div>`;
+        
+        let messageHtml = `<div class="d-inline-block bg-light rounded px-3 py-2" style="max-width: 70%;">`;
+        messageHtml += `<div class="mb-2"><i class="fas fa-robot me-2 text-primary"></i>I'm sorry I couldn't fully resolve your issue. `;
+        
+        if (contactUsUrl && contactUsUrl.trim() !== '') {
+            // Show message with Contact Us button
+            messageHtml += `Please contact our team and we'll be happy to assist you further.</div>`;
+            messageHtml += `<div class="text-center mt-2">`;
+            messageHtml += `<a href="${contactUsUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">`;
+            messageHtml += `<i class="fas fa-envelope me-1"></i>Contact Us</a>`;
+            messageHtml += `</div>`;
+        } else {
+            // Just show message without button
+            messageHtml += `Please reach out to our support team for further assistance.</div>`;
+        }
+        
+        messageHtml += `</div>`;
+        botDiv.innerHTML = messageHtml;
         chatMessages.appendChild(botDiv);
     }
     
@@ -1979,6 +2014,7 @@ window.addEventListener('load', function() {
         placeholder: '{{ homepage_chatbot_placeholder }}',
         avatarUrl: '{% if homepage_chatbot.avatar_filename %}{{ get_avatar_url(homepage_chatbot.avatar_filename) }}{% endif %}',
         greetingMessage: '{{ homepage_chatbot.greeting_message or "Hi! I\'m here to help. Ask me anything!" }}',
+        contactUsUrl: '{{ homepage_chatbot.contact_us_url or "" }}',
         theme: 'light',
         position: 'bottom-right'
     });
