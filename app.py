@@ -1435,12 +1435,19 @@ Best regards,
     def upload_document(chatbot_id):
         chatbot = Chatbot.query.filter_by(id=chatbot_id, user_id=current_user.id).first_or_404()
         
+        # Check if this is an Ajax request
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        
         if 'file' not in request.files:
+            if is_ajax:
+                return jsonify({'success': False, 'error': 'No file selected'}), 400
             flash('No file selected')
             return redirect(get_chatbot_url(chatbot))
         
         file = request.files['file']
         if file.filename == '':
+            if is_ajax:
+                return jsonify({'success': False, 'error': 'No file selected'}), 400
             flash('No file selected')
             return redirect(get_chatbot_url(chatbot))
         
@@ -1455,7 +1462,10 @@ Best regards,
             file.seek(0)  # Reset file pointer
             
             if file_size > file_size_limit_bytes:
-                flash(f'File size ({file_size / (1024*1024):.1f}MB) exceeds your plan limit ({user_plan.file_size_limit_mb}MB). Please upgrade your plan or use a smaller file.', 'error')
+                error_msg = f'File size ({file_size / (1024*1024):.1f}MB) exceeds your plan limit ({user_plan.file_size_limit_mb}MB). Please upgrade your plan or use a smaller file.'
+                if is_ajax:
+                    return jsonify({'success': False, 'error': error_msg}), 400
+                flash(error_msg, 'error')
                 return redirect(get_chatbot_url(chatbot))
             
             filename = secure_filename(file.filename)
@@ -1490,10 +1500,26 @@ Best regards,
                     existing_document.processed = False  # Mark as unprocessed so it gets retrained
                     
                     db.session.commit()
+                    
+                    if is_ajax:
+                        return jsonify({
+                            'success': True,
+                            'message': f'Document "{filename}" has been updated successfully!',
+                            'document': {
+                                'id': existing_document.id,
+                                'original_filename': existing_document.original_filename,
+                                'uploaded_at': existing_document.uploaded_at.strftime('%Y-%m-%d %H:%M'),
+                                'processed': existing_document.processed
+                            },
+                            'is_update': True
+                        })
                     flash(f'Document "{filename}" has been updated successfully!')
                 except Exception as e:
                     db.session.rollback()
-                    flash(f'Error saving file: {str(e)}. Please try again.')
+                    error_msg = f'Error saving file: {str(e)}. Please try again.'
+                    if is_ajax:
+                        return jsonify({'success': False, 'error': error_msg}), 500
+                    flash(error_msg)
                     return redirect(get_chatbot_url(chatbot))
             else:
                 # Create new document
@@ -1516,14 +1542,34 @@ Best regards,
                     db.session.add(document)
                     db.session.commit()
                     
+                    if is_ajax:
+                        return jsonify({
+                            'success': True,
+                            'message': 'Document uploaded successfully!',
+                            'document': {
+                                'id': document.id,
+                                'original_filename': document.original_filename,
+                                'uploaded_at': document.uploaded_at.strftime('%Y-%m-%d %H:%M'),
+                                'processed': document.processed
+                            },
+                            'is_update': False
+                        })
                     flash('Document uploaded successfully!')
                 except Exception as e:
                     db.session.rollback()
-                    flash(f'Error saving file: {str(e)}. Please try again.')
+                    error_msg = f'Error saving file: {str(e)}. Please try again.'
+                    if is_ajax:
+                        return jsonify({'success': False, 'error': error_msg}), 500
+                    flash(error_msg)
                     return redirect(get_chatbot_url(chatbot))
         else:
-            flash('Invalid file type. Please upload PDF, DOCX, TXT, or JSON files.')
+            error_msg = 'Invalid file type. Please upload PDF, DOCX, TXT, JSON, or XLSX files.'
+            if is_ajax:
+                return jsonify({'success': False, 'error': error_msg}), 400
+            flash(error_msg)
         
+        if is_ajax:
+            return jsonify({'success': False, 'error': 'Invalid file type'}), 400
         return redirect(get_chatbot_url(chatbot))
 
     @app.route('/upload_google_doc/<int:chatbot_id>', methods=['POST'])
@@ -1926,6 +1972,12 @@ Best regards,
             chatbot_trainer.delete_chatbot_data(chatbot_id)
         except Exception as e:
             print(f"Error deleting training data: {e}")
+        
+        # Delete chatbot usage tracking records
+        try:
+            ChatbotUsage.query.filter_by(chatbot_id=chatbot_id).delete()
+        except Exception as e:
+            print(f"Error deleting usage tracking: {e}")
         
         db.session.delete(chatbot)
         db.session.commit()
@@ -2419,6 +2471,12 @@ Best regards,
                 chatbot_trainer.delete_chatbot_data(chatbot.id)
             except Exception as e:
                 print(f"Error deleting training data: {e}")
+            
+            # Delete chatbot usage tracking records
+            try:
+                ChatbotUsage.query.filter_by(chatbot_id=chatbot.id).delete()
+            except Exception as e:
+                print(f"Error deleting usage tracking for chatbot {chatbot.id}: {e}")
         
         db.session.delete(user)
         db.session.commit()
@@ -2527,6 +2585,12 @@ Best regards,
             chatbot_trainer.delete_chatbot_data(chatbot_id)
         except Exception as e:
             print(f"Error deleting training data: {e}")
+        
+        # Delete chatbot usage tracking records
+        try:
+            ChatbotUsage.query.filter_by(chatbot_id=chatbot_id).delete()
+        except Exception as e:
+            print(f"Error deleting usage tracking: {e}")
         
         db.session.delete(chatbot)
         db.session.commit()
