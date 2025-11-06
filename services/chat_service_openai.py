@@ -767,18 +767,24 @@ class ChatServiceOpenAI:
     
     def _format_numbered_lists(self, text):
         """
-        Format numbered lists and steps for better readability
+        Format numbered lists for better readability (add proper spacing)
         """
         formatted_text = text
         
-        # Format numbered steps (1), 2), 3), etc.)
-        formatted_text = re.sub(r'(\d+)\)\s*([^0-9]+?)(?=\d+\)|$)', r'\n\n<b>Step \1:</b> \2\n', formatted_text)
+        # Add proper line breaks for numbered lists (1), 2), 3), etc.)
+        # Only match at start of line or after newline, limit to reasonable step numbers (1-99)
+        # Require space after closing parenthesis
+        formatted_text = re.sub(r'(?:^|\n)\s*(\d{1,2})\)\s+([^\n]+?)(?=\s*\d{1,2}\)|$)', r'\n\n\1) \2\n', formatted_text, flags=re.MULTILINE)
         
-        # Format numbered lists (1., 2., 3., etc.)
-        formatted_text = re.sub(r'(\d+)\.\s*([^0-9]+?)(?=\d+\.|$)', r'\n\n<b>Step \1:</b> \2\n', formatted_text)
+        # Add proper line breaks for numbered lists (1., 2., 3., etc.)
+        # Only match at start of line or after newline, require space after period (not decimal numbers)
+        # Limit to reasonable numbers (1-99) to avoid matching phone numbers or large sequences
+        # The space after period ensures we don't match decimal numbers like "3.14" or phone parts
+        formatted_text = re.sub(r'(?:^|\n)\s*(\d{1,2})\.\s+([^\n]+?)(?=\s*\d{1,2}\.|$)', r'\n\n\1. \2\n', formatted_text, flags=re.MULTILINE)
         
-        # Format numbered items with dashes
-        formatted_text = re.sub(r'(\d+)\s*-\s*([^0-9]+?)(?=\d+\s*-|$)', r'\n\n<b>Step \1:</b> \2\n', formatted_text)
+        # Add proper line breaks for numbered items with dashes (1 -, 2 -, etc.)
+        # Only match at start of line or after newline, limit to reasonable numbers
+        formatted_text = re.sub(r'(?:^|\n)\s*(\d{1,2})\s*-\s+([^\n]+?)(?=\s*\d{1,2}\s*-|$)', r'\n\n\1 - \2\n', formatted_text, flags=re.MULTILINE)
         
         return formatted_text
     
@@ -827,8 +833,8 @@ class ChatServiceOpenAI:
         # Add line breaks before questions
         text = re.sub(r'(\?)\s*([A-Z])', r'\1\n\n\2', text)
         
-        # Add line breaks after steps
-        text = re.sub(r'(<b>Step \d+:</b>[^•]+?)(?=<b>Step)', r'\1\n', text)
+        # Add line breaks after numbered list items
+        text = re.sub(r'(\d{1,2}[\.\)]\s+[^•\n]+?)(?=\d{1,2}[\.\)])', r'\1\n', text)
         
         # Add line breaks before bullet points that aren't already formatted
         text = re.sub(r'([^•\n])\s*•\s*([^•\n]+)', r'\1\n\n• \2', text)
