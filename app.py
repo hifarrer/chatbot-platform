@@ -714,50 +714,7 @@ def create_app():
                 
                 # Email validation
                 if '@' not in email or '.' not in email:
-                flash('Please enter a valid email address.', 'error')
-                # Get active FAQ items for error case
-                faqs = FAQ.query.filter_by(is_active=True).order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
-                
-                # Get homepage chatbot settings for chatbot display
-                homepage_chatbot_id = get_setting('homepage_chatbot_id')
-                homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
-                homepage_chatbot_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
-                
-                # Get the chatbot details if configured
-                homepage_chatbot = None
-                if homepage_chatbot_id:
-                    homepage_chatbot = Chatbot.query.get(homepage_chatbot_id)
-                
-                # Fallback to demo chatbot if no specific one is configured
-                if not homepage_chatbot:
-                    homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
-                
-                return render_template('contact.html', 
-                                     faqs=faqs,
-                                     homepage_chatbot=homepage_chatbot,
-                                     homepage_chatbot_title=homepage_chatbot_title,
-                                     homepage_chatbot_placeholder=homepage_chatbot_placeholder)
-                
-                try:
-                # Create email content
-                email_subject = f"Contact Form: {subject}"
-                email_body = f"""
-New contact form submission from {name} ({email})
-
-Subject: {subject}
-
-Message:
-{message}
-
----
-Sent from Chatbot Platform Contact Form
-Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
-                """
-                
-                # Send email to admin
-                admin_email = os.getenv('RESEND_ADMIN_EMAIL')
-                if not admin_email:
-                    flash('Admin email not configured. Please contact the administrator.', 'error')
+                    flash('Please enter a valid email address.', 'error')
                     # Get active FAQ items for error case
                     faqs = FAQ.query.filter_by(is_active=True).order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
                     
@@ -781,12 +738,55 @@ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
                                          homepage_chatbot_title=homepage_chatbot_title,
                                          homepage_chatbot_placeholder=homepage_chatbot_placeholder)
                 
-                send_email(admin_email, email_subject, email_body)
-                
-                # Send confirmation email to user
-                from_name = os.getenv('RESEND_FROM_NAME', 'ChatBot Platform')
-                confirmation_subject = "Thank you for contacting us"
-                confirmation_body = f"""
+                try:
+                    # Create email content
+                    email_subject = f"Contact Form: {subject}"
+                    email_body = f"""
+New contact form submission from {name} ({email})
+
+Subject: {subject}
+
+Message:
+{message}
+
+---
+Sent from Chatbot Platform Contact Form
+Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
+                    """
+                    
+                    # Send email to admin
+                    admin_email = os.getenv('RESEND_ADMIN_EMAIL')
+                    if not admin_email:
+                        flash('Admin email not configured. Please contact the administrator.', 'error')
+                        # Get active FAQ items for error case
+                        faqs = FAQ.query.filter_by(is_active=True).order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
+                        
+                        # Get homepage chatbot settings for chatbot display
+                        homepage_chatbot_id = get_setting('homepage_chatbot_id')
+                        homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
+                        homepage_chatbot_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+                        
+                        # Get the chatbot details if configured
+                        homepage_chatbot = None
+                        if homepage_chatbot_id:
+                            homepage_chatbot = Chatbot.query.get(homepage_chatbot_id)
+                        
+                        # Fallback to demo chatbot if no specific one is configured
+                        if not homepage_chatbot:
+                            homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
+                        
+                        return render_template('contact.html', 
+                                             faqs=faqs,
+                                             homepage_chatbot=homepage_chatbot,
+                                             homepage_chatbot_title=homepage_chatbot_title,
+                                             homepage_chatbot_placeholder=homepage_chatbot_placeholder)
+                    
+                    send_email(admin_email, email_subject, email_body)
+                    
+                    # Send confirmation email to user
+                    from_name = os.getenv('RESEND_FROM_NAME', 'ChatBot Platform')
+                    confirmation_subject = "Thank you for contacting us"
+                    confirmation_body = f"""
 Dear {name},
 
 Thank you for contacting us. We have received your message and will get back to you as soon as possible.
@@ -797,37 +797,37 @@ Message: {message}
 
 Best regards,
 {from_name}
-                """
-                
-                send_email(email, confirmation_subject, confirmation_body)
-                
-                flash('Thank you for your message! We will get back to you soon.', 'success')
-                return redirect(url_for('contact'))
-                
-            except Exception as e:
-                flash(f'Failed to send message. Please try again later. Error: {str(e)}', 'error')
-                # Get active FAQ items for error case
-                faqs = FAQ.query.filter_by(is_active=True).order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
-                
-                # Get homepage chatbot settings for chatbot display
-                homepage_chatbot_id = get_setting('homepage_chatbot_id')
-                homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
-                homepage_chatbot_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
-                
-                # Get the chatbot details if configured
-                homepage_chatbot = None
-                if homepage_chatbot_id:
-                    homepage_chatbot = Chatbot.query.get(homepage_chatbot_id)
-                
-                # Fallback to demo chatbot if no specific one is configured
-                if not homepage_chatbot:
-                    homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
-                
-                return render_template('contact.html', 
-                                     faqs=faqs,
-                                     homepage_chatbot=homepage_chatbot,
-                                     homepage_chatbot_title=homepage_chatbot_title,
-                                     homepage_chatbot_placeholder=homepage_chatbot_placeholder)
+                    """
+                    
+                    send_email(email, confirmation_subject, confirmation_body)
+                    
+                    flash('Thank you for your message! We will get back to you soon.', 'success')
+                    return redirect(url_for('contact'))
+                    
+                except Exception as e:
+                    flash(f'Failed to send message. Please try again later. Error: {str(e)}', 'error')
+                    # Get active FAQ items for error case
+                    faqs = FAQ.query.filter_by(is_active=True).order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
+                    
+                    # Get homepage chatbot settings for chatbot display
+                    homepage_chatbot_id = get_setting('homepage_chatbot_id')
+                    homepage_chatbot_title = get_setting('homepage_chatbot_title', 'Platform Assistant')
+                    homepage_chatbot_placeholder = get_setting('homepage_chatbot_placeholder', 'Ask me anything about the platform...')
+                    
+                    # Get the chatbot details if configured
+                    homepage_chatbot = None
+                    if homepage_chatbot_id:
+                        homepage_chatbot = Chatbot.query.get(homepage_chatbot_id)
+                    
+                    # Fallback to demo chatbot if no specific one is configured
+                    if not homepage_chatbot:
+                        homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
+                    
+                    return render_template('contact.html', 
+                                         faqs=faqs,
+                                         homepage_chatbot=homepage_chatbot,
+                                         homepage_chatbot_title=homepage_chatbot_title,
+                                         homepage_chatbot_placeholder=homepage_chatbot_placeholder)
         
         # Get active FAQ items ordered by order field
         faqs = FAQ.query.filter_by(is_active=True).order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
