@@ -674,14 +674,21 @@ def create_app():
     @app.route('/contact', methods=['GET', 'POST'])
     def contact():
         if request.method == 'POST':
-            name = request.form.get('name', '').strip()
-            email = request.form.get('email', '').strip()
-            subject = request.form.get('subject', '').strip()
-            message = request.form.get('message', '').strip()
+            # Contact form is temporarily disabled during development
+            flash('The contact form is temporarily disabled. Please use the email address provided on this page to reach us directly.', 'info')
+            return redirect(url_for('contact'))
             
-            # Basic validation
-            if not name or not email or not subject or not message:
-                flash('All fields are required.', 'error')
+            # Email sending functionality is temporarily disabled
+            # Change the condition below from False to True to re-enable the contact form
+            if False:  # Set to True to re-enable email sending
+                name = request.form.get('name', '').strip()
+                email = request.form.get('email', '').strip()
+                subject = request.form.get('subject', '').strip()
+                message = request.form.get('message', '').strip()
+                
+                # Basic validation
+                if not name or not email or not subject or not message:
+                    flash('All fields are required.', 'error')
                 # Get active FAQ items for error case
                 faqs = FAQ.query.filter_by(is_active=True).order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
                 
@@ -704,9 +711,9 @@ def create_app():
                                      homepage_chatbot=homepage_chatbot,
                                      homepage_chatbot_title=homepage_chatbot_title,
                                      homepage_chatbot_placeholder=homepage_chatbot_placeholder)
-            
-            # Email validation
-            if '@' not in email or '.' not in email:
+                
+                # Email validation
+                if '@' not in email or '.' not in email:
                 flash('Please enter a valid email address.', 'error')
                 # Get active FAQ items for error case
                 faqs = FAQ.query.filter_by(is_active=True).order_by(FAQ.order.asc(), FAQ.created_at.asc()).all()
@@ -730,8 +737,8 @@ def create_app():
                                      homepage_chatbot=homepage_chatbot,
                                      homepage_chatbot_title=homepage_chatbot_title,
                                      homepage_chatbot_placeholder=homepage_chatbot_placeholder)
-            
-            try:
+                
+                try:
                 # Create email content
                 email_subject = f"Contact Form: {subject}"
                 email_body = f"""
