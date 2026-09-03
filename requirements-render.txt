@@ -28,7 +28,7 @@ gunicorn>=21.0.0,<22.0.0
 python-dotenv>=1.0.0,<2.0.0
 
 # OpenAI API for chat
-openai>=1.0.0,<2.0.0
+openai>=1.40.0,<3.0.0
 
 # CORS support for embedded chatbots
 Flask-CORS>=4.0.0,<5.0.0
@@ -42,3 +42,11 @@ setuptools>=65.0.0
 
 # Stripe for payments
 stripe>=7.0.0,<8.0.0
+
+# Encryption for secrets stored in the database (Stripe keys)
+cryptography>=42.0.0,<47.0.0
+
+# Vector scoring for the training data index. Pure-Python scoring works
+# but is ~100x slower per chat message. This is a ~15MB wheel - unlike
+# sentence-transformers, which stays out of the deployment builds.
+numpy>=1.26,<3

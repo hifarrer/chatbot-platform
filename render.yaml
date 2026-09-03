@@ -2,9 +2,13 @@ services:
   - type: web
     name: chatbot-platform
     env: python
+    # Free is genuinely correct again: files live in Bunny.net Edge Storage, so
+    # this service needs no persistent disk and therefore no paid instance type.
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn run:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
+    # --threads 4 so a 2s training-status poll is never stuck behind an
+    # unrelated slow request. Training itself no longer runs in a request.
+    startCommand: gunicorn run:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
@@ -17,6 +21,39 @@ services:
           property: connectionString
       - key: OPENAI_API_KEY
         value: your-openai-api-key-here
+      # Fernet key for secrets stored in the settings table. Set this in the
+      # Render dashboard - generate with:
+      #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      - key: SETTINGS_ENCRYPTION_KEY
+        sync: false
+      # Interleave print() and logging output in true chronological order.
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: LOG_FORMAT
+        value: json
+      - key: LOG_LEVEL
+        value: INFO
+      # Per-call ceiling for one knowledge-base generation request, in seconds.
+      # Safe to raise now that training runs off the request thread.
+      - key: TRAINING_CALL_TIMEOUT
+        value: "180"
+      - key: TRAINING_MAX_CHARS
+        value: "1500000"
+      # File storage. The two access keys are secrets and are set in the
+      # dashboard, never in this file - the same treatment SETTINGS_ENCRYPTION_KEY
+      # gets. Setting some BUNNY_* vars but not all is a deliberate boot error.
+      - key: BUNNY_STORAGE_HOST
+        value: storage.bunnycdn.com
+      - key: BUNNY_PUBLIC_ZONE
+        value: owlbee-public
+      - key: BUNNY_PUBLIC_CDN_URL
+        value: ""
+      - key: BUNNY_PRIVATE_ZONE
+        value: owlbee-private
+      - key: BUNNY_PUBLIC_ACCESS_KEY
+        sync: false
+      - key: BUNNY_PRIVATE_ACCESS_KEY
+        sync: false
     autoDeploy: true
 
 databases:

@@ -27,10 +27,11 @@ def diagnose_training_system():
     # Initialize trainer
     trainer = ChatbotTrainer()
     print(f"OpenAI Client: {'Available' if trainer.openai_client else 'NOT AVAILABLE'}")
-    print(f"AI Libraries: {'Available' if trainer.model else 'NOT AVAILABLE'}")
+    print(f"Embeddings: {'Available' if trainer.embeddings.available() else 'NOT AVAILABLE'} "
+          f"({trainer.embeddings.profile.model_id})")
     
     # Check training data directory
-    training_dir = trainer.data_dir
+    training_dir = 'object storage: ' + trainer.artifact_key(0).rsplit('/', 1)[0] + '/'
     print(f"Training Data Directory: {training_dir}")
     print(f"   Directory exists: {os.path.exists(training_dir)}")
     

@@ -6,11 +6,9 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2>
         <i class="fas fa-robot me-2"></i>{{ chatbot.name }}
-        {% if chatbot.is_trained %}
-            <span class="badge bg-success ms-2">Trained</span>
-        {% else %}
-            <span class="badge bg-warning ms-2">Not Trained</span>
-        {% endif %}
+        <span id="trainingStatusBadge" class="badge ms-2 {% if active_run %}bg-info{% elif chatbot.is_trained %}bg-success{% else %}bg-warning{% endif %}">
+            {% if active_run %}Training...{% elif chatbot.is_trained %}Trained{% else %}Not Trained{% endif %}
+        </span>
     </h2>
     <div>
         <a href="{{ url_for('chatbot_analytics', chatbot_id=chatbot.id) }}" class="btn btn-primary me-2">
@@ -171,6 +169,45 @@
                                 Define your chatbot's personality and role (e.g., "You are a customer support agent...")
                             </div>
                         </div>
+                        <div class="mb-3">
+                            <label class="form-label">AI Model</label>
+                            {% if chatbot.model_alias and chatbot.model_alias not in allowed_models %}
+                            <div class="alert alert-warning py-2 mb-2">
+                                <i class="fas fa-triangle-exclamation me-1"></i>
+                                This chatbot is set to a model your current plan does not include,
+                                so it is running on
+                                <strong>{% for m in model_profiles %}{% if m.alias == effective_model_alias %}{{ m.display_name }}{% endif %}{% endfor %}</strong>
+                                instead. Upgrade your plan to restore it.
+                            </div>
+                            {% endif %}
+                            {% for m in model_profiles %}
+                            {% set locked = m.alias not in allowed_models %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="model_alias"
+                                       id="model_{{ m.alias }}{{ picker_suffix|default('') }}" value="{{ m.alias }}"
+                                       {% if locked %}disabled{% endif %}
+                                       {% if m.alias == effective_model_alias %}checked{% endif %}>
+                                <label class="form-check-label {% if locked %}text-muted{% endif %}"
+                                       for="model_{{ m.alias }}{{ picker_suffix|default('') }}">
+                                    <strong>{{ m.display_name }}</strong>
+                                    {% if locked %}
+                                    <span class="badge bg-secondary ms-1">
+                                        <i class="fas fa-lock me-1"></i>Not in your plan
+                                    </span>
+                                    {% endif %}
+                                    <small class="d-block text-muted">{{ m.blurb }}</small>
+                                </label>
+                            </div>
+                            {% endfor %}
+                            <div class="form-text">
+                                Which AI model answers this chatbot's questions. More capable models
+                                give better answers but use up your monthly token allowance faster.
+                                {% if allowed_models|length < model_profiles|length %}
+                                <a href="{{ url_for('plans') }}">Upgrade your plan</a> to unlock more.
+                                {% endif %}
+                            </div>
+                        </div>
+
                         <div class="d-flex gap-2">
                             <button type="submit" class="btn btn-success">
                                 <i class="fas fa-save me-1"></i>Save Changes
@@ -339,14 +376,35 @@
             </div>
         </div>
 
+        {% if last_run and last_run.status in ('failed', 'orphaned') and not active_run %}
+        <div class="alert alert-danger alert-dismissible fade show" id="lastTrainingFailure">
+            <h6 class="alert-heading mb-2"><i class="fas fa-exclamation-triangle me-2"></i>Last training failed</h6>
+            <p class="mb-2">{{ last_training_error }}</p>
+            <details class="mb-2">
+                <summary class="small text-muted">Technical details</summary>
+                <code class="small d-block mt-1">{{ last_run.error_code }}: {{ last_run.error_message }}</code>
+                <div class="small text-muted mt-1">Run {{ last_run.run_id }}{% if last_run.finished_at %} &middot; {{ last_run.finished_at.strftime('%Y-%m-%d %H:%M UTC') }}{% endif %}</div>
+            </details>
+            {% if documents %}
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmTraining()">
+                <i class="fas fa-redo me-1"></i>Try again
+            </button>
+            {% endif %}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endif %}
+
         <!-- Uploaded Documents -->
         <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5><i class="fas fa-file-alt me-2"></i>Training Documents ({{ documents|length }})</h5>
                 {% if documents %}
-                <button type="button" class="btn btn-success" onclick="confirmTraining()">
+                <button type="button" id="trainBtnMain" class="btn btn-success"
+                        onclick="confirmTraining()" {% if active_run %}disabled{% endif %}>
                     <i class="fas fa-brain me-2"></i>
-                    {% if chatbot.is_trained %}
+                    {% if active_run %}
+                        Training...
+                    {% elif chatbot.is_trained %}
                         Retrain Chatbot
                     {% else %}
                         Train Chatbot
@@ -567,9 +625,14 @@
                 <p>Are you sure you want to train this chatbot?</p>
                 <div class="alert alert-info">
                     <i class="fas fa-info-circle me-2"></i>
-                    <strong>Training Process:</strong> This will process all uploaded documents and create embeddings for your chatbot.
+                    <strong>Training Process:</strong> we read your documents, split them into
+                    sections, index those sections for search, and build a knowledge base
+                    using <strong>{{ effective_model_alias|capitalize }}</strong>.
                 </div>
-                <p class="text-muted">This may take a few minutes depending on the number and size of documents.</p>
+                <p class="text-muted mb-1">This may take a few minutes depending on the number and size of documents. You can close this page &mdash; training keeps running.</p>
+                {% if chatbot.is_trained %}
+                <p class="text-muted small mb-0"><i class="fas fa-shield-alt me-1"></i>If training fails, your current training stays in place and your chatbot keeps answering.</p>
+                {% endif %}
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -675,7 +738,7 @@ ChatbotEmbed.init({
     apiUrl: '${domain}/api/chat/${embedCode}',
     containerId: 'chatbot-${embedCode}',
     title: '{{ chatbot.name }}',
-    avatarUrl: '{% if chatbot.avatar_filename %}{{ domain }}{{ get_avatar_url(chatbot.avatar_filename) }}{% endif %}',
+    avatarUrl: '{% if chatbot.avatar_filename %}{{ get_avatar_embed_url(chatbot.avatar_filename) }}{% endif %}',
     greetingMessage: '{{ chatbot.greeting_message or "Hi! I'm here to help. Ask me anything!" }}',
     contactUsUrl: '{{ chatbot.contact_us_url or "" }}'
 });
@@ -732,32 +795,32 @@ function confirmTraining() {
 function startTraining() {
     const trainingBtn = document.getElementById('trainingBtn');
     const trainingBtnText = document.getElementById('trainingBtnText');
-    
+
     if (!trainingBtn || !trainingBtnText) {
         console.error('Training button elements not found');
         return;
     }
-    
+
     const trainingIcon = trainingBtn.querySelector('i');
-    
-    // Update button to show loading state
-    trainingBtn.disabled = true;
+
+    setTrainingButtonsBusy(true);
     trainingIcon.className = 'fas fa-spinner fa-spin me-2';
     trainingBtnText.textContent = 'Training...';
     trainingBtn.classList.remove('btn-success');
     trainingBtn.classList.add('btn-warning');
-    
-    // Add pulsing effect to button
     trainingBtn.style.animation = 'pulse 1.5s infinite';
-    
-    // Close the modal
+
     const modal = bootstrap.Modal.getInstance(document.getElementById('trainingModal'));
-    modal.hide();
-    
-    // Show training progress notification
+    if (modal) modal.hide();
+
+    const failureAlert = document.getElementById('lastTrainingFailure');
+    if (failureAlert) failureAlert.remove();
+
     showTrainingProgress();
-    
-    // Send AJAX request
+
+    // The server answers immediately now - 202 when it started a run, 409 when
+    // one was already in flight (a second tab). Both cases attach to a run and
+    // poll it; the POST no longer decides whether training succeeded.
     fetch(`/train_chatbot/{{ chatbot.id }}`, {
         method: 'POST',
         headers: {
@@ -765,69 +828,150 @@ function startTraining() {
             'X-Requested-With': 'XMLHttpRequest'
         }
     })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data && data.success) {
-            // Hide progress indicator
-            hideTrainingProgress();
-            
-            // Training successful
-            trainingBtn.disabled = false;
-            trainingIcon.className = 'fas fa-check me-2';
-            trainingBtnText.textContent = 'Training Complete!';
-            trainingBtn.classList.remove('btn-warning');
-            trainingBtn.classList.add('btn-success');
-            
-            // Update chatbot status in UI
-            updateChatbotStatus(true);
-            
-            // Update all document status badges to "Processed"
-            updateDocumentStatus();
-            
-            // Show success message
-            showTrainingSuccess();
-            
-            // Reset button after 3 seconds
-            setTimeout(() => {
-                trainingIcon.className = 'fas fa-brain me-2';
-                trainingBtnText.textContent = '{{ "Retrain Chatbot" if chatbot.is_trained else "Train Chatbot" }}';
-                trainingBtn.style.animation = ''; // Remove pulse animation
-            }, 3000);
+    .then(response => response.json().then(data => ({status: response.status, data: data})))
+    .then(({status, data}) => {
+        if (data && data.success && data.run) {
+            renderTrainingProgress(data.run);
+            beginTrainingPolling(data.run.run_id);
         } else {
-            throw new Error(data.error || 'Training failed');
+            finishTraining({
+                status: 'failed',
+                friendly_error: (data && data.error) || 'Training could not be started.',
+                error_code: (data && data.error_code) || null
+            });
         }
     })
     .catch(error => {
         console.error('Training error:', error);
-        
-        // Hide progress indicator
-        hideTrainingProgress();
-        
-        // Training failed
-        trainingBtn.disabled = false;
-        trainingIcon.className = 'fas fa-exclamation-triangle me-2';
-        trainingBtnText.textContent = 'Training Failed';
-        trainingBtn.classList.remove('btn-warning');
-        trainingBtn.classList.add('btn-danger');
-        
-        // Show error message
-        const errorMessage = error.message || 'An unexpected error occurred during training';
-        showTrainingError(errorMessage);
-        
-        // Reset button after 5 seconds
-        setTimeout(() => {
-            trainingIcon.className = 'fas fa-brain me-2';
-            trainingBtnText.textContent = '{{ "Retrain Chatbot" if chatbot.is_trained else "Train Chatbot" }}';
-            trainingBtn.classList.remove('btn-danger');
-            trainingBtn.classList.add('btn-success');
-            trainingBtn.style.animation = ''; // Remove pulse animation
-        }, 5000);
+        finishTraining({
+            status: 'failed',
+            friendly_error: 'Could not reach the server to start training. Please try again.'
+        });
     });
+}
+
+function setTrainingButtonsBusy(busy) {
+    const modalBtn = document.getElementById('trainingBtn');
+    const mainBtn = document.getElementById('trainBtnMain');
+    if (modalBtn) modalBtn.disabled = busy;
+    if (mainBtn) {
+        mainBtn.disabled = busy;
+        mainBtn.innerHTML = busy
+            ? '<i class="fas fa-spinner fa-spin me-2"></i>Training...'
+            : '<i class="fas fa-brain me-2"></i>{{ "Retrain Chatbot" if chatbot.is_trained else "Train Chatbot" }}';
+    }
+}
+
+function beginTrainingPolling(runId) {
+    stopTrainingPolling();
+    const started = Date.now();
+
+    const tick = () => {
+        fetch(`/train_chatbot/{{ chatbot.id }}/status?run_id=${encodeURIComponent(runId)}`,
+              {headers: {'X-Requested-With': 'XMLHttpRequest'}})
+            .then(r => r.json())
+            .then(data => {
+                // A transient failure to read status is not a training failure.
+                if (!data || !data.success || !data.run) {
+                    scheduleNextPoll(tick, started);
+                    return;
+                }
+                renderTrainingProgress(data.run);
+                if (data.run.terminal) {
+                    stopTrainingPolling();
+                    finishTraining(data.run);
+                    return;
+                }
+                if (Date.now() - started > 1800000) {
+                    stopTrainingPolling();
+                    showTrainingError('Training is taking unusually long. Reload this page to check on it.');
+                    return;
+                }
+                scheduleNextPoll(tick, started);
+            })
+            .catch(() => scheduleNextPoll(tick, started));
+    };
+    tick();
+}
+
+function scheduleNextPoll(tick, started) {
+    // Tight polling only while the user is likely still watching.
+    const interval = (Date.now() - started) > 60000 ? 5000 : 2000;
+    window.trainingPollTimer = setTimeout(tick, interval);
+}
+
+function stopTrainingPolling() {
+    if (window.trainingPollTimer) {
+        clearTimeout(window.trainingPollTimer);
+        window.trainingPollTimer = null;
+    }
+}
+
+function renderTrainingProgress(run) {
+    const progressBar = document.getElementById('trainingProgressBar');
+    const statusText = document.getElementById('trainingStatusText');
+    const timeElapsed = document.getElementById('trainingTimeElapsed');
+
+    if (progressBar) {
+        const pct = Math.max(0, Math.min(100, run.progress || 0));
+        progressBar.style.width = `${pct}%`;
+        progressBar.setAttribute('aria-valuenow', pct);
+    }
+    if (statusText) {
+        statusText.textContent = run.message || 'Working...';
+    }
+    if (timeElapsed) {
+        // Server-authoritative, so a mid-run page reload shows the true elapsed
+        // time rather than restarting the clock at zero.
+        const elapsed = run.elapsed_seconds || 0;
+        const minutes = Math.floor(elapsed / 60);
+        const seconds = elapsed % 60;
+        timeElapsed.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+}
+
+function finishTraining(run) {
+    const trainingBtn = document.getElementById('trainingBtn');
+    const trainingBtnText = document.getElementById('trainingBtnText');
+    const trainingIcon = trainingBtn ? trainingBtn.querySelector('i') : null;
+
+    stopTrainingPolling();
+    hideTrainingProgress();
+    setTrainingButtonsBusy(false);
+
+    if (run.status === 'succeeded') {
+        if (trainingIcon) trainingIcon.className = 'fas fa-check me-2';
+        if (trainingBtnText) trainingBtnText.textContent = 'Training Complete!';
+        if (trainingBtn) {
+            trainingBtn.classList.remove('btn-warning', 'btn-danger');
+            trainingBtn.classList.add('btn-success');
+        }
+        updateChatbotStatus(true);
+        updateDocumentStatus();
+        showTrainingSuccess();
+    } else {
+        // A failed run leaves the previous training intact, so the status badge
+        // and the document badges are deliberately left alone.
+        if (trainingIcon) trainingIcon.className = 'fas fa-exclamation-triangle me-2';
+        if (trainingBtnText) trainingBtnText.textContent = 'Training Failed';
+        if (trainingBtn) {
+            trainingBtn.classList.remove('btn-warning', 'btn-success');
+            trainingBtn.classList.add('btn-danger');
+        }
+        showTrainingError(run.friendly_error || 'Training failed.');
+    }
+
+    setTimeout(() => {
+        if (trainingIcon) trainingIcon.className = 'fas fa-brain me-2';
+        if (trainingBtnText) {
+            trainingBtnText.textContent = '{{ "Retrain Chatbot" if chatbot.is_trained else "Train Chatbot" }}';
+        }
+        if (trainingBtn) {
+            trainingBtn.classList.remove('btn-danger', 'btn-warning');
+            trainingBtn.classList.add('btn-success');
+            trainingBtn.style.animation = '';
+        }
+    }, 5000);
 }
 
 function showTrainingProgress() {
@@ -868,75 +1012,11 @@ function showTrainingProgress() {
         delay: 0 
     });
     bsToast.show();
-    
-    // Start progress animation
-    startTrainingProgressAnimation();
-}
-
-function startTrainingProgressAnimation() {
-    const progressBar = document.getElementById('trainingProgressBar');
-    const statusText = document.getElementById('trainingStatusText');
-    const timeElapsed = document.getElementById('trainingTimeElapsed');
-    
-    if (!progressBar || !statusText || !timeElapsed) return;
-    
-    let progress = 0;
-    let startTime = Date.now();
-    const statusMessages = [
-        "Initializing training...",
-        "Processing documents...",
-        "Extracting text content...",
-        "Generating knowledge base...",
-        "Creating QA patterns...",
-        "Optimizing responses...",
-        "Finalizing training...",
-        "Almost complete..."
-    ];
-    
-    const progressInterval = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - startTime) / 1000);
-        const minutes = Math.floor(elapsed / 60);
-        const seconds = elapsed % 60;
-        timeElapsed.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-        
-        // Update progress (slower at the beginning, faster toward the end)
-        if (progress < 20) {
-            progress += 0.5; // Very slow start
-        } else if (progress < 60) {
-            progress += 1; // Medium speed
-        } else if (progress < 85) {
-            progress += 0.8; // Slower near the end
-        } else {
-            progress += 0.3; // Very slow at the end
-        }
-        
-        // Don't go over 95% until training is actually complete
-        if (progress > 95) {
-            progress = 95;
-        }
-        
-        progressBar.style.width = `${progress}%`;
-        progressBar.setAttribute('aria-valuenow', progress);
-        
-        // Update status message based on progress
-        const messageIndex = Math.floor((progress / 100) * statusMessages.length);
-        if (messageIndex < statusMessages.length) {
-            statusText.textContent = statusMessages[messageIndex];
-        }
-        
-    }, 500); // Update every 500ms
-    
-    // Store interval ID so we can clear it when training completes
-    window.trainingProgressInterval = progressInterval;
 }
 
 function hideTrainingProgress() {
-    // Clear the progress animation
-    if (window.trainingProgressInterval) {
-        clearInterval(window.trainingProgressInterval);
-        window.trainingProgressInterval = null;
-    }
-    
+    stopTrainingPolling();
+        
     // Complete the progress bar to 100%
     const progressBar = document.getElementById('trainingProgressBar');
     const statusText = document.getElementById('trainingStatusText');
@@ -1026,14 +1106,15 @@ function showTrainingError(errorMessage) {
 }
 
 function updateChatbotStatus(isTrained) {
-    // Update the training status badge
-    const statusBadge = document.querySelector('.badge');
+    // Update the training status badge by id - querySelector('.badge') used to
+    // grab whichever badge came first in the document, not necessarily this one.
+    const statusBadge = document.getElementById('trainingStatusBadge');
     if (statusBadge) {
         if (isTrained) {
-            statusBadge.className = 'badge bg-success';
+            statusBadge.className = 'badge ms-2 bg-success';
             statusBadge.textContent = 'Trained & Ready';
         } else {
-            statusBadge.className = 'badge bg-warning';
+            statusBadge.className = 'badge ms-2 bg-warning';
             statusBadge.textContent = 'Not Trained';
         }
     }
@@ -1666,7 +1747,20 @@ function showTrainingData(chatbotId, chatbotName) {
                 if (data.is_knowledge_base) {
                     const kbFacts = data.training_data.kb_facts ? data.training_data.kb_facts.length : 0;
                     const qaPatterns = data.training_data.qa_patterns ? data.training_data.qa_patterns.length : 0;
-                    infoText.textContent = `${kbFacts} KB Facts, ${qaPatterns} QA Patterns`;
+                    const parts = [`${kbFacts} KB Facts`, `${qaPatterns} QA Patterns`];
+                    const index = data.training_data.index;
+                    if (index && index.count) {
+                        // Whether semantic search is available for this bot. A
+                        // knowledge base trained before the search index existed
+                        // still answers, but only on keyword matching.
+                        parts.push(`${index.count} sections indexed (${index.embedding_model})`);
+                    } else {
+                        parts.push('no search index - retrain to enable semantic search');
+                    }
+                    if (data.training_data.model_alias) {
+                        parts.push(`trained on ${data.training_data.model_alias}`);
+                    }
+                    infoText.textContent = parts.join(' · ');
                 } else {
                     const sentences = data.training_data.sentences ? data.training_data.sentences.length : 0;
                     const hasEmbeddings = data.training_data.embeddings ? 'Yes' : 'No';
@@ -1773,6 +1867,16 @@ function copyTrainingData(event) {
 }
 
 // Avatar selection for edit mode
+{% if active_run %}
+// A run was already in flight when this page was rendered. Pick it back up so
+// closing the tab and returning shows live progress rather than a stale page.
+document.addEventListener('DOMContentLoaded', function() {
+    showTrainingProgress();
+    renderTrainingProgress({{ active_run_json|safe }});
+    beginTrainingPolling('{{ active_run.run_id }}');
+});
+{% endif %}
+
 document.addEventListener('DOMContentLoaded', function() {
     // Handle predefined avatar selection in edit mode
     const editAvatarOptions = document.querySelectorAll('.edit-avatar-option');

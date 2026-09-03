@@ -1,98 +1,141 @@
-import os
-import pickle
+"""Turn a chatbot's uploaded documents into something it can answer from.
+
+Training produces one artifact per chatbot at training_data/chatbot_{id}.json:
+a structured knowledge base (facts and Q&A patterns distilled by the model) plus
+a vector index over the source text (chunks embedded with OpenAI embeddings).
+
+Two rules this module exists to enforce, both of them reactions to how it used
+to behave:
+
+1. **No silent success.** Training either writes a complete artifact or raises
+   TrainingError. It used to swallow every exception, fall through to a
+   sentence-splitting "legacy" mode that stored `"embeddings": null`, and let the
+   caller report "Chatbot trained successfully!". Every historical bug report
+   about a chatbot that "forgot everything" is that fallback.
+2. **Never destroy working training.** The artifact is replaced atomically, and
+   only after the whole pipeline has succeeded. A failed retrain leaves the
+   previous one byte-identical and still answering.
+
+The legacy sentence format is still *read* - existing bots must keep working
+until their owner retrains - but it is never written again.
+"""
 import json
+import os
+import re
+import threading
+import time
+import uuid
+from datetime import datetime
+
 from openai import OpenAI
 
-# Optional imports for AI functionality
-try:
-    import numpy as np
-    from sentence_transformers import SentenceTransformer
-    from sklearn.metrics.pairwise import cosine_similarity
-    AI_AVAILABLE = True
-except ImportError:
-    AI_AVAILABLE = False
-    print("WARNING: AI libraries not available. Using OpenAI-only mode.")
+from services.embedding_service import EmbeddingService, get_embedding_service
+from services.model_catalog import (DEFAULT_ALIAS, apply_chat_params, extract_usage,
+                                    get_profile, EMBEDDING_PROFILE)
+from services.object_storage import (PRIVATE, StorageError, StorageNotFound,
+                                     artifact_key, chat_read_timeout, get_storage)
+from services.openai_retry import OpenAICallFailed, call_with_retry
+from services.text_chunker import batch_text, chunk_documents, group_for_map
+from services.training_errors import TrainingError
+
+# Guards, checked before any OpenAI call so an over-limit corpus costs nothing.
+MAX_TRAINING_CHARS = int(os.environ.get('TRAINING_MAX_CHARS', 1500000))
+MAX_TRAINING_CHUNKS = int(os.environ.get('TRAINING_MAX_CHUNKS', 1500))
+MIN_TRAINING_CHARS = 200
+TRAINING_CALL_TIMEOUT = float(os.environ.get('TRAINING_CALL_TIMEOUT', 180))
+
+SCHEMA_VERSION = 3
+
+# Artifacts live in object storage and are read on every chat message, so the
+# cache is not an optimization - without it each message would pull megabytes
+# over the network. The key is a *version string*, and Chatbot.last_training_run_id
+# is that string: it changes exactly when a training run succeeds, so no stat, no
+# HEAD, and no round trip is needed to know whether the cached copy is current.
+# The write-through in train_chatbot() means the first chat after a run is a hit.
+_CACHE = {}
+_CACHE_LOCK = threading.Lock()
+_CACHE_MAX_ENTRIES = 8      # a miss now costs a network round trip, not a local read
+_CACHE_MAX_BYTES = 48 * 1024 * 1024
+
+# Returned when an artifact was loaded without a known version. It can never
+# equal a real run id, so the next versioned read refreshes it.
+UNKNOWN_VERSION = '?'
+
+_trainer = None
+_trainer_lock = threading.Lock()
+
+
+def artifact_version(chatbot):
+    """The cache version for a chatbot's artifact.
+
+    last_training_run_id changes precisely when a run succeeds, so it is a free
+    ETag - the chat path already has the Chatbot row loaded.
+    """
+    if chatbot is None:
+        return None
+    return (getattr(chatbot, 'last_training_run_id', None)
+            or (chatbot.last_trained_at.isoformat()
+                if getattr(chatbot, 'last_trained_at', None) else None)
+            or UNKNOWN_VERSION)
+
 
 class ChatbotTrainer:
-    def __init__(self):
-        if AI_AVAILABLE:
-            try:
-                self.model = SentenceTransformer('all-MiniLM-L6-v2')
-                print("DEBUG: SentenceTransformer model loaded successfully")
-            except Exception as e:
-                print(f"DEBUG: Failed to load SentenceTransformer: {e}")
-                self.model = None
-        else:
-            print("DEBUG: AI libraries not available, using text-based search only")
-            self.model = None
-        # Use absolute path to ensure we're always looking in the right directory
-        self.data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'training_data')
-        os.makedirs(self.data_dir, exist_ok=True)
-        
-        # Initialize OpenAI client for knowledge base generation
+    def __init__(self, embedding_service=None):
         self.api_key = os.getenv('OPENAI_API_KEY')
         if self.api_key:
-            self.openai_client = OpenAI(api_key=self.api_key)
+            # max_retries=0 because services/openai_retry.py owns retrying. The
+            # SDK's default of 2 would multiply with ours into 12 real calls.
+            self.openai_client = OpenAI(api_key=self.api_key, max_retries=0, timeout=60.0)
         else:
             self.openai_client = None
-            print("WARNING: OPENAI_API_KEY not found. Knowledge base generation will not be available.")
-    
-    def generate_knowledge_base(self, text, chatbot_info=None):
-        """
-        Use OpenAI to convert raw document text into a structured JSON knowledge base.
-        
-        IMPORTANT: This method generates a knowledge base ONLY from the provided document text.
-        It does NOT use any sample data or templates - only the structure format is specified.
-        The sample_knowledge_base.json file is for reference/documentation only and is NEVER loaded or used.
-        
-        Args:
-            text (str): The document text to convert (from uploaded documents only)
-            chatbot_info (dict): Chatbot metadata (name, description)
-            
-        Returns:
-            dict: Structured knowledge base generated from the document text
-        """
-        if not self.openai_client:
-            raise ValueError("OpenAI client not initialized. Please set OPENAI_API_KEY.")
-        
-        print(f" DEBUG: Generating knowledge base from {len(text)} characters of text")
-        print(f" DEBUG: Using ONLY the provided document text - no sample data will be used")
-        
-        # Get model from settings or use default
-        try:
-            from app import Setting
-            setting = Setting.query.filter_by(key='openai_model').first()
-            model = setting.value if setting else 'gpt-4o'
-        except:
-            model = 'gpt-4o'
-        
-        print(f" DEBUG: Using OpenAI model: {model}")
-        
-        # Create the prompt for OpenAI to generate the knowledge base
+            print("WARNING: OPENAI_API_KEY not found. Training will refuse to run.")
+
+        self.embeddings = embedding_service or get_embedding_service()
+
+    def artifact_key(self, chatbot_id):
+        return artifact_key(chatbot_id)
+
+    # ------------------------------------------------------------------
+    # Knowledge-base generation
+    # ------------------------------------------------------------------
+
+    def _kb_prompt(self, text, profile, chatbot_info=None, part=None, parts=None):
         brand_name = chatbot_info.get('name', 'the business') if chatbot_info else 'the business'
         brand_desc = chatbot_info.get('description', '') if chatbot_info else ''
-        
-        # Create a simpler, more direct prompt for GPT-5 compatibility
-        if model.startswith('gpt-5'):
-            # Simplified prompt for GPT-5
-            prompt = f"""Convert this document into a structured JSON knowledge base for a chatbot.
+
+        # A batch is one slice of a larger corpus. Say so, or the model invents
+        # continuity ("as mentioned above") with text it was never shown.
+        preamble = ''
+        if parts and parts > 1:
+            preamble = (f"This is part {part} of {parts} of a larger document set. "
+                        f"Extract only what appears in THIS part. Omit sections you have "
+                        f"no information for. Do not invent continuity with other parts.\n\n")
+
+        if profile.simple_prompt:
+            return preamble + f"""Convert this document into a structured JSON knowledge base for a chatbot.
 
 Business: {brand_name}
 Description: {brand_desc}
 
-Extract ONLY information from the document below. Create a JSON with:
-- brand: business name, mission, target audience
-- business_info: products, services, pricing, specialties
-- kb_facts: structured Q&A with categories
-- qa_patterns: question variations and responses
+Extract ONLY information from the document below. Use exactly these field names:
+
+{{
+  "brand": {{"name": "", "mission": "", "target_audience": "", "location": "", "contact_info": "", "website": ""}},
+  "business_info": {{"products": [], "services": [], "pricing": "", "hours": "", "specialties": []}},
+  "routing_hints": {{"global_keywords": []}},
+  "kb_facts": [{{"id": "", "title": "", "keywords": [], "answer_short": "", "answer_long": "", "category": ""}}],
+  "qa_patterns": [{{"intent_id": "", "triggers": [], "response_inline": ""}}]
+}}
+
+"title" is the question or topic. "keywords" are search terms a user might type.
+Do not rename these fields.
 
 Document:
 {text}
 
 Return valid JSON only."""
-        else:
-            # Original detailed prompt for other models
-            prompt = f"""You are an AI assistant that converts raw document text into a structured JSON knowledge base for a chatbot.
+
+        return preamble + f"""You are an AI assistant that converts raw document text into a structured JSON knowledge base for a chatbot.
 
 The chatbot is for: {brand_name}
 Description: {brand_desc}
@@ -181,7 +224,7 @@ SPECIFIC EXTRACTION PRIORITIES:
 - Process or procedure information
 - Any URLs, links, or references
 
-REMEMBER: Use ONLY the document text below. No external information, no sample data, no examples.
+REMEMBER: Use ONLY the document text below. No external information, no sample data.
 
 Document text to convert (THIS IS THE ONLY SOURCE OF INFORMATION):
 ---BEGIN DOCUMENT TEXT---
@@ -190,343 +233,720 @@ Document text to convert (THIS IS THE ONLY SOURCE OF INFORMATION):
 
 Return ONLY the JSON structure with data extracted from the document text above. No additional explanation, no sample data."""
 
-        print(" DEBUG: Sending request to OpenAI for knowledge base generation...")
-        
-        try:
-            # Call OpenAI API
-            # Use max_completion_tokens for newer models (gpt-5, etc.) and max_tokens for older models
-            api_params = {
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": "You are an expert at converting documents into structured knowledge bases for chatbots."},
-                    {"role": "user", "content": prompt}
-                ],
-            }
-            
-            # Check if it's a newer model that requires max_completion_tokens
-            if model.startswith('gpt-5') or model.startswith('gpt-4o-mini') or model.startswith('gpt-4o-2024'):
-                api_params["max_completion_tokens"] = 4000
-            else:
-                api_params["max_tokens"] = 4000
-            
-            # Set temperature based on model capabilities
-            # gpt-5 only supports default temperature (1), others can use 0.3 for consistency
-            if model.startswith('gpt-5'):
-                # gpt-5 only supports default temperature
-                pass  # Don't set temperature parameter, use default
-            else:
-                api_params["temperature"] = 0.3  # Lower temperature for more consistent structure
-            
-            response = self.openai_client.chat.completions.create(**api_params)
-            
-            # Extract the JSON response
-            kb_json_str = response.choices[0].message.content.strip()
-            
-            # Check for empty response
-            if not kb_json_str:
-                print(f" ERROR: OpenAI returned empty response for model {model}")
-                raise ValueError(f"OpenAI model {model} returned empty response. Try using a different model.")
-            
-            # Remove markdown code blocks if present
-            if kb_json_str.startswith('```json'):
-                kb_json_str = kb_json_str[7:]
-            if kb_json_str.startswith('```'):
-                kb_json_str = kb_json_str[3:]
-            if kb_json_str.endswith('```'):
-                kb_json_str = kb_json_str[:-3]
-            kb_json_str = kb_json_str.strip()
-            
-            print(f" DEBUG: Received knowledge base JSON: {len(kb_json_str)} characters")
-            
-            # Additional debugging for GPT-5
-            if model.startswith('gpt-5') and len(kb_json_str) < 100:
-                print(f" WARNING: GPT-5 returned very short response ({len(kb_json_str)} chars)")
-                print(f" Response preview: {kb_json_str[:200]}...")
-            
-            # Parse and validate JSON
-            kb_data = json.loads(kb_json_str)
-            
-            print(f" DEBUG: Knowledge base generated successfully")
-            print(f"   - Brand: {kb_data.get('brand', {}).get('name', 'N/A')}")
-            print(f"   - KB Facts: {len(kb_data.get('kb_facts', []))}")
-            print(f"   - QA Patterns: {len(kb_data.get('qa_patterns', []))}")
-            print(f"   - Global Keywords: {len(kb_data.get('routing_hints', {}).get('global_keywords', []))}")
-            
-            return kb_data
-            
-        except json.JSONDecodeError as e:
-            print(f" ERROR: Failed to parse JSON from OpenAI response: {e}")
-            print(f" Response was: {kb_json_str[:500]}...")
-            raise ValueError(f"OpenAI returned invalid JSON: {str(e)}")
-        except Exception as e:
-            print(f" ERROR: Failed to generate knowledge base: {e}")
-            raise
-    
-    def train_chatbot(self, chatbot_id, text, use_knowledge_base=True, chatbot_info=None):
-        """
-        Train a chatbot with the provided text.
-        
-        If use_knowledge_base=True (default), uses OpenAI to convert text into structured JSON knowledge base.
-        If use_knowledge_base=False, uses the legacy sentence-based approach with embeddings.
-        """
-        print(f"DEBUG: Starting training for chatbot {chatbot_id}")
-        print(f"DEBUG: Text length: {len(text)} characters")
-        print(f"DEBUG: Use knowledge base: {use_knowledge_base}")
-        
-        if use_knowledge_base and self.openai_client:
-            # NEW APPROACH: Generate structured knowledge base using OpenAI
-            try:
-                print(" DEBUG: Using new knowledge base generation approach")
-                kb_data = self.generate_knowledge_base(text, chatbot_info)
-                
-                # Save the knowledge base
-                file_path = os.path.join(self.data_dir, f'chatbot_{chatbot_id}.json')
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump(kb_data, f, ensure_ascii=False, indent=2)
-                
-                print(f" DEBUG: Saved knowledge base to {file_path}")
-                print(f" DEBUG: Chatbot {chatbot_id} trained with knowledge base successfully")
-                return
-                
-            except Exception as e:
-                print(f" ERROR: Knowledge base generation failed: {e}")
-                print(" DEBUG: Falling back to legacy sentence-based approach")
-                # Fall through to legacy approach
-        
-        # LEGACY APPROACH: Split into sentences and generate embeddings
-        print(" DEBUG: Using legacy sentence-based training approach")
-        print(f"DEBUG: AI_AVAILABLE = {AI_AVAILABLE}")
-        print(f"DEBUG: Model available = {self.model is not None}")
-        
-        # Split text into sentences/chunks for better granular responses
-        sentences = self._split_into_sentences(text)
-        
-        # Remove empty sentences
-        sentences = [s.strip() for s in sentences if s.strip()]
-        
-        print(f" DEBUG: Split into {len(sentences)} sentences")
-        for i, sentence in enumerate(sentences[:5]):  # Show first 5 sentences
-            print(f"   {i+1}. {sentence[:100]}...")
-        
-        if not sentences:
-            raise ValueError("No content found to train the chatbot")
-        
-        # Save training data in legacy format
-        training_data = {
-            'sentences': sentences,
-            'legacy_format': True  # Mark as legacy format
+    @staticmethod
+    def _strip_json_fence(raw):
+        text = (raw or '').strip()
+        if text.startswith('```json'):
+            text = text[7:]
+        elif text.startswith('```'):
+            text = text[3:]
+        if text.endswith('```'):
+            text = text[:-3]
+        return text.strip()
+
+    def _kb_call(self, prompt, profile, *, op, usage_sink, deadline, logger, counter):
+        """One knowledge-base completion, retried, parsed, validated."""
+        api_params = {
+            "model": profile.model_id,
+            "messages": [
+                {"role": "system", "content": "You are an expert at converting documents into structured knowledge bases for chatbots."},
+                {"role": "user", "content": prompt}
+            ],
+            "timeout": TRAINING_CALL_TIMEOUT,
         }
-        
-        # Generate embeddings only if AI libraries are available
-        if AI_AVAILABLE and self.model:
-            print(" DEBUG: Generating embeddings...")
-            try:
-                embeddings = self.model.encode(sentences)
-                print(f" DEBUG: Generated embeddings shape: {embeddings.shape}")
-                training_data['embeddings'] = embeddings.tolist()
-                print(f" DEBUG: Successfully generated {len(embeddings)} embeddings")
-            except Exception as e:
-                print(f" DEBUG: Error generating embeddings: {e}")
-                print(" DEBUG: Falling back to no embeddings")
-                training_data['embeddings'] = None
-        else:
-            print(" DEBUG: Skipping embeddings generation")
-            print(f"   - AI_AVAILABLE: {AI_AVAILABLE}")
-            print(f"   - Model available: {self.model is not None}")
-            training_data['embeddings'] = None
-        
-        file_path = os.path.join(self.data_dir, f'chatbot_{chatbot_id}.json')
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(training_data, f, ensure_ascii=False, indent=2)
-        
-        print(f" DEBUG: Saved training data to {file_path}")
-        print(f" DEBUG: Chatbot {chatbot_id} trained with {len(sentences)} sentences (legacy format)")
-    
-    def _split_into_sentences(self, text):
-        """
-        Split text into sentences for better granularity
-        """
-        import re
-        
-        # First, clean up the text - replace multiple spaces and normalize line breaks
-        text = re.sub(r'\s+', ' ', text)  # Replace multiple whitespace with single space
-        text = text.replace('\n', ' ').replace('\r', ' ')  # Replace line breaks with spaces
-        
-        # Split on sentence endings, but be smarter about it
-        # Look for periods, exclamation marks, and question marks followed by whitespace or end of string
-        sentences = re.split(r'[.!?]+(?:\s+|$)', text)
-        
-        # Also try to split on double line breaks (paragraph breaks) if they exist in original
-        # But first let's work with what we have
-        
-        # Clean up sentences
-        cleaned_sentences = []
-        current_sentence = ""
-        
-        for sentence in sentences:
-            sentence = sentence.strip()
-            
-            # Skip very short fragments
-            if len(sentence) < 5:
-                continue
-            
-            # If this looks like a continuation of the previous sentence, combine them
-            if (current_sentence and 
-                not sentence[0].isupper() and 
-                not current_sentence.endswith(('.', '!', '?')) and
-                len(current_sentence) < 200):  # Don't let sentences get too long
-                current_sentence += " " + sentence
-            else:
-                # Save the previous sentence if it exists
-                if current_sentence and len(current_sentence) > 10:
-                    cleaned_sentences.append(current_sentence)
-                current_sentence = sentence
-        
-        # Don't forget the last sentence
-        if current_sentence and len(current_sentence) > 10:
-            cleaned_sentences.append(current_sentence)
-        
-        # Second pass: try to identify and merge Q&A pairs that got split
-        final_sentences = []
-        i = 0
-        while i < len(cleaned_sentences):
-            sentence = cleaned_sentences[i]
-            
-            # If this is a question and the next sentence looks like an answer
-            if (self._looks_like_question(sentence) and 
-                i + 1 < len(cleaned_sentences) and
-                not self._looks_like_question(cleaned_sentences[i + 1]) and
-                len(sentence + " " + cleaned_sentences[i + 1]) < 300):  # Reasonable length limit
-                
-                # Keep them separate but ensure the answer is complete
-                final_sentences.append(sentence)
-                
-                # Make sure the answer is complete
-                answer = cleaned_sentences[i + 1]
-                # If the answer seems cut off, try to extend it
-                if (i + 2 < len(cleaned_sentences) and 
-                    not self._looks_like_question(cleaned_sentences[i + 2]) and
-                    len(answer + " " + cleaned_sentences[i + 2]) < 400):
-                    answer += " " + cleaned_sentences[i + 2]
-                    i += 1  # Skip the next sentence since we merged it
-                
-                final_sentences.append(answer)
-                i += 2
-            else:
-                final_sentences.append(sentence)
-                i += 1
-        
-        print(f" DEBUG: Sentence splitting - Original: {len(sentences)}, Cleaned: {len(cleaned_sentences)}, Final: {len(final_sentences)}")
-        
-        return final_sentences
-    
-    def _looks_like_question(self, text):
-        """
-        Check if text looks like a question
-        """
-        text = text.strip().lower()
-        
-        question_starters = [
-            'what', 'how', 'why', 'when', 'where', 'which', 'who', 'whom',
-            'can', 'could', 'would', 'do', 'does', 'did', 'is', 'are', 
-            'was', 'were', 'will', 'should'
-        ]
-        
-        starts_with_question = any(text.startswith(starter) for starter in question_starters)
-        ends_with_question_mark = text.endswith('?')
-        
-        return starts_with_question or ends_with_question_mark
-    
-    def get_training_data(self, chatbot_id):
-        """
-        Load training data for a specific chatbot.
-        Returns either knowledge base format or legacy sentence-based format.
-        """
-        file_path = os.path.join(self.data_dir, f'chatbot_{chatbot_id}.json')
-        
-        print(f"DEBUG: Looking for training data at: {file_path}")
-        print(f"DEBUG: Data directory exists: {os.path.exists(self.data_dir)}")
-        print(f"DEBUG: Training file exists: {os.path.exists(file_path)}")
-        
-        if not os.path.exists(file_path):
-            print(f" DEBUG: Training file not found: {file_path}")
-            return None
-        
+        # The tier decides which token-budget parameter it accepts and whether a
+        # non-default temperature is allowed. Reasoning tiers spend part of their
+        # budget on reasoning tokens before emitting any JSON, which is why their
+        # training_max_tokens is much larger.
+        apply_chat_params(api_params, profile,
+                          max_tokens=profile.training_max_tokens,
+                          temperature=0.3)
+
+        response = call_with_retry(
+            lambda: self.openai_client.chat.completions.create(**api_params),
+            op=op, attempts=4, base_delay=1.0, deadline=deadline,
+            logger=logger, counter=counter)
+
+        usage = extract_usage(response)
+        if usage and usage_sink is not None:
+            usage_sink.append(usage)
+
+        raw = (response.choices[0].message.content or '').strip()
+        if not raw:
+            # Reasoning tiers can burn the whole completion budget on reasoning
+            # and return nothing. That used to look like "training succeeded".
+            raise TrainingError('kb_empty', f"{profile.display_name} returned an empty response",
+                                phase='kb_generating')
+
+        text = self._strip_json_fence(raw)
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
-            # Check if this is knowledge base format or legacy format
-            if 'kb_facts' in data or 'qa_patterns' in data:
-                print(f" DEBUG: Loaded knowledge base format")
-                print(f"   - KB Facts: {len(data.get('kb_facts', []))}")
-                print(f"   - QA Patterns: {len(data.get('qa_patterns', []))}")
-                return data
-            else:
-                # Legacy format
-                print(f" DEBUG: Loaded legacy training data: {len(data.get('sentences', []))} sentences")
-                
-                # Convert embeddings back to numpy array if available
-                embeddings_data = data.get('embeddings')
-                if embeddings_data is not None and len(embeddings_data) > 0 and AI_AVAILABLE:
-                    data['embeddings'] = np.array(embeddings_data)
-                    print(f" DEBUG: Loaded {len(embeddings_data)} embeddings")
-                else:
-                    print(f" DEBUG: No embeddings available")
-                
-                return data
-        except Exception as e:
-            print(f" DEBUG: Error loading training data: {e}")
+            data = json.loads(text)
+        except json.JSONDecodeError as error:
+            raise TrainingError('kb_invalid_json',
+                                f"model returned invalid JSON ({error}); first 200 chars: {text[:200]}",
+                                phase='kb_generating')
+        if not isinstance(data, dict):
+            raise TrainingError('kb_invalid_json',
+                                f"model returned {type(data).__name__}, expected an object",
+                                phase='kb_generating')
+        return data, usage
+
+    def generate_knowledge_base(self, chunks, chatbot_info=None, usage_sink=None,
+                                model_alias=None, progress=None, logger=None,
+                                deadline=None, counter=None):
+        """Build the knowledge base from chunked document text.
+
+        `chunks` is the chunk list from services.text_chunker (a plain string is
+        accepted and chunked here, for callers that predate the change).
+
+        The model tier comes from `model_alias` - resolved per chatbot by the
+        caller. It used to be read from the global 'openai_model' setting here,
+        which meant a customer paying for Sol still trained on whatever the admin
+        had picked platform-wide.
+        """
+        if not self.openai_client:
+            raise TrainingError('no_api_key', 'OPENAI_API_KEY is not configured',
+                                phase='kb_generating')
+
+        if isinstance(chunks, str):
+            chunks = chunk_documents([(None, chunks)])
+        chunks = list(chunks or [])
+        if not chunks:
+            raise TrainingError('no_text_extracted', 'no text to build a knowledge base from',
+                                phase='kb_generating')
+
+        profile = get_profile(model_alias or DEFAULT_ALIAS)
+        batches = group_for_map(chunks, profile.kb_map_input_tokens)
+        partials = []
+
+        for index, batch in enumerate(batches, start=1):
+            started = time.monotonic()
+            prompt = self._kb_prompt(batch_text(batch), profile, chatbot_info,
+                                     part=index, parts=len(batches))
+            partial, usage = self._kb_call(
+                prompt, profile, op='chat.kb_map', usage_sink=usage_sink,
+                deadline=deadline, logger=logger, counter=counter)
+            partial = self._normalize_kb(partial)
+            partials.append(partial)
+
+            if logger:
+                logger.event('training.kb.map', batch=index, batches=len(batches),
+                             input_tokens=sum(c.get('tokens', 0) for c in batch),
+                             output_tokens=(usage or {}).get('completion_tokens', 0),
+                             facts=len(partial.get('kb_facts') or []),
+                             ms=int((time.monotonic() - started) * 1000))
+            if progress:
+                progress('kb_generating', 70 + int(18.0 * index / max(1, len(batches))),
+                         f"Building knowledge base ({index} of {len(batches)})...")
+
+        if len(partials) == 1:
+            # Identical to the old single-shot behaviour, so nothing changes for
+            # the small corpora that make up most of the customer base.
+            merged = partials[0]
+            merged['degraded'] = False
+        else:
+            if progress:
+                progress('kb_merging', 90, 'Merging knowledge base...')
+            merged = self._merge_partials(partials, profile, usage_sink=usage_sink,
+                                          deadline=deadline, logger=logger, counter=counter)
+
+        if not (merged.get('kb_facts') or merged.get('qa_patterns')):
+            raise TrainingError('kb_empty', 'the model extracted no facts from these documents',
+                                phase='kb_generating')
+        return merged
+
+    # -- reduce ---------------------------------------------------------
+
+    @staticmethod
+    def _norm_key(value):
+        return re.sub(r'[^a-z0-9]+', ' ', str(value or '').lower()).strip()
+
+    # Field names models actually emit instead of the ones we ask for. Left as
+    # data rather than prompt-wrangling, because a knowledge base whose facts
+    # cannot be matched is indistinguishable to a user from no training at all.
+    _FACT_ALIASES = {
+        'title': ('title', 'question', 'name', 'topic', 'heading'),
+        'answer_long': ('answer_long', 'answer', 'response', 'answer_full', 'detail', 'details'),
+        'answer_short': ('answer_short', 'short_answer', 'summary', 'answer', 'response'),
+        'category': ('category', 'type', 'section'),
+        'id': ('id', 'fact_id', 'key'),
+    }
+    _PATTERN_ALIASES = {
+        'intent_id': ('intent_id', 'id', 'intent'),
+        'triggers': ('triggers', 'questions', 'variations', 'utterances', 'examples'),
+        'response_inline': ('response_inline', 'response', 'answer', 'reply'),
+        'response_ref': ('response_ref', 'ref', 'fact_id'),
+    }
+    _STOPWORDS = {'what', 'when', 'where', 'which', 'who', 'how', 'why', 'is', 'are', 'the',
+                  'a', 'an', 'do', 'does', 'did', 'can', 'your', 'you', 'our', 'we', 'of',
+                  'for', 'to', 'in', 'on', 'at', 'and', 'or', 'it', 'this', 'that', 'with'}
+
+    @classmethod
+    def _pick(cls, source, names):
+        for name in names:
+            value = source.get(name)
+            if value not in (None, '', [], {}):
+                return value
+        return None
+
+    @classmethod
+    def _normalize_kb(cls, data):
+        """Coerce a model's knowledge base into the schema retrieval expects.
+
+        query_knowledge_base() scores on title and keywords. A fact that arrives
+        as {"question": ..., "answer": ...} scores zero against every query, so
+        the bot answers "I don't have that information" while its training data
+        looks perfectly fine in the viewer.
+        """
+        facts = []
+        for index, raw in enumerate(data.get('kb_facts') or [], start=1):
+            if not isinstance(raw, dict):
+                continue
+            title = cls._pick(raw, cls._FACT_ALIASES['title'])
+            answer_long = cls._pick(raw, cls._FACT_ALIASES['answer_long'])
+            answer_short = cls._pick(raw, cls._FACT_ALIASES['answer_short'])
+            if not (title or answer_long or answer_short):
+                continue
+
+            keywords = raw.get('keywords')
+            if not isinstance(keywords, list) or not keywords:
+                # Derive them from the title so the fact is findable at all.
+                words = re.findall(r'[a-z0-9]+', str(title or '').lower())
+                keywords = [w for w in words if w not in cls._STOPWORDS and len(w) > 2]
+            fact = dict(raw)
+            fact.update({
+                'id': str(cls._pick(raw, cls._FACT_ALIASES['id']) or 'f%04d' % index),
+                'title': str(title or (answer_short or answer_long or '')[:80]),
+                'answer_long': str(answer_long or answer_short or ''),
+                'answer_short': str(answer_short or answer_long or '')[:300],
+                'category': str(cls._pick(raw, cls._FACT_ALIASES['category']) or 'General'),
+                'keywords': [str(k) for k in keywords][:20],
+            })
+            facts.append(fact)
+
+        patterns = []
+        for index, raw in enumerate(data.get('qa_patterns') or [], start=1):
+            if not isinstance(raw, dict):
+                continue
+            triggers = cls._pick(raw, cls._PATTERN_ALIASES['triggers'])
+            if isinstance(triggers, str):
+                triggers = [triggers]
+            response = cls._pick(raw, cls._PATTERN_ALIASES['response_inline'])
+            if not triggers and not response:
+                continue
+            pattern = dict(raw)
+            pattern.update({
+                'intent_id': str(cls._pick(raw, cls._PATTERN_ALIASES['intent_id']) or 'i%04d' % index),
+                'triggers': [str(t) for t in (triggers or [])][:20],
+                'response_inline': str(response or ''),
+            })
+            patterns.append(pattern)
+
+        # Every fact's title is also a usable trigger. Without this, a knowledge
+        # base with facts but no qa_patterns (common on the reasoning tiers) has
+        # nothing for exact-phrase matching to hit.
+        known = {cls._norm_key(t) for p in patterns for t in p.get('triggers', [])}
+        for fact in facts:
+            key = cls._norm_key(fact['title'])
+            if key and key not in known and fact.get('answer_long'):
+                patterns.append({
+                    'intent_id': 'i%04d' % (len(patterns) + 1),
+                    'triggers': [fact['title']],
+                    'response_inline': fact['answer_short'] or fact['answer_long'],
+                    'response_ref': fact['id'],
+                })
+                known.add(key)
+
+        normalized = dict(data)
+        normalized['kb_facts'] = facts
+        normalized['qa_patterns'] = patterns
+
+        hints = normalized.get('routing_hints')
+        if not isinstance(hints, dict):
+            hints = {}
+        if not hints.get('global_keywords'):
+            collected = []
+            for fact in facts:
+                collected.extend(fact.get('keywords') or [])
+            hints['global_keywords'] = list(dict.fromkeys(collected))[:200]
+        normalized['routing_hints'] = hints
+        return normalized
+
+    def _merge_partials(self, partials, profile, *, usage_sink, deadline, logger, counter):
+        """Merge per-batch knowledge bases.
+
+        The bulk arrays are merged deterministically in Python - sending hundreds
+        of facts back through the model just to combine them would truncate on
+        the output budget, which is the failure this whole design avoids. Only
+        the small narrative fields (brand, business_info) go through one cheap
+        model call, and even that degrades to a local merge rather than failing.
+        """
+        started = time.monotonic()
+        facts, fact_order = {}, []
+        patterns, pattern_order = {}, []
+        keywords, urls = [], {}
+        # Every original fact id that collapsed into a given merge key. Without
+        # this, a qa_pattern pointing at the *dropped* copy of a duplicated fact
+        # loses its response_ref entirely.
+        aliases = {}
+
+        for partial in partials:
+            for fact in (partial.get('kb_facts') or []):
+                if not isinstance(fact, dict):
+                    continue
+                key = self._norm_key(fact.get('title')) or self._norm_key(fact.get('id')) or str(len(facts))
+                if fact.get('id'):
+                    aliases.setdefault(key, []).append(str(fact['id']))
+                existing = facts.get(key)
+                if existing is None:
+                    facts[key] = dict(fact)
+                    fact_order.append(key)
+                    continue
+                # Same fact seen twice (chunks overlap on purpose): keep the
+                # fuller answer and union the keywords.
+                if len(str(fact.get('answer_long') or '')) > len(str(existing.get('answer_long') or '')):
+                    existing['answer_long'] = fact.get('answer_long')
+                if len(str(fact.get('answer_short') or '')) > len(str(existing.get('answer_short') or '')):
+                    existing['answer_short'] = fact.get('answer_short')
+                merged_keywords = list(existing.get('keywords') or []) + list(fact.get('keywords') or [])
+                existing['keywords'] = list(dict.fromkeys(merged_keywords))
+
+            for pattern in (partial.get('qa_patterns') or []):
+                if not isinstance(pattern, dict):
+                    continue
+                key = self._norm_key(pattern.get('intent_id')) or self._norm_key(
+                    (pattern.get('triggers') or [''])[0]) or str(len(patterns))
+                existing = patterns.get(key)
+                if existing is None:
+                    patterns[key] = dict(pattern)
+                    pattern_order.append(key)
+                    continue
+                merged_triggers = list(existing.get('triggers') or []) + list(pattern.get('triggers') or [])
+                existing['triggers'] = list(dict.fromkeys(merged_triggers))
+                if len(str(pattern.get('response_inline') or '')) > len(str(existing.get('response_inline') or '')):
+                    existing['response_inline'] = pattern.get('response_inline')
+
+            hints = partial.get('routing_hints') or {}
+            keywords.extend(hints.get('global_keywords') or [])
+            if isinstance(hints.get('urls'), dict):
+                urls.update(hints['urls'])
+
+        # Re-id, then rewrite every response_ref through the id map so the
+        # qa_pattern -> kb_fact links survive deduplication.
+        id_map = {}
+        kb_facts = []
+        for position, key in enumerate(fact_order, start=1):
+            fact = facts[key]
+            new_id = 'f%04d' % position
+            for original in aliases.get(key, []):
+                id_map[original] = new_id
+            if fact.get('id'):
+                id_map[str(fact['id'])] = new_id
+            id_map[key] = new_id
+            fact['id'] = new_id
+            kb_facts.append(fact)
+
+        qa_patterns = []
+        for position, key in enumerate(pattern_order, start=1):
+            pattern = patterns[key]
+            pattern['intent_id'] = 'i%04d' % position
+            ref = pattern.get('response_ref')
+            if ref:
+                pattern['response_ref'] = id_map.get(str(ref), id_map.get(self._norm_key(ref)))
+            qa_patterns.append(pattern)
+
+        brand, business_info, degraded = self._merge_narrative(
+            partials, profile, usage_sink=usage_sink, deadline=deadline,
+            logger=logger, counter=counter)
+
+        merged = {
+            'version': '1.0',
+            'brand': brand,
+            'business_info': business_info,
+            'routing_hints': {
+                'global_keywords': list(dict.fromkeys(keywords))[:200],
+                'urls': urls,
+            },
+            'kb_facts': kb_facts,
+            'qa_patterns': qa_patterns,
+            'degraded': degraded,
+        }
+        if logger:
+            logger.event('training.kb.reduce', partials=len(partials),
+                         facts_out=len(kb_facts), qa_out=len(qa_patterns),
+                         degraded=degraded,
+                         ms=int((time.monotonic() - started) * 1000))
+        return merged
+
+    def _merge_narrative(self, partials, profile, *, usage_sink, deadline, logger, counter):
+        """Merge brand/business_info. Returns (brand, business_info, degraded)."""
+        payload = [{'brand': p.get('brand') or {}, 'business_info': p.get('business_info') or {}}
+                   for p in partials]
+        prompt = (
+            "Merge these partial business descriptions, extracted from different parts of "
+            "one document set, into ONE deduplicated JSON object with exactly two keys: "
+            "\"brand\" and \"business_info\". Keep the same field names. Do not invent "
+            "anything that is not present. Return valid JSON only.\n\n"
+            + json.dumps(payload, ensure_ascii=False)[:60000]
+        )
+        try:
+            data, _usage = self._kb_call(prompt, profile, op='chat.kb_reduce',
+                                         usage_sink=usage_sink, deadline=deadline,
+                                         logger=logger, counter=counter)
+            brand = data.get('brand') or {}
+            business_info = data.get('business_info') or {}
+            if brand or business_info:
+                return brand, business_info, False
+        except Exception as error:
+            # Degrade rather than fail: the facts are already extracted and real,
+            # and only the brand/business_info blurb is at stake. Deliberately
+            # broad - no failure of this cosmetic step should cost a user a run
+            # whose expensive half already succeeded. This is recorded on the run
+            # row and in the log, so unlike the fallback this phase removed,
+            # nothing here claims work that did not happen.
+            if logger:
+                logger.warning('training.kb.reduce_degraded', error_type=type(error).__name__,
+                               detail=str(error)[:200])
+
+        brand = {}
+        business_info = {}
+        for partial in partials:
+            candidate = partial.get('brand') or {}
+            if not brand and candidate.get('name'):
+                brand = dict(candidate)
+            for key, value in (partial.get('business_info') or {}).items():
+                if isinstance(value, list):
+                    existing = business_info.setdefault(key, [])
+                    if isinstance(existing, list):
+                        for item in value:
+                            if item not in existing:
+                                existing.append(item)
+                elif value and not business_info.get(key):
+                    business_info[key] = value
+        return brand, business_info, True
+
+    # ------------------------------------------------------------------
+    # Training
+    # ------------------------------------------------------------------
+
+    def train_chatbot(self, chatbot_id, documents_text, *, chatbot_info=None,
+                      model_alias=None, usage_sink=None, embedding_usage_sink=None,
+                      progress=None, run_id=None, deadline=None, logger=None,
+                      counter=None):
+        """Build and persist a chatbot's artifact. Returns a summary dict.
+
+        `documents_text` is [(source_label, text), ...] - per document, so a
+        retrieved passage can name the file it came from.
+
+        Raises TrainingError on any failure, having written nothing. There is no
+        success path that skips the artifact.
+        """
+        if not self.openai_client:
+            raise TrainingError('no_api_key', 'OPENAI_API_KEY is not configured')
+
+        documents_text = [(source, text or '') for source, text in (documents_text or [])]
+
+        empty = [source for source, text in documents_text if len((text or '').strip()) == 0]
+        total_chars = sum(len(text) for _source, text in documents_text)
+        meaningful = sum(len((text or '').strip()) for _source, text in documents_text)
+
+        # Guards run before any API call, so an unusable corpus costs nothing.
+        if empty:
+            raise TrainingError('no_text_extracted',
+                                'no text could be extracted from: ' + ', '.join(empty),
+                                phase='extracting', files=', '.join(empty))
+        if meaningful < MIN_TRAINING_CHARS:
+            raise TrainingError('no_text_extracted',
+                                f'only {meaningful} characters of text were extracted',
+                                phase='extracting',
+                                files=', '.join(s or 'document' for s, _t in documents_text))
+        if total_chars > MAX_TRAINING_CHARS:
+            raise TrainingError('corpus_too_large',
+                                f'{total_chars} characters exceeds the {MAX_TRAINING_CHARS} limit',
+                                phase='extracting',
+                                chars=f'{total_chars:,}', limit=f'{MAX_TRAINING_CHARS:,}')
+
+        if progress:
+            progress('chunking', 30, 'Splitting documents into sections...')
+        chunks = chunk_documents(documents_text)
+        if not chunks:
+            raise TrainingError('no_text_extracted', 'chunking produced no sections',
+                                phase='chunking', files='the uploaded documents')
+        if len(chunks) > MAX_TRAINING_CHUNKS:
+            raise TrainingError('too_many_chunks',
+                                f'{len(chunks)} sections exceeds the {MAX_TRAINING_CHUNKS} limit',
+                                phase='chunking',
+                                chunks=f'{len(chunks):,}', limit=f'{MAX_TRAINING_CHUNKS:,}')
+        if logger:
+            logger.event('training.chunk.done', chunk_count=len(chunks),
+                         est_tokens=sum(c.get('tokens', 0) for c in chunks),
+                         avg_chunk_tokens=int(sum(c.get('tokens', 0) for c in chunks) / len(chunks)))
+
+        # Embed first: it is the cheaper half, so a quota or auth problem surfaces
+        # before we spend knowledge-base money on a run that cannot finish.
+        if progress:
+            progress('embedding', 35, f'Indexing {len(chunks)} sections...')
+
+        def embed_progress(done, total):
+            if progress:
+                progress('embedding', 35 + int(30.0 * done / max(1, total)),
+                         f'Indexing sections ({done} of {total})...')
+
+        embed_started = time.monotonic()
+        try:
+            vectors = self.embeddings.embed_documents(
+                [c['text'] for c in chunks], progress=embed_progress,
+                usage_sink=embedding_usage_sink, deadline=deadline,
+                counter=counter, logger=logger)
+        except OpenAICallFailed as error:
+            raise TrainingError(error.code, str(error), phase='embedding')
+        if logger:
+            logger.event('training.embed.done', chunk_count=len(vectors),
+                         ms=int((time.monotonic() - embed_started) * 1000))
+
+        if progress:
+            progress('kb_generating', 70, 'Building knowledge base...')
+        try:
+            kb_data = self.generate_knowledge_base(
+                chunks, chatbot_info=chatbot_info, usage_sink=usage_sink,
+                model_alias=model_alias, progress=progress, logger=logger,
+                deadline=deadline, counter=counter)
+        except OpenAICallFailed as error:
+            raise TrainingError(error.code, str(error), phase='kb_generating')
+
+        if progress:
+            progress('persisting', 95, 'Saving knowledge base...')
+
+        sources = []
+        for source, text in documents_text:
+            sources.append({
+                'filename': source,
+                'chars': len(text),
+                'chunks': sum(1 for c in chunks if c.get('source') == source),
+            })
+
+        artifact = dict(kb_data)
+        artifact.update({
+            'schema_version': SCHEMA_VERSION,
+            'generated_at': datetime.utcnow().isoformat(timespec='seconds') + 'Z',
+            'run_id': run_id,
+            'model_alias': model_alias or DEFAULT_ALIAS,
+            'sources': sources,
+        })
+        if vectors:
+            artifact['index'] = {
+                'embedding_model': EMBEDDING_PROFILE.model_id,
+                'dimensions': EMBEDDING_PROFILE.dimensions,
+                'normalized': True,
+                'count': len(vectors),
+                'chunks': [{'id': c['id'], 'source': c.get('source'), 'ord': c['ord'],
+                            'tokens': c.get('tokens'), 'text': c['text']}
+                           for c in chunks[:len(vectors)]],
+                'vectors_b64': EmbeddingService.encode_b64(vectors),
+            }
+
+        key = self.artifact_key(chatbot_id)
+        written = self._store_artifact(chatbot_id, artifact, run_id=run_id)
+        if logger:
+            logger.event('training.persist', key=key, bytes=written,
+                         facts=len(artifact.get('kb_facts') or []),
+                         qa=len(artifact.get('qa_patterns') or []),
+                         chunks=len(vectors))
+
+        return {
+            'chunk_count': len(chunks),
+            'fact_count': len(artifact.get('kb_facts') or []),
+            'qa_count': len(artifact.get('qa_patterns') or []),
+            'char_count': total_chars,
+            'bytes': written,
+            'degraded': bool(artifact.get('degraded')),
+        }
+
+    def _store_artifact(self, chatbot_id, artifact, run_id=None):
+        """Upload the artifact and prime the cache with it.
+
+        A single PUT *is* the atomic replace - no temp key and rename, which
+        would only add a second failure point and a window where two copies
+        exist. If the PUT fails, nothing is written and the previous artifact
+        remains the live one, so the bot keeps answering from the training it
+        already had.
+        """
+        payload = json.dumps(artifact, ensure_ascii=False, indent=2).encode('utf-8')
+        try:
+            get_storage().put(PRIVATE, self.artifact_key(chatbot_id), payload,
+                              content_type='application/json')
+        except StorageError as error:
+            raise TrainingError(error.code, str(error), phase='persisting')
+
+        # Write-through. training_runner sets last_training_run_id to this same
+        # run_id moments later, so the cached version and the database agree by
+        # construction and the first chat after a run costs no network call.
+        self._cache_store(chatbot_id, artifact, run_id or artifact.get('run_id')
+                          or UNKNOWN_VERSION, len(payload))
+        return len(payload)
+
+    def _cache_store(self, chatbot_id, data, version, size):
+        vectors = None
+        index = data.get('index') if isinstance(data, dict) else None
+        if isinstance(index, dict) and index.get('vectors_b64'):
+            vectors = EmbeddingService.decode_b64(index['vectors_b64'],
+                                                  index.get('dimensions'))
+        with _CACHE_LOCK:
+            _CACHE[chatbot_id] = {'version': version, 'data': data, 'vectors': vectors,
+                                  'bytes': size, 'used': time.monotonic()}
+            self._evict_locked()
+        return data
+
+    # ------------------------------------------------------------------
+    # Reading training data
+    # ------------------------------------------------------------------
+
+    def get_training_data(self, chatbot_id, version=None):
+        """A chatbot's artifact, from cache when possible.
+
+        `version` is Chatbot.last_training_run_id (see artifact_version). Given
+        one, the cache hits only when it matches, so a retrained bot refreshes.
+
+        With `version=None` a cached copy is returned whatever its version, with
+        no network call and no staleness check - that is what keeps the internal
+        callers (which have only a chatbot_id) off the wire. The chat path and
+        the training-data routes pass a version, and they are the ones that must
+        never serve a previous generation.
+        """
+        with _CACHE_LOCK:
+            entry = _CACHE.get(chatbot_id)
+            if entry is not None and (version is None or entry['version'] == version):
+                entry['used'] = time.monotonic()
+                return entry['data']
+
+        try:
+            payload = get_storage().get(PRIVATE, self.artifact_key(chatbot_id),
+                                        timeout=chat_read_timeout(), attempts=1)
+        except StorageNotFound:
+            with _CACHE_LOCK:
+                _CACHE.pop(chatbot_id, None)
             return None
-    
+        except StorageError as error:
+            # A slow or unreachable store must not cost a visitor their answer:
+            # the caller falls back to answering without document context.
+            print(f" WARNING: could not fetch training data for chatbot "
+                  f"{chatbot_id}: {error}")
+            return None
+
+        try:
+            data = json.loads(payload.decode('utf-8'))
+        except Exception as error:
+            print(f" DEBUG: Error parsing training data for chatbot {chatbot_id}: {error}")
+            return None
+
+        return self._cache_store(chatbot_id, data,
+                                 version or data.get('run_id') or UNKNOWN_VERSION,
+                                 len(payload))
+
+    def prime(self, chatbot_id, version):
+        """Ensure the cache holds this chatbot's artifact at `version`.
+
+        One line on the chat path, costing nothing when the cache is warm.
+        """
+        return self.get_training_data(chatbot_id, version=version) is not None
+
+    @staticmethod
+    def _evict_locked():
+        """LRU by last access, bounded by entry count and by total bytes."""
+        while (len(_CACHE) > _CACHE_MAX_ENTRIES
+               or sum(e['bytes'] for e in _CACHE.values()) > _CACHE_MAX_BYTES):
+            if len(_CACHE) <= 1:
+                return
+            oldest = min(_CACHE.items(), key=lambda item: item[1]['used'])[0]
+            _CACHE.pop(oldest, None)
+
     def is_knowledge_base_format(self, training_data):
-        """
-        Check if training data is in knowledge base format or legacy format
-        """
+        """True for a v3 artifact or a v1 knowledge base; False for legacy sentences."""
         if not training_data:
             return False
+        if training_data.get('schema_version', 0) >= SCHEMA_VERSION:
+            return True
         return 'kb_facts' in training_data or 'qa_patterns' in training_data
-    
-    def query_knowledge_base(self, chatbot_id, user_query, top_k=3):
+
+    def has_vector_index(self, training_data):
+        index = (training_data or {}).get('index') or {}
+        return bool(index.get('vectors_b64'))
+
+    def get_vector_index(self, chatbot_id):
+        """Returns (chunks, decoded_vectors) or None."""
+        data = self.get_training_data(chatbot_id)
+        if not self.has_vector_index(data):
+            return None
+        with _CACHE_LOCK:
+            entry = _CACHE.get(chatbot_id)
+            vectors = entry['vectors'] if entry else None
+        if vectors is None:
+            return None
+        return data['index'].get('chunks') or [], vectors
+
+    def search_chunks(self, chatbot_id, query, top_k=5, usage_sink=None,
+                      min_score=0.20, logger=None):
+        """Semantic search over the chunk index. Empty list if unavailable."""
+        index = self.get_vector_index(chatbot_id)
+        if not index:
+            return []
+        chunks, vectors = index
+
+        query_vector = self.embeddings.embed_query(query, usage_sink=usage_sink,
+                                                   logger=logger)
+        if not query_vector:
+            return []  # caller still has kb_facts to answer from
+
+        scores = EmbeddingService.score(vectors, query_vector)
+        ranked = sorted(enumerate(scores), key=lambda pair: pair[1], reverse=True)
+
+        results = []
+        for position, score in ranked[:max(1, top_k)]:
+            if score < min_score or position >= len(chunks):
+                continue
+            chunk = chunks[position]
+            results.append({
+                'content': chunk.get('text', ''),
+                'similarity': float(score),
+                'index': position,
+                'source': chunk.get('source'),
+                'chunk_id': chunk.get('id'),
+            })
+        return results
+
+    def query_knowledge_base(self, chatbot_id, user_query, top_k=3, training_data=None):
+        """Keyword match over kb_facts and qa_patterns.
+
+        Kept as-is: the distilled facts are what the chat prompt is tuned for,
+        and semantic chunk search complements them rather than replacing them.
         """
-        Query the knowledge base for relevant information based on user query.
-        Returns matching facts and QA patterns.
-        """
-        training_data = self.get_training_data(chatbot_id)
-        
+        if training_data is None:
+            training_data = self.get_training_data(chatbot_id)
+
         if not training_data:
             print(" DEBUG: No training data available")
             return None
-        
+
         if not self.is_knowledge_base_format(training_data):
             print(" DEBUG: Training data is in legacy format, not knowledge base")
             return None
-        
-        print(f" DEBUG: Querying knowledge base for: '{user_query}'")
-        
-        # Extract components from knowledge base
+
         kb_facts = training_data.get('kb_facts', [])
         qa_patterns = training_data.get('qa_patterns', [])
-        global_keywords = training_data.get('routing_hints', {}).get('global_keywords', [])
-        
-        # Normalize user query
+
         query_lower = user_query.lower().strip()
         query_words = set(query_lower.split())
-        
-        # Match against QA patterns first (most specific)
+        if not query_words:
+            return None
+
         qa_matches = []
         for pattern in qa_patterns:
             intent_id = pattern.get('intent_id', '')
-            triggers = pattern.get('triggers', [])
-            
-            # Check if any trigger matches the query
-            for trigger in triggers:
-                trigger_lower = trigger.lower()
-                # Calculate match score
+            for trigger in pattern.get('triggers', []):
+                trigger_lower = str(trigger).lower()
                 trigger_words = set(trigger_lower.split())
                 word_overlap = len(query_words.intersection(trigger_words))
-                
-                # Exact phrase match gets highest score
+
                 if query_lower in trigger_lower or trigger_lower in query_lower:
                     match_score = 1.0
                 elif word_overlap >= len(query_words) * 0.6:  # 60% word overlap
@@ -535,7 +955,7 @@ Return ONLY the JSON structure with data extracted from the document text above.
                     match_score = word_overlap / max(len(query_words), len(trigger_words))
                 else:
                     continue
-                
+
                 qa_matches.append({
                     'type': 'qa_pattern',
                     'intent_id': intent_id,
@@ -545,43 +965,34 @@ Return ONLY the JSON structure with data extracted from the document text above.
                     'response_ref': pattern.get('response_ref'),
                     'data': pattern
                 })
-                print(f"   QA Pattern match: {intent_id} (score: {match_score:.3f})")
                 break  # Only count one match per pattern
-        
-        # Match against KB facts (broader knowledge)
+
         kb_matches = []
         for fact in kb_facts:
-            fact_id = fact.get('id', '')
-            title = fact.get('title', '')
-            keywords = fact.get('keywords', [])
-            
-            # Calculate match score based on keywords and title
+            title = str(fact.get('title', ''))
+            keywords = fact.get('keywords', []) or []
             match_score = 0.0
-            
-            # Check title match
+
             title_lower = title.lower()
-            if query_lower in title_lower or title_lower in query_lower:
+            if title_lower and (query_lower in title_lower or title_lower in query_lower):
                 match_score += 0.5
             else:
-                title_words = set(title_lower.split())
-                title_overlap = len(query_words.intersection(title_words))
+                title_overlap = len(query_words.intersection(set(title_lower.split())))
                 if title_overlap > 0:
                     match_score += (title_overlap / len(query_words)) * 0.3
-            
-            # Check keyword matches
+
             keyword_matches = 0
             for keyword in keywords:
-                keyword_lower = keyword.lower()
+                keyword_lower = str(keyword).lower()
                 if keyword_lower in query_lower or any(kw in keyword_lower for kw in query_words):
                     keyword_matches += 1
-            
-            if keyword_matches > 0:
+            if keyword_matches > 0 and keywords:
                 match_score += (keyword_matches / len(keywords)) * 0.5
-            
-            if match_score > 0.1:  # Only include if there's some match
+
+            if match_score > 0.1:
                 kb_matches.append({
                     'type': 'kb_fact',
-                    'fact_id': fact_id,
+                    'fact_id': fact.get('id', ''),
                     'title': title,
                     'score': match_score,
                     'answer_short': fact.get('answer_short'),
@@ -589,280 +1000,170 @@ Return ONLY the JSON structure with data extracted from the document text above.
                     'keywords': keywords,
                     'data': fact
                 })
-                print(f"   KB Fact match: {fact_id} (score: {match_score:.3f})")
-        
-        # Combine and sort all matches by score
+
         all_matches = qa_matches + kb_matches
-        all_matches.sort(key=lambda x: x['score'], reverse=True)
-        
-        # Return top k matches
-        top_matches = all_matches[:top_k]
-        
-        print(f" DEBUG: Found {len(all_matches)} total matches, returning top {len(top_matches)}")
-        
+        all_matches.sort(key=lambda match: match['score'], reverse=True)
+
         return {
-            'matches': top_matches,
+            'matches': all_matches[:top_k],
             'brand': training_data.get('brand', {}),
             'routing_hints': training_data.get('routing_hints', {})
         }
-    
-    def diagnose_training_data(self, chatbot_id):
-        """
-        Diagnose training data issues for a specific chatbot
-        """
-        print(f" DIAGNOSING TRAINING DATA FOR CHATBOT {chatbot_id}")
-        print("=" * 50)
-        
-        file_path = os.path.join(self.data_dir, f'chatbot_{chatbot_id}.json')
-        
-        if not os.path.exists(file_path):
-            print(f" Training file does not exist: {file_path}")
-            return False
-        
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
-            print(f" Training data statistics:")
-            print(f"   - Sentences: {len(data.get('sentences', []))}")
-            print(f"   - Embeddings: {data.get('embeddings') is not None}")
-            
-            if data.get('embeddings'):
-                print(f"   - Embeddings count: {len(data['embeddings'])}")
-            else:
-                print(f"   -  No embeddings found - this will cause poor search results")
-            
-            print(f" AI Library status:")
-            print(f"   - AI_AVAILABLE: {AI_AVAILABLE}")
-            print(f"   - Model loaded: {self.model is not None}")
-            
-            if not AI_AVAILABLE:
-                print(f"   -  AI libraries not available - install with: pip install sentence-transformers scikit-learn numpy")
-            
-            if not self.model:
-                print(f"   -  Model not loaded - embeddings cannot be generated")
-            
-            return True
-            
-        except Exception as e:
-            print(f" Error reading training data: {e}")
-            return False
-    
-    def delete_chatbot_data(self, chatbot_id):
-        """
-        Delete training data for a specific chatbot
-        """
-        file_path = os.path.join(self.data_dir, f'chatbot_{chatbot_id}.json')
-        
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            print(f" DEBUG: Training data for chatbot {chatbot_id} deleted")
-    
-    def find_similar_content(self, chatbot_id, query, top_k=3):
-        """
-        Find the most similar content to the user query
-        """
-        print(f" DEBUG: Searching for similar content to: '{query}'")
-        print(f" DEBUG: AI_AVAILABLE = {AI_AVAILABLE}")
-        print(f" DEBUG: Model available = {self.model is not None}")
-        
-        training_data = self.get_training_data(chatbot_id)
-        
-        if not training_data:
-            print(" DEBUG: No training data available")
+
+    def find_similar_content(self, chatbot_id, query, top_k=3, usage_sink=None,
+                             logger=None):
+        """Best available passage search for this chatbot's artifact format."""
+        data = self.get_training_data(chatbot_id)
+        if not data:
             return []
-        
-        print(f" DEBUG: Training data has {len(training_data['sentences'])} sentences")
-        
-        # Check embeddings availability
-        embeddings = training_data.get('embeddings')
-        print(f" DEBUG: Embeddings available: {embeddings is not None}")
-        if embeddings is not None:
-            print(f" DEBUG: Embeddings length: {len(embeddings)}")
-        
-        # If AI libraries are not available or no embeddings, use simple text matching
-        if not AI_AVAILABLE or embeddings is None or len(embeddings) == 0 or not self.model:
-            print(" DEBUG: Using simple text matching (no embeddings available)")
-            print(f"   - AI_AVAILABLE: {AI_AVAILABLE}")
-            print(f"   - Embeddings: {embeddings is not None}")
-            print(f"   - Model: {self.model is not None}")
-            return self._simple_text_search(training_data['sentences'], query, top_k)
-        
-        try:
-            # Encode the query
-            print(" DEBUG: Encoding query with model...")
-            query_embedding = self.model.encode([query])
-            print(f" DEBUG: Query encoded, shape: {query_embedding.shape}")
-            
-            # Calculate similarities
-            print(" DEBUG: Calculating cosine similarities...")
-            similarities = cosine_similarity(query_embedding, training_data['embeddings'])[0]
-            
-            print(f" DEBUG: Similarity scores - min: {similarities.min():.3f}, max: {similarities.max():.3f}, avg: {similarities.mean():.3f}")
-            
-            # Get top k most similar sentences
-            top_indices = np.argsort(similarities)[::-1][:top_k]
-            
-            results = []
-            for idx in top_indices:
-                similarity_score = similarities[idx]
-                if similarity_score > 0.1:  # Very low threshold to catch more potential matches
-                    results.append({
-                        'content': training_data['sentences'][idx],
-                        'similarity': float(similarity_score),
-                        'index': int(idx)  # Add the sentence index
-                    })
-                    print(f"   Match {len(results)}: {similarity_score:.3f} - {training_data['sentences'][idx][:100]}...")
-            
-            print(f" DEBUG: Returning {len(results)} similar content items")
-            return results
-            
-        except Exception as e:
-            print(f" DEBUG: Error in similarity search: {e}")
-            print(" DEBUG: Falling back to simple text matching")
-            return self._simple_text_search(training_data['sentences'], query, top_k)
-    
+
+        if self.has_vector_index(data):
+            return self.search_chunks(chatbot_id, query, top_k=top_k,
+                                      usage_sink=usage_sink, logger=logger)
+
+        # Legacy artifacts keep working until their owner retrains. `.get` rather
+        # than `[...]`: a v1 knowledge base has no 'sentences' key at all, which
+        # used to raise KeyError right here.
+        sentences = data.get('sentences') or []
+        if sentences:
+            return self._simple_text_search(sentences, query, top_k)
+        return self._kb_text_search(data, query, top_k)
+
+    def _kb_text_search(self, training_data, query, top_k=3):
+        """Passage search over a v1 knowledge base that has no vector index."""
+        passages = []
+        for fact in (training_data.get('kb_facts') or []):
+            body = ' '.join(str(part) for part in
+                            (fact.get('title'), fact.get('answer_short'), fact.get('answer_long'))
+                            if part)
+            if body:
+                passages.append(body)
+        for pattern in (training_data.get('qa_patterns') or []):
+            body = pattern.get('response_inline')
+            if body:
+                passages.append(str(body))
+        if not passages:
+            return []
+        return self._simple_text_search(passages, query, top_k)
+
     def get_sentence_by_index(self, chatbot_id, index):
-        """
-        Get a specific sentence by its index
-        """
+        """Legacy-format helper, still used by the no-OpenAI local chat service."""
         training_data = self.get_training_data(chatbot_id)
-        if training_data and 0 <= index < len(training_data['sentences']):
-            return training_data['sentences'][index]
+        sentences = (training_data or {}).get('sentences') or []
+        if 0 <= index < len(sentences):
+            return sentences[index]
         return None
-    
-    def get_sentences_around_index(self, chatbot_id, index, context_size=2):
-        """
-        Get sentences around a specific index for context
-        """
-        training_data = self.get_training_data(chatbot_id)
-        if not training_data:
-            return []
-        
-        sentences = training_data['sentences']
-        start_idx = max(0, index - context_size)
-        end_idx = min(len(sentences), index + context_size + 1)
-        
-        context_sentences = []
-        for i in range(start_idx, end_idx):
-            context_sentences.append({
-                'content': sentences[i],
-                'index': i,
-                'is_target': i == index
-            })
-        
-        return context_sentences 
-    
+
     def _simple_text_search(self, sentences, query, top_k=3):
-        """
-        Simple text-based search when embeddings are not available
-        """
+        """Word-overlap search, for artifacts with no vector index."""
         query_words = set(query.lower().split())
         query_lower = query.lower()
-        
+
         results = []
         for idx, sentence in enumerate(sentences):
             sentence_lower = sentence.lower()
             sentence_words = set(sentence_lower.split())
-            
-            # Calculate different types of matches
+
             word_overlap = len(query_words.intersection(sentence_words))
-            
-            # Partial word matching (for words like "platform" matching "platforms")
+
             partial_matches = 0
             for q_word in query_words:
                 for s_word in sentence_words:
                     if len(q_word) > 3 and (q_word in s_word or s_word in q_word):
                         partial_matches += 0.5
-            
-            # Substring matching
+
             substring_score = 0
             for q_word in query_words:
                 if len(q_word) > 3 and q_word in sentence_lower:
                     substring_score += 0.3
-            
-            # Calculate total score
+
             total_matches = word_overlap + partial_matches + substring_score
-            
+
             if total_matches > 0:
-                # Improved scoring that considers sentence length and match quality
                 score = total_matches / (len(query_words) + len(sentence_words) - word_overlap + 1)
-                
-                # Boost score for exact phrase matches
                 if query_lower in sentence_lower:
                     score *= 1.5
-                
                 results.append({
                     'content': sentence,
-                    'similarity': min(score, 1.0),  # Cap at 1.0
+                    'similarity': min(score, 1.0),
                     'index': idx
                 })
-                
-                print(f" DEBUG: Simple search match {idx}: score={score:.3f}, content='{sentence[:50]}...'")
-        
-        # If no matches found, try even more lenient matching
+
         if not results:
-            print(" DEBUG: No matches found, trying lenient search...")
             for idx, sentence in enumerate(sentences):
                 sentence_lower = sentence.lower()
-                
-                # Very lenient matching - any word from query in sentence
                 for q_word in query_words:
                     if len(q_word) > 2 and q_word in sentence_lower:
                         results.append({
                             'content': sentence,
-                            'similarity': 0.2,  # Low but non-zero score
+                            'similarity': 0.2,
                             'index': idx
                         })
-                        print(f" DEBUG: Lenient match {idx}: '{sentence[:50]}...'")
                         break
-        
-        # Sort by score and return top k
-        results.sort(key=lambda x: x['similarity'], reverse=True)
-        final_results = results[:top_k]
-        
-        print(f" DEBUG: Simple search returning {len(final_results)} results")
-        return final_results
-    
-    def generate_response(self, chatbot_id, user_message):
-        """
-        Generate a response for the user message using trained data
-        """
-        print(f" DEBUG: Generating response for: '{user_message}'")
-        
-        # Find similar content
-        similar_content = self.find_similar_content(chatbot_id, user_message, top_k=3)
-        
-        if not similar_content:
-            return "I'm sorry, I don't have enough information to answer that question. Please try rephrasing or ask something else."
-        
-        # Use the most similar content as the response
-        best_match = similar_content[0]
-        response = best_match['content']
-        
-        print(f" DEBUG: Best match similarity: {best_match['similarity']:.3f}")
-        print(f" DEBUG: Response: {response[:100]}...")
-        
-        # Clean up the response (remove Q: prefixes, etc.)
-        response = self._clean_response(response)
-        
-        return response
-    
-    def _clean_response(self, response):
-        """
-        Clean up the response text
-        """
-        # Remove common prefixes
-        prefixes_to_remove = ['Q:', 'A:', 'Question:', 'Answer:']
-        
-        for prefix in prefixes_to_remove:
-            if response.startswith(prefix):
-                response = response[len(prefix):].strip()
-        
-        # If it looks like a question, try to find a better answer
-        if self._looks_like_question(response):
-            # This is a question, not an answer - we should handle this better
-            # For now, just return a generic response
-            return "I found a related question in my training data, but I need more specific information to provide a proper answer."
-        
-        return response.strip()
+
+        results.sort(key=lambda item: item['similarity'], reverse=True)
+        return results[:top_k]
+
+    # ------------------------------------------------------------------
+    # Housekeeping
+    # ------------------------------------------------------------------
+
+    def delete_chatbot_data(self, chatbot_id):
+        """Best-effort removal. A failure here must not block deleting a chatbot."""
+        with _CACHE_LOCK:
+            _CACHE.pop(chatbot_id, None)
+        try:
+            return get_storage().delete(PRIVATE, self.artifact_key(chatbot_id))
+        except StorageError as error:
+            print(f" WARNING: could not delete training data for chatbot "
+                  f"{chatbot_id}: {error}")
+            return False
+
+    def describe_training_data(self, chatbot_id, version=None):
+        """Summarize an artifact for diagnostics. Never raises."""
+        key = self.artifact_key(chatbot_id)
+        summary = {'key': key, 'exists': False}
+        data = self.get_training_data(chatbot_id, version=version)
+        if not data:
+            return summary
+        summary['exists'] = True
+        index = data.get('index') or {}
+        summary.update({
+            'schema_version': data.get('schema_version', 1),
+            'is_knowledge_base': self.is_knowledge_base_format(data),
+            'model_alias': data.get('model_alias'),
+            'run_id': data.get('run_id'),
+            'generated_at': data.get('generated_at'),
+            'degraded': bool(data.get('degraded')),
+            'kb_facts': len(data.get('kb_facts') or []),
+            'qa_patterns': len(data.get('qa_patterns') or []),
+            'sentences': len(data.get('sentences') or []),
+            'indexed_chunks': index.get('count', 0),
+            'embedding_model': index.get('embedding_model'),
+        })
+        return summary
+
+    def diagnose_training_data(self, chatbot_id):
+        """Print a human-readable summary. Returns True if an artifact exists."""
+        summary = self.describe_training_data(chatbot_id)
+        print(f"TRAINING DATA FOR CHATBOT {chatbot_id}")
+        print("=" * 50)
+        for key, value in summary.items():
+            print(f"  {key}: {value}")
+        if summary.get('exists') and not summary.get('indexed_chunks'):
+            print("  NOTE: no vector index - retrain to enable semantic search.")
+        return bool(summary.get('exists'))
+
+
+def get_trainer():
+    """Process-wide trainer.
+
+    A singleton because the artifact cache lives on the module and each extra
+    instance would mean another megabytes-sized copy of the same data.
+    """
+    global _trainer
+    if _trainer is None:
+        with _trainer_lock:
+            if _trainer is None:
+                _trainer = ChatbotTrainer()
+    return _trainer

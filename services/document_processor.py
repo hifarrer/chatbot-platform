@@ -5,7 +5,7 @@ import docx
 import requests
 import re
 import csv
-from io import StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from openpyxl import load_workbook
 from urllib.parse import urljoin, urlparse
@@ -45,23 +45,68 @@ class DocumentProcessor:
         
         return text
     
-    def _process_pdf(self, file_path):
-        """Extract text from PDF file"""
-        text = ""
+    def process_bytes(self, filename, data):
+        """Same extraction, from bytes in memory rather than a path on disk.
+
+        Documents now live in object storage, and every extractor here already
+        accepts a file-like object - the only thing that ever needed a real path
+        was the extension sniff, which `filename` supplies. So there is no
+        download-to-a-temp-file step.
+
+        `process_document` is kept for the local backend and for legacy rows;
+        reading a 16MB PDF into memory when a path works is pointless.
+        """
+        file_extension = Path(filename).suffix.lower()
+        print(f" DEBUG: Processing {len(data)} bytes from {filename} ({file_extension})")
+
+        if file_extension == '.pdf':
+            text = self._process_pdf(BytesIO(data))
+        elif file_extension == '.docx':
+            text = self._process_docx(BytesIO(data))
+        elif file_extension == '.txt':
+            text = self._decode_text(data)
+        elif file_extension == '.json':
+            text = self._process_json_data(data)
+        elif file_extension == '.xlsx':
+            # read_only streaming needs a seekable source; BytesIO is one.
+            text = self._process_xlsx(BytesIO(data))
+        else:
+            raise ValueError(f"Unsupported file type: {file_extension}")
+
+        print(f" DEBUG: Extracted {len(text)} characters from {filename}")
+        return text
+
+    def _decode_text(self, data):
+        """utf-8 with a latin-1 fallback. One implementation, two entry points."""
         try:
+            text = data.decode('utf-8')
+        except UnicodeDecodeError:
+            try:
+                text = data.decode('latin-1')
+                print(f" DEBUG: text decoded with latin-1")
+            except Exception as e:
+                raise Exception(f"Error processing TXT file: {str(e)}")
+        return text.strip()
+
+    def _process_pdf(self, file_path):
+        """Extract text from a PDF path or an already-open binary stream."""
+        try:
+            if hasattr(file_path, 'read'):
+                return self._read_pdf(file_path)
             with open(file_path, 'rb') as file:
-                pdf_reader = PyPDF2.PdfReader(file)
-                print(f" DEBUG: PDF has {len(pdf_reader.pages)} pages")
-                
-                for page_num in range(len(pdf_reader.pages)):
-                    page = pdf_reader.pages[page_num]
-                    page_text = page.extract_text()
-                    text += page_text + "\n"
-                    print(f"   Page {page_num + 1}: {len(page_text)} characters")
-                    
+                return self._read_pdf(file)
         except Exception as e:
             raise Exception(f"Error processing PDF: {str(e)}")
-        
+
+    def _read_pdf(self, stream):
+        text = ""
+        pdf_reader = PyPDF2.PdfReader(stream)
+        print(f" DEBUG: PDF has {len(pdf_reader.pages)} pages")
+        for page_num in range(len(pdf_reader.pages)):
+            page = pdf_reader.pages[page_num]
+            page_text = page.extract_text()
+            text += page_text + "\n"
+            print(f"   Page {page_num + 1}: {len(page_text)} characters")
         return text.strip()
     
     def _process_docx(self, file_path):
@@ -85,35 +130,37 @@ class DocumentProcessor:
     def _process_txt(self, file_path):
         """Extract text from TXT file"""
         try:
-            with open(file_path, 'r', encoding='utf-8') as file:
-                text = file.read()
-                print(f" DEBUG: TXT file read successfully")
-        except UnicodeDecodeError:
-            # Try with different encoding if UTF-8 fails
-            try:
-                with open(file_path, 'r', encoding='latin-1') as file:
-                    text = file.read()
-                    print(f" DEBUG: TXT file read with latin-1 encoding")
-            except Exception as e:
-                raise Exception(f"Error processing TXT file: {str(e)}")
+            with open(file_path, 'rb') as file:
+                data = file.read()
         except Exception as e:
             raise Exception(f"Error processing TXT file: {str(e)}")
-        
-        return text.strip()
+        return self._decode_text(data)
     
     def _process_json(self, file_path):
         """Extract text from JSON file - intelligently flattens JSON structure into readable text"""
+        if hasattr(file_path, 'read'):
+            return self._process_json_data(file_path.read())
         try:
-            with open(file_path, 'r', encoding='utf-8') as file:
-                data = json.load(file)
-                print(f" DEBUG: JSON file loaded successfully")
-            
+            with open(file_path, 'rb') as file:
+                raw = file.read()
+        except Exception as e:
+            raise Exception(f"Error processing JSON file: {str(e)}")
+        return self._process_json_data(raw)
+
+    def _process_json_data(self, raw):
+        """Parse and flatten JSON from bytes or text. One implementation."""
+        try:
+            if isinstance(raw, bytes):
+                raw = self._decode_text(raw)
+            data = json.loads(raw)
+            print(f" DEBUG: JSON loaded successfully")
+
             # Convert JSON to readable text format
             text = self._json_to_text(data)
             print(f" DEBUG: Converted JSON to text: {len(text)} characters")
-            
+
             return text.strip()
-            
+
         except json.JSONDecodeError as e:
             raise Exception(f"Error processing JSON file: Invalid JSON format - {str(e)}")
         except Exception as e:

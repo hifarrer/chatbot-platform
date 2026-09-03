@@ -178,3 +178,19 @@ Contributors will be:
 - Given credit in the project
 
 Thank you for contributing to ChatBot Platform! 🚀 
+
+## Logging
+
+New code logs through `services.logging_setup`, not `print()`:
+
+```python
+from services.logging_setup import get_logger, RunLogger
+
+log = RunLogger(get_logger('owlbee.training'), run_id=run_id, chatbot_id=chatbot.id)
+log.event('training.started', doc_count=3)
+```
+
+Output is JSON on Render (set `LOG_FORMAT=json`) and human-readable locally.
+The existing `print()` calls are legacy and are being left alone; don't add new
+ones. Never log document text, knowledge-base content, prompts, or visitor
+messages - lengths, counts and ids only.

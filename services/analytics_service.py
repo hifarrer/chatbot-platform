@@ -19,12 +19,16 @@ class AnalyticsService:
         else:
             self.client = None
     
-    def get_conversation_analytics(self, conversations):
+    def get_conversation_analytics(self, conversations, usage_sink=None, allow_ai=True):
         """
         Generate comprehensive analytics for a chatbot's conversations
         
         Args:
             conversations: List of Conversation objects
+            usage_sink: optional list; token usage dicts are appended here
+            allow_ai: when False, skip the OpenAI keyword call and fall back to
+                the local extractor (used when the owner is over their monthly
+                token allowance)
             
         Returns:
             dict: Analytics data including stats, top questions, keywords, etc.
@@ -44,7 +48,8 @@ class AnalyticsService:
         top_questions = self._get_top_questions(user_messages)
         
         # Get keywords using AI
-        keywords = self._extract_keywords_ai(user_messages)
+        keywords = self._extract_keywords_ai(user_messages, usage_sink=usage_sink,
+                                             allow_ai=allow_ai)
         
         # Get conversation trends over time
         trends = self._get_conversation_trends(conversations)
@@ -126,11 +131,11 @@ class AnalyticsService:
         
         return top_questions
     
-    def _extract_keywords_ai(self, messages, max_keywords=20):
+    def _extract_keywords_ai(self, messages, max_keywords=20, usage_sink=None, allow_ai=True):
         """
         Extract keywords from conversations using OpenAI
         """
-        if not self.client or not messages:
+        if not self.client or not messages or not allow_ai:
             return self._extract_keywords_simple(messages, max_keywords)
         
         try:
@@ -138,8 +143,13 @@ class AnalyticsService:
             combined_text = ' '.join(messages[:100])  # Limit to first 100 messages
             
             # Use OpenAI to extract keywords
+            # Keyword extraction is a cheap, mechanical task - pin it to the
+            # cheapest tier rather than to whatever the customer bots run on.
+            from services.model_catalog import get_profile, apply_chat_params, CHEAPEST_ALIAS
+            kw_profile = get_profile(CHEAPEST_ALIAS)
+            kw_params = apply_chat_params({}, kw_profile, max_tokens=2000, temperature=0.3)
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model=kw_profile.model_id,
                 messages=[
                     {
                         "role": "system",
@@ -150,9 +160,14 @@ class AnalyticsService:
                         "content": f"Extract up to {max_keywords} keywords from these user questions. Return as JSON array with format: [{{'keyword': 'example', 'score': 85}}]. Questions:\n\n{combined_text[:3000]}"
                     }
                 ],
-                temperature=0.3,
-                max_tokens=500
+                **kw_params
             )
+            
+            if usage_sink is not None:
+                from services.model_catalog import extract_usage
+                usage = extract_usage(response)
+                if usage:
+                    usage_sink.append(usage)
             
             result = response.choices[0].message.content.strip()
             

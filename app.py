@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, send_file, session
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, send_file, session, abort, Response
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_cors import CORS
@@ -7,15 +7,39 @@ from werkzeug.utils import secure_filename
 from functools import wraps
 import os
 import json
+import logging
+import mimetypes
 import uuid
+from io import BytesIO
 import secrets
 import resend
 import re
 from datetime import datetime, timedelta
 from services.document_processor import DocumentProcessor
-from services.chatbot_trainer import ChatbotTrainer
+from services.chatbot_trainer import ChatbotTrainer, artifact_version, get_trainer
 from services.chat_service_openai import ChatServiceOpenAI
 from services.analytics_service import AnalyticsService
+from services.crypto import encrypt_secret, decrypt_secret, encryption_status
+from services import model_catalog
+from services import training_runner
+from services.logging_setup import configure_logging
+from services.object_storage import (PRIVATE, PUBLIC, StorageError, StorageNotFound,
+                                     artifact_key, avatar_key, describe_storage,
+                                     document_key, get_storage, log_storage_status)
+from services.training_errors import friendly_error
+
+# Monthly token allowance applied to the auto-created Free plan. Paid plans get
+# their allowance from the admin UI; see migrate_add_token_usage.py for the
+# values backfilled onto the seeded plans.
+FREE_PLAN_TOKEN_LIMIT = 100000
+
+# Shown to a chat visitor when the bot's owner is over their monthly allowance.
+# Deliberately says nothing about billing - the visitor is a stranger on the
+# customer's website. Admin-overridable via the 'token_limit_message' setting.
+DEFAULT_TOKEN_LIMIT_MESSAGE = (
+    "I'm taking a short break right now and can't answer new questions. "
+    "Please try again later or contact us directly."
+)
 
 # Optional Stripe dependency (guarded)
 try:
@@ -54,6 +78,7 @@ class Chatbot(db.Model):
     url_name = db.Column(db.String(100), nullable=True)  # URL-friendly name (no spaces, special chars)
     description = db.Column(db.Text)
     system_prompt = db.Column(db.Text, default="You are a helpful AI assistant. Answer questions based on the provided documents and your general knowledge.")
+    model_alias = db.Column(db.String(20), nullable=True)  # 'sol'|'terra'|'luna'; NULL = follow the global default
     embed_code = db.Column(db.String(36), unique=True, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -62,6 +87,12 @@ class Chatbot(db.Model):
     greeting_message = db.Column(db.String(500), nullable=True)  # Custom greeting message
     homepage_url = db.Column(db.String(500), nullable=True)  # Homepage URL
     contact_us_url = db.Column(db.String(500), nullable=True)  # Contact US URL
+    # Set only by a training run that actually succeeded. is_trained alone cannot
+    # answer "trained when, and by which run" - which is what turns a support
+    # report into a log lookup, and what makes the missing-artifact case (a deploy
+    # wiped training_data/) detectable instead of a surprise at chat time.
+    last_trained_at = db.Column(db.DateTime, nullable=True)
+    last_training_run_id = db.Column(db.String(36), nullable=True)
     documents = db.relationship('Document', backref='chatbot', lazy=True, cascade='all, delete-orphan')
     conversations = db.relationship('Conversation', backref='chatbot', lazy=True, cascade='all, delete-orphan')
 
@@ -69,7 +100,14 @@ class Document(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(255), nullable=False)
     original_filename = db.Column(db.String(255), nullable=False)
+    # Legacy: an OS path from before object storage. Values are a mix of
+    # absolute Windows paths, absolute Linux paths and relative ones, so a
+    # storage key is not distinguishable from them by inspection - which is why
+    # storage_key is a separate column rather than an overload of this one.
+    # No longer written; kept because it is the only recovery information for
+    # any row the migration to Bunny missed.
     file_path = db.Column(db.String(500), nullable=False)
+    storage_key = db.Column(db.String(500), nullable=True)
     chatbot_id = db.Column(db.Integer, db.ForeignKey('chatbot.id'), nullable=False)
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
     processed = db.Column(db.Boolean, default=False)
@@ -81,6 +119,12 @@ class Conversation(db.Model):
     bot_response = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     response_status = db.Column(db.String(20), default='active')  # 'active', 'resolved', 'pending'
+    # Per-request token ledger. Nullable because the local (non-OpenAI) fallback
+    # path reports no usage. Lets the TokenUsage rollup be rebuilt with a GROUP BY.
+    prompt_tokens = db.Column(db.Integer, nullable=True)
+    completion_tokens = db.Column(db.Integer, nullable=True)
+    total_tokens = db.Column(db.Integer, nullable=True)
+    model_alias = db.Column(db.String(20), nullable=True)
 
 class ChatbotUsage(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -96,6 +140,93 @@ class ChatbotUsage(db.Model):
     # Relationships
     chatbot = db.relationship('Chatbot', backref='usage_tracking')
 
+class TokenUsage(db.Model):
+    """Rolled-up token spend per (user, chatbot, month, source).
+
+    Rolled up rather than one row per request because the cap is read on every
+    single chat message - a SUM() over a per-request table would degrade exactly
+    as the product succeeds. The per-request detail lives on Conversation.
+
+    period_key is a calendar month in UTC ('YYYY-MM'), so a new month simply
+    finds no row and starts at zero. That is the whole reset mechanism: there is
+    no scheduled job that could fail and leave paying customers blocked.
+    """
+    __tablename__ = 'token_usage'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    chatbot_id = db.Column(db.Integer, db.ForeignKey('chatbot.id'), nullable=True)
+    period_key = db.Column(db.String(7), nullable=False)  # 'YYYY-MM', UTC
+    source = db.Column(db.String(20), nullable=False, default='chat')  # chat|training|analytics|embedding
+    prompt_tokens = db.Column(db.BigInteger, nullable=False, default=0)
+    completion_tokens = db.Column(db.BigInteger, nullable=False, default=0)
+    total_tokens = db.Column(db.BigInteger, nullable=False, default=0)
+    request_count = db.Column(db.Integer, nullable=False, default=0)
+    blocked_count = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'chatbot_id', 'period_key', 'source',
+                            name='uq_token_usage_period'),
+        db.Index('ix_token_usage_user_period', 'user_id', 'period_key'),
+    )
+
+class TrainingRun(db.Model):
+    """One attempt to (re)train one chatbot.
+
+    Training runs in a daemon thread, so this row - not the thread - is the
+    source of truth. A Render restart kills the thread mid-flight and the only
+    way the UI can tell "still working" from "died" is a heartbeat it outlives;
+    that is what heartbeat_at and host are for. It also means a user can close
+    the tab, come back, and still see the run.
+    """
+    __tablename__ = 'training_run'
+    id = db.Column(db.Integer, primary_key=True)
+    # uuid4 hex. Doubles as the log correlation id, so a failure a user reports
+    # maps to a log grep in one hop.
+    run_id = db.Column(db.String(36), unique=True, nullable=False)
+    chatbot_id = db.Column(db.Integer, db.ForeignKey('chatbot.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    # queued|running|succeeded|failed|orphaned|cancelled. 'orphaned' is kept
+    # distinct from 'failed' so "the server restarted" stays separable from
+    # "OpenAI rejected it" in logs and in support conversations.
+    status = db.Column(db.String(20), nullable=False, default='queued')
+    phase = db.Column(db.String(32), nullable=False, default='queued')
+    progress = db.Column(db.Integer, nullable=False, default=0)   # 0..100
+    message = db.Column(db.String(255), nullable=True)            # current step, human-readable
+
+    error_code = db.Column(db.String(40), nullable=True)          # see services/training_errors.py
+    error_message = db.Column(db.Text, nullable=True)             # raw detail, shown under <details>
+
+    model_alias = db.Column(db.String(20), nullable=True)
+    doc_count = db.Column(db.Integer, nullable=True)
+    char_count = db.Column(db.Integer, nullable=True)
+    chunk_count = db.Column(db.Integer, nullable=True)
+
+    prompt_tokens = db.Column(db.BigInteger, nullable=False, default=0)
+    completion_tokens = db.Column(db.BigInteger, nullable=False, default=0)
+    total_tokens = db.Column(db.BigInteger, nullable=False, default=0)
+    embedding_tokens = db.Column(db.BigInteger, nullable=False, default=0)
+    api_attempts = db.Column(db.Integer, nullable=False, default=0)  # incl. retries
+
+    host = db.Column(db.String(64), nullable=True)                # "hostname:pid"; the reaper keys on this
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    started_at = db.Column(db.DateTime, nullable=True)
+    finished_at = db.Column(db.DateTime, nullable=True)
+    heartbeat_at = db.Column(db.DateTime, nullable=True)
+
+    __table_args__ = (
+        db.Index('ix_training_run_chatbot', 'chatbot_id', 'created_at'),
+        db.Index('ix_training_run_status', 'status', 'heartbeat_at'),
+    )
+
+
+# A run in one of these states is over; the browser stops polling and the reaper
+# leaves it alone.
+TRAINING_TERMINAL_STATUSES = ('succeeded', 'failed', 'orphaned', 'cancelled')
+
+
 class Plan(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False)
@@ -106,6 +237,9 @@ class Plan(db.Model):
     stripe_yearly_price_id = db.Column(db.String(255))
     chatbot_limit = db.Column(db.Integer, nullable=False, default=1)
     file_size_limit_mb = db.Column(db.Integer, nullable=False, default=10)  # File size limit in MB
+    allowed_models = db.Column(db.Text)  # JSON array of model aliases, e.g. '["luna","terra"]'
+    monthly_token_limit = db.Column(db.BigInteger, nullable=True)  # NULL or <= 0 means unlimited
+    web_search_enabled = db.Column(db.Boolean, default=False)  # May bots on this plan use the web-search model
     features = db.Column(db.Text)  # JSON string of features
     is_active = db.Column(db.Boolean, default=True)
     show_contact_sales = db.Column(db.Boolean, default=False)  # Show Contact Sales button instead of Stripe checkout
@@ -192,6 +326,9 @@ def get_user_plan(user):
                     yearly_price=0.0,
                     chatbot_limit=999999,  # Effectively unlimited
                     file_size_limit_mb=999999,  # Effectively unlimited
+                    allowed_models=json.dumps(model_catalog.all_aliases()),
+                    monthly_token_limit=None,  # Unlimited
+                    web_search_enabled=True,
                     features=json.dumps(['Unlimited chatbots', 'Unlimited file uploads', 'Admin access']),
                     is_active=True
                 )
@@ -210,6 +347,9 @@ def get_user_plan(user):
                         yearly_price=0.0,
                         chatbot_limit=999999,
                         file_size_limit_mb=999999,
+                        allowed_models=json.dumps(model_catalog.all_aliases()),
+                        monthly_token_limit=None,  # Unlimited
+                        web_search_enabled=True,
                         features=json.dumps(['Unlimited chatbots', 'Unlimited file uploads', 'Admin access']),
                         is_active=True
                     )
@@ -232,12 +372,408 @@ def get_user_plan(user):
             monthly_price=0.0,
             yearly_price=0.0,
             chatbot_limit=3,
+            allowed_models=json.dumps([model_catalog.CHEAPEST_ALIAS]),
+            monthly_token_limit=FREE_PLAN_TOKEN_LIMIT,
+            web_search_enabled=False,
             features=json.dumps(['Up to 3 chatbots', 'Basic support']),
             is_active=True
         )
         db.session.add(free_plan)
         db.session.commit()
     return free_plan
+
+
+def get_allowed_models(plan):
+    """Model aliases this plan may use.
+
+    Fails closed to the cheapest tier: guessing "all" would silently hand a $0
+    plan the most expensive model and we would eat the bill, while guessing
+    "cheapest" only costs a support ticket.
+    """
+    if plan is None:
+        return [model_catalog.CHEAPEST_ALIAS]
+    if getattr(plan, 'name', None) == 'Admin':
+        return model_catalog.all_aliases()
+    try:
+        raw = json.loads(plan.allowed_models) if plan.allowed_models else []
+    except Exception:
+        raw = []
+    return model_catalog.filter_allowed(raw) or [model_catalog.CHEAPEST_ALIAS]
+
+
+def plan_allows_web_search(plan):
+    """Web search runs on a fixed, pricier model, so it is sold per plan."""
+    if plan is None:
+        return False
+    if getattr(plan, 'name', None) == 'Admin':
+        return True
+    return bool(getattr(plan, 'web_search_enabled', False))
+
+
+def resolve_model_for_chatbot(chatbot):
+    """The alias this bot should actually run on right now. Never raises.
+
+    Per-bot value wins; the global 'openai_model' setting is the fallback for
+    bots that have never picked one. If a plan change left the bot on a tier its
+    owner no longer pays for, quietly cap it at the best tier the plan does
+    allow - a billing change should not break a live widget on a customer site.
+    """
+    try:
+        alias = model_catalog.normalize_alias(
+            getattr(chatbot, 'model_alias', None)
+            or get_setting_value('openai_model', model_catalog.DEFAULT_ALIAS))
+        owner = User.query.get(chatbot.user_id)
+        if not owner:
+            return alias
+        allowed = get_allowed_models(get_user_plan(owner))
+        if alias not in allowed:
+            downgraded = model_catalog.best_allowed(allowed)
+            print(f"[INFO] chatbot {chatbot.id}: tier '{alias}' not in owner's plan, using '{downgraded}'")
+            return downgraded
+        return alias
+    except Exception as e:
+        print(f"[WARNING] model resolution failed for chatbot {getattr(chatbot, 'id', None)}: {e}")
+        return model_catalog.DEFAULT_ALIAS
+
+
+def audit_missing_training_data():
+    """Log every chatbot marked trained whose knowledge base is missing.
+
+    One listing of the training prefix rather than a lookup per chatbot: at cold
+    start those would be N network round trips, and Render's port-bind deadline
+    is real.
+    """
+    missing = []
+    try:
+        present = set()
+        for entry in get_storage().list(PRIVATE, 'training/'):
+            name = entry['name']
+            if name.startswith('chatbot_') and name.endswith('.json'):
+                try:
+                    present.add(int(name[len('chatbot_'):-len('.json')]))
+                except ValueError:
+                    continue
+        for chatbot in Chatbot.query.filter_by(is_trained=True).all():
+            if chatbot.id not in present:
+                missing.append(chatbot)
+    except Exception as error:
+        print(f"[STORAGE] Could not audit training data: {error}")
+        return []
+
+    for chatbot in missing:
+        logging.getLogger('owlbee.training').warning(
+            'training.artifact_missing',
+            extra={'owlbee': {'event': 'training.artifact_missing',
+                              'chatbot_id': chatbot.id,
+                              'chatbot_name': chatbot.name,
+                              'last_trained_at': str(chatbot.last_trained_at)}})
+    if missing:
+        print(f"[STORAGE] WARNING: {len(missing)} chatbot(s) are marked trained but have "
+              f"no knowledge base in storage. They need retraining: "
+              f"{', '.join(str(c.id) for c in missing[:20])}")
+    return missing
+
+
+def check_text_size(text, user):
+    """(data, error_message) for generated text, against the uploader's plan limit.
+
+    The Google Doc / Sheet / website importers wrote unbounded text to a local
+    disk before. Storage is billed per GB and the scraper pulls up to 50 pages,
+    so they get the same limit the file-upload path already enforces.
+    """
+    data = text.encode('utf-8')
+    try:
+        limit_mb = get_user_plan(user).file_size_limit_mb or 10
+    except Exception:
+        limit_mb = 10
+    if len(data) > limit_mb * 1024 * 1024:
+        return None, (f'The imported content is {len(data) / (1024 * 1024):.1f}MB, which '
+                      f'exceeds your plan limit of {limit_mb}MB. Import a smaller '
+                      f'document or upgrade your plan.')
+    return data, None
+
+
+def store_document_bytes(chatbot_id, filename, data, content_type=None):
+    """Upload a document and return (unique_filename, storage_key).
+
+    Raises StorageError. Callers upload BEFORE committing the row: the reverse
+    leaves rows pointing at objects that do not exist, whereas this ordering can
+    only leave an object with no row - which costs a little storage and is swept
+    by migrate_to_bunny.py --audit.
+    """
+    unique_filename = f"{uuid.uuid4()}_{secure_filename(filename)}"
+    key = document_key(chatbot_id, unique_filename)
+    get_storage().put(PRIVATE, key, data, content_type=content_type)
+    return unique_filename, key
+
+
+def app_upload_folder():
+    """Legacy local upload root, for rows that predate object storage."""
+    from flask import current_app
+    try:
+        return current_app.config.get('UPLOAD_FOLDER', 'uploads')
+    except RuntimeError:
+        return 'uploads'
+
+
+def load_document_bytes(document):
+    """The document's bytes, or None if it is genuinely gone.
+
+    Two branches: rows written since the move to object storage carry a
+    storage_key; older rows still carry a local file_path.
+    """
+    if getattr(document, 'storage_key', None):
+        try:
+            return get_storage().get(PRIVATE, document.storage_key)
+        except StorageNotFound:
+            return None
+    path = resolve_document_path(document, app_upload_folder())
+    if not path:
+        return None
+    try:
+        with open(path, 'rb') as handle:
+            return handle.read()
+    except OSError:
+        return None
+
+
+def delete_document_object(document):
+    """Best-effort delete of whatever this row points at. Never raises.
+
+    Failing a chatbot deletion because a DELETE returned 500 would strand the
+    user, so failures are logged rather than raised - with the key, so the
+    orphan is greppable and the audit sweep can find it.
+    """
+    if getattr(document, 'storage_key', None):
+        try:
+            get_storage().delete(PRIVATE, document.storage_key)
+        except StorageError as error:
+            logging.getLogger('owlbee.storage').warning(
+                'storage.delete_failed',
+                extra={'owlbee': {'event': 'storage.delete_failed',
+                                  'key': document.storage_key, 'error': str(error)}})
+        return
+    try:
+        if document.file_path and os.path.exists(document.file_path):
+            os.remove(document.file_path)
+    except Exception as error:
+        print(f"Error deleting file {document.file_path}: {error}")
+
+
+def resolve_document_path(document, upload_folder):
+    """Locate a LEGACY document on local disk, or None.
+
+    Only for rows with no storage_key - documents written before the move to
+    object storage. Stored paths are unreliable across environments: rows
+    written on Windows carry backslashes, and a deploy changes the upload root.
+    """
+    candidates = [document.file_path,
+                  os.path.join(upload_folder, document.filename),
+                  os.path.join(upload_folder,
+                               os.path.basename((document.file_path or '').replace('\\', '/')))]
+    for candidate in candidates:
+        if candidate and os.path.exists(candidate):
+            return candidate
+    return None
+
+
+def training_data_for_display(training_data, include_vectors=False):
+    """Shallow copy with the embedding vectors replaced by a summary.
+
+    A v3 artifact carries megabytes of base64 float32. The "View Training Data"
+    modal renders JSON as text, so shipping the vectors would hang the browser
+    for content no human reads.
+    """
+    if not isinstance(training_data, dict):
+        return training_data
+    index = training_data.get('index')
+    if not isinstance(index, dict) or include_vectors or 'vectors_b64' not in index:
+        return training_data
+    shown = dict(training_data)
+    shown_index = dict(index)
+    shown_index['vectors_b64'] = (f"<omitted: {index.get('count', 0)} vectors x "
+                                  f"{index.get('dimensions', 0)} dims>")
+    shown['index'] = shown_index
+    return shown
+
+
+def purge_training_runs(chatbot_id):
+    """Drop a chatbot's training runs. Call before deleting the chatbot.
+
+    They hold an FK to chatbot, so Postgres refuses the delete otherwise.
+    Cancelling first makes any in-flight worker abort at its next checkpoint
+    rather than re-inserting rows behind the delete.
+    """
+    try:
+        TrainingRun.query.filter_by(chatbot_id=chatbot_id).update(
+            {TrainingRun.status: 'cancelled'}, synchronize_session=False)
+        TrainingRun.query.filter_by(chatbot_id=chatbot_id).delete(synchronize_session=False)
+    except Exception as error:
+        print(f"Error deleting training runs for chatbot {chatbot_id}: {error}")
+
+
+def detach_token_usage(chatbot_id):
+    """Unhook a chatbot's metered spend. Call before deleting the chatbot.
+
+    token_usage holds an FK to chatbot, so Postgres refuses the delete
+    otherwise - and SQLite does not, which is why this only shows up against
+    the real database.
+
+    The rows are detached rather than deleted: chatbot_id is nullable, and
+    Postgres treats NULLs as distinct in the unique constraint, so several
+    detached rows can coexist for the same user and month. Deleting them
+    instead would let a customer zero their bill for the month by deleting the
+    chatbot that spent it.
+    """
+    try:
+        TokenUsage.query.filter_by(chatbot_id=chatbot_id).update(
+            {TokenUsage.chatbot_id: None}, synchronize_session=False)
+    except Exception as error:
+        print(f"Error detaching token usage for chatbot {chatbot_id}: {error}")
+
+
+def current_period_key():
+    """Calendar month in UTC.
+
+    Calendar month rather than the Stripe billing period because
+    UserSubscription.current_period_end is never maintained - the webhook
+    handler is a stub - so a period-derived window would be wrong for every
+    user past their first month.
+    """
+    return datetime.utcnow().strftime('%Y-%m')
+
+
+def record_token_usage(user_id, chatbot_id, usage, source='chat', blocked=False):
+    """Best-effort metering. Must never raise into the chat path."""
+    if not user_id:
+        return
+    usage = usage or {}
+    pt = int(usage.get('prompt_tokens') or 0)
+    ct = int(usage.get('completion_tokens') or 0)
+    tt = int(usage.get('total_tokens') or 0)
+    period = current_period_key()
+    try:
+        # UPDATE first, with the increment pushed into SQL, so two concurrent
+        # writers cannot lose an update the way a read-modify-write would.
+        rows = db.session.query(TokenUsage).filter_by(
+            user_id=user_id, chatbot_id=chatbot_id,
+            period_key=period, source=source
+        ).update({
+            TokenUsage.prompt_tokens: TokenUsage.prompt_tokens + pt,
+            TokenUsage.completion_tokens: TokenUsage.completion_tokens + ct,
+            TokenUsage.total_tokens: TokenUsage.total_tokens + tt,
+            TokenUsage.request_count: TokenUsage.request_count + (0 if blocked else 1),
+            TokenUsage.blocked_count: TokenUsage.blocked_count + (1 if blocked else 0),
+            TokenUsage.updated_at: datetime.utcnow(),
+        }, synchronize_session=False)
+        if rows == 0:
+            db.session.add(TokenUsage(
+                user_id=user_id, chatbot_id=chatbot_id,
+                period_key=period, source=source,
+                prompt_tokens=pt, completion_tokens=ct, total_tokens=tt,
+                request_count=0 if blocked else 1,
+                blocked_count=1 if blocked else 0))
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"[WARNING] token usage not recorded (user={user_id}): {e}")
+
+
+def get_period_usage(user_id, period_key=None):
+    """Total tokens this user has spent in the period, across all sources."""
+    period = period_key or current_period_key()
+    try:
+        total = db.session.query(
+            db.func.coalesce(db.func.sum(TokenUsage.total_tokens), 0)
+        ).filter(
+            TokenUsage.user_id == user_id,
+            TokenUsage.period_key == period,
+        ).scalar()
+        return int(total or 0)
+    except Exception as e:
+        print(f"[WARNING] could not read token usage for user {user_id}: {e}")
+        return 0
+
+
+def get_usage_summary(user, period_key=None):
+    """Everything the dashboard and admin views need about one user's spend.
+
+    Shaped like AnalyticsService: compute here, return a flat dict, hand it to
+    the template as a single kwarg.
+    """
+    period = period_key or current_period_key()
+    plan = get_user_plan(user)
+    limit = get_token_allowance(plan)
+    used = get_period_usage(user.id, period)
+
+    by_source = {}
+    blocked = 0
+    try:
+        rows = TokenUsage.query.filter_by(user_id=user.id, period_key=period).all()
+        for row in rows:
+            by_source[row.source] = by_source.get(row.source, 0) + int(row.total_tokens or 0)
+            blocked += int(row.blocked_count or 0)
+    except Exception as e:
+        print(f"[WARNING] could not summarize token usage for user {user.id}: {e}")
+
+    return {
+        'period_key': period,
+        'plan_name': getattr(plan, 'name', 'Unknown'),
+        'limit': limit,
+        'used': used,
+        'remaining': None if limit is None else max(0, limit - used),
+        'percent': None if limit is None else min(100, round(used * 100.0 / limit, 1)) if limit else 0,
+        'over_limit': limit is not None and used >= limit,
+        'by_source': by_source,
+        'blocked_count': blocked,
+    }
+
+
+def get_token_allowance(plan):
+    """Monthly token cap for a plan, or None when uncapped."""
+    limit = getattr(plan, 'monthly_token_limit', None)
+    if not limit or limit <= 0:
+        return None
+    return int(limit)
+
+
+def check_token_allowance_for_user(user):
+    """(allowed, message) for a known user. Fails OPEN on any error."""
+    try:
+        if not user:
+            return True, None
+        limit = get_token_allowance(get_user_plan(user))
+        if limit is None:
+            return True, None
+        if get_period_usage(user.id) < limit:
+            return True, None
+        return False, get_setting_value('token_limit_message', DEFAULT_TOKEN_LIMIT_MESSAGE)
+    except Exception as e:
+        print(f"[WARNING] token allowance check failed, allowing request: {e}")
+        return True, None
+
+
+def check_token_allowance(chatbot):
+    """(allowed, friendly_message) for an incoming chat request.
+
+    Unlike every other quota check in this file, the plan is resolved from the
+    bot's OWNER rather than current_user - chat visitors are anonymous, so
+    current_user.user_plan is None for them.
+
+    Fails OPEN: a bug in metering must not take down every embedded widget on
+    our customers' websites.
+    """
+    try:
+        owner = User.query.get(chatbot.user_id)
+        if not owner:
+            return True, None
+        allowed, message = check_token_allowance_for_user(owner)
+        if not allowed:
+            record_token_usage(owner.id, chatbot.id, None, source='chat', blocked=True)
+        return allowed, message
+    except Exception as e:
+        print(f"[WARNING] token allowance check failed, allowing request: {e}")
+        return True, None
 
 
 def get_site_settings():
@@ -362,6 +898,17 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def get_setting_value(key, default=None):
+    """Read a plain (non-secret) setting from the database.
+
+    Module-level twin of the get_setting() Jinja global defined inside
+    create_app() - that one is only reachable from templates, so the services
+    layer and helpers below need this one.
+    """
+    setting = Settings.query.filter_by(key=key).first()
+    return setting.value if setting else default
+
+
 def set_setting(key, value):
     """Set a setting value in the database"""
     setting = Settings.query.filter_by(key=key).first()
@@ -373,6 +920,34 @@ def set_setting(key, value):
         db.session.add(setting)
     db.session.commit()
     return setting
+
+def get_secret_setting(key, default=''):
+    """Read a setting that is stored encrypted (see services/crypto.py).
+
+    Deliberately separate from get_setting(), which is a Jinja global exposed to
+    every template - decrypting in there would let any template render a live
+    secret. Legacy plaintext values are passed through unchanged.
+    """
+    setting = Settings.query.filter_by(key=key).first()
+    if not setting or not setting.value:
+        return default
+    return decrypt_secret(setting.value)
+
+def set_secret_setting(key, value):
+    """Write a setting encrypted at rest. Raises if encryption is unavailable,
+    so a secret is never silently stored as plaintext."""
+    return set_setting(key, encrypt_secret(value))
+
+def update_secret_setting_from_form(key, submitted_value, clear_requested):
+    """Apply a write-only secret field from an admin form.
+
+    The field is never rendered back to the browser, so an empty submission
+    means "keep the stored value"; wiping it requires the explicit clear checkbox.
+    """
+    if submitted_value:
+        set_secret_setting(key, submitted_value)
+    elif clear_requested:
+        set_secret_setting(key, '')
 
 def encode_image_to_base64(file):
     """Convert uploaded file to base64 data URL"""
@@ -502,19 +1077,55 @@ def create_app():
             return []
     
     # Helper function to get avatar upload directory
-    def get_avatar_upload_dir():
-        """Returns the directory where avatars should be stored"""
-        # Use Render disk path if available (persistent storage)
-        render_disk_path = os.environ.get('RENDER_DISK_PATH', '/uploads')
-        if os.path.exists(render_disk_path) and render_disk_path != 'uploads':
-            avatar_dir = os.path.join(render_disk_path, 'avatars')
-        else:
-            # Local development: use static/uploads
-            avatar_dir = os.path.join(app.root_path, 'static', 'uploads')
-        
-        os.makedirs(avatar_dir, exist_ok=True)
-        return avatar_dir
+    AVATAR_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'svg'}
+    PREDEFINED_AVATARS = ['1.png', '2.png', '3.png', '4.png', '5.png', '6.png']
+
+    def store_avatar(avatar_file):
+        """Upload an avatar to the public zone. Returns its filename.
+
+        Raises StorageError on an upload failure, so the caller can tell the
+        user rather than saving a chatbot that points at a missing image.
+        """
+        filename = secure_filename(avatar_file.filename)
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        name_part, ext = os.path.splitext(filename)
+        avatar_filename = f"avatar_{name_part}_{timestamp}{ext}"
+        get_storage().put(PUBLIC, avatar_key(avatar_filename), avatar_file.read(),
+                          content_type=avatar_file.mimetype)
+        return avatar_filename
+
+    def delete_avatar(avatar_filename):
+        """Best-effort removal of a custom avatar. Never raises.
+
+        Predefined avatars are committed to the repo and must never be deleted.
+        """
+        if not avatar_filename or avatar_filename in PREDEFINED_AVATARS:
+            return
+        try:
+            get_storage().delete(PUBLIC, avatar_key(avatar_filename))
+        except Exception as error:
+            print(f"Error deleting avatar {avatar_filename}: {error}")
     
+    @app.template_global()
+    def get_avatar_embed_url(avatar_filename):
+        """Absolute avatar URL, for a snippet that runs on someone else's domain.
+
+        Deliberately separate from get_avatar_url(): that one is interpolated in
+        the embed template as '{{ domain }}{{ get_avatar_url(...) }}', where
+        ${domain} is JS. If it ever returned an absolute URL, every new snippet
+        would ship 'https://owlbee.comhttps://cdn...' - silently, onto customer
+        sites. So get_avatar_url() stays relative and this is the absolute one.
+        """
+        if not avatar_filename:
+            return ''
+        allowed_predefined = ['1.png', '2.png', '3.png', '4.png', '5.png', '6.png']
+        if avatar_filename in allowed_predefined:
+            return url_for('static', filename='avatars/' + avatar_filename, _external=True)
+        cdn_url = get_storage().public_url(PUBLIC, avatar_key(avatar_filename))
+        if cdn_url:
+            return cdn_url
+        return url_for('uploaded_file', filename=avatar_filename, _external=True)
+
     # Add custom Jinja2 function for avatar URL
     @app.template_global()
     def get_avatar_url(avatar_filename):
@@ -533,8 +1144,7 @@ def create_app():
     @app.template_global()
     def get_setting(key, default=None):
         """Get a setting value from the database"""
-        setting = Settings.query.filter_by(key=key).first()
-        return setting.value if setting else default
+        return get_setting_value(key, default)
     
     @app.template_global()
     def get_logo_url(site_settings):
@@ -554,20 +1164,21 @@ def create_app():
             return url_for('static', filename='uploads/' + site_settings.hero_icon_filename)
         return None
     
+    # Warn (but never fail) if settings encryption is unavailable - the app must
+    # stay up; only payments degrade. See services/crypto.py.
+    encryption_state, encryption_message = encryption_status()
+    if encryption_state != 'ok':
+        print(f"WARNING: {encryption_message} - encrypted settings unavailable, Stripe payments disabled")
+
     # Handle PostgreSQL URL for Render.com
     database_url = os.environ.get('DATABASE_URL', 'sqlite:///chatbot_platform.db')
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    # Use Render disk path if available, otherwise fallback to local uploads
-    render_disk_path = os.environ.get('RENDER_DISK_PATH', '/uploads')
-    if os.path.exists(render_disk_path):
-        app.config['UPLOAD_FOLDER'] = render_disk_path
-        print(f"Using Render disk: {render_disk_path}")
-    else:
-        app.config['UPLOAD_FOLDER'] = 'uploads'
-        print(f"WARNING: Render disk not found at {render_disk_path}, using local: uploads")
+    # Documents now live in object storage. This path is only consulted for
+    # legacy rows that still carry a file_path from before that move.
+    app.config['UPLOAD_FOLDER'] = os.environ.get('LOCAL_STORAGE_PRIVATE_DIR') or 'uploads'
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
     # Create upload directory if it doesn't exist
@@ -576,6 +1187,14 @@ def create_app():
     os.makedirs('static/js', exist_ok=True)
     os.makedirs('templates', exist_ok=True)
     os.makedirs('services', exist_ok=True)
+
+    configure_logging(app)
+
+    if database_url.startswith('sqlite'):
+        # Local dev only: the training thread and a request can now write at the
+        # same time, and SQLite's default is to fail instantly rather than wait
+        # for the writer lock.
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'connect_args': {'timeout': 30}}
 
     db.init_app(app)
     login_manager.init_app(app)
@@ -592,7 +1211,7 @@ def create_app():
     
     # Initialize services
     document_processor = DocumentProcessor()
-    chatbot_trainer = ChatbotTrainer()
+    chatbot_trainer = get_trainer()
 
     # Initialize chat service lazily to avoid startup errors
     chat_service = None
@@ -662,10 +1281,23 @@ def create_app():
             print(f"Database health check failed: {e}")
             db_status = "error"
         
+        # Where files are going is an operational fact worth checking from
+        # outside the box. Configuration only, no network call: Render polls
+        # this endpoint, and a storage blip must not mark the service unhealthy
+        # and trigger a restart loop. Live probing is behind ?deep=1.
+        try:
+            storage = describe_storage()
+            if request.args.get('deep') == '1':
+                from services.object_storage import check_storage
+                storage['probe'] = check_storage()
+        except Exception as e:
+            storage = {'error': str(e)}
+
         health_data = {
             'status': 'healthy',
             'service': 'ChatBot Platform',
             'database': db_status,
+            'storage': storage,
             'timestamp': datetime.utcnow().isoformat()
         }
         
@@ -1041,8 +1673,10 @@ Best regards,
         if not homepage_chatbot:
             homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
         
+        usage_summary = get_usage_summary(current_user)
         return render_template('dashboard.html', 
                              chatbots=chatbots,
+                             usage_summary=usage_summary,
                              user_plan=current_user.user_plan,
                              current_chatbot_count=current_chatbot_count,
                              remaining_chatbots=remaining_chatbots,
@@ -1139,6 +1773,17 @@ Best regards,
             system_prompt = request.form.get('system_prompt', '').strip()
             greeting_message = request.form.get('greeting_message', '').strip()
             
+            # The picker only offers what the plan allows, but the form is just
+            # HTML - re-check server side so a forged POST cannot buy a tier.
+            allowed_models = get_allowed_models(user_plan)
+            model_alias = (request.form.get('model_alias') or '').strip().lower()
+            if not model_alias:
+                model_alias = model_catalog.cheapest_allowed(allowed_models)
+            elif model_alias not in allowed_models:
+                flash('That AI model is not available on your current plan. '
+                      'Please upgrade your plan or choose another model.', 'error')
+                return redirect(url_for('create_chatbot'))
+            
             # Validate chatbot name
             is_valid, error_message = is_valid_chatbot_name(name)
             if not is_valid:
@@ -1184,19 +1829,12 @@ Best regards,
                     if '.' in avatar_file.filename and \
                        avatar_file.filename.rsplit('.', 1)[1].lower() in allowed_extensions:
                         
-                        # Get avatar upload directory (persistent storage on Render)
-                        upload_dir = get_avatar_upload_dir()
-                        
-                        # Generate secure filename
-                        filename = secure_filename(avatar_file.filename)
-                        # Add timestamp to avoid conflicts
-                        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-                        name_part, ext = os.path.splitext(filename)
-                        avatar_filename = f"avatar_{name_part}_{timestamp}{ext}"
-                        
-                        # Save file
-                        avatar_path = os.path.join(upload_dir, avatar_filename)
-                        avatar_file.save(avatar_path)
+                        try:
+                            avatar_filename = store_avatar(avatar_file)
+                        except StorageError as error:
+                            print(f"ERROR: avatar upload failed: {error}")
+                            flash(friendly_error(error.code), 'error')
+                            return redirect(url_for('create_chatbot'))
                     else:
                         flash('Invalid avatar file type. Please upload PNG, JPG, GIF, or SVG files.', 'error')
                         return redirect(url_for('create_chatbot'))
@@ -1209,7 +1847,8 @@ Best regards,
                 embed_code=str(uuid.uuid4()),
                 user_id=current_user.id,
                 avatar_filename=avatar_filename,
-                greeting_message=greeting_message if greeting_message else None
+                greeting_message=greeting_message if greeting_message else None,
+                model_alias=model_alias
             )
             
             db.session.add(chatbot)
@@ -1237,10 +1876,14 @@ Best regards,
         if not homepage_chatbot:
             homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
         
+        allowed_models = get_allowed_models(user_plan)
         return render_template('create_chatbot.html', 
                              user_plan=user_plan, 
                              current_chatbot_count=current_chatbot_count,
                              remaining_chatbots=remaining_chatbots,
+                             model_profiles=model_catalog.selectable_profiles(),
+                             allowed_models=allowed_models,
+                             default_model_alias=model_catalog.cheapest_allowed(allowed_models),
                              homepage_chatbot=homepage_chatbot,
                              homepage_chatbot_title=homepage_chatbot_title,
                              homepage_chatbot_placeholder=homepage_chatbot_placeholder)
@@ -1278,11 +1921,24 @@ Best regards,
         if not homepage_chatbot:
             homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
         
+        # Rendered into the page so a reload during training resumes polling
+        # instead of showing a stale "Not Trained" state.
+        active_run = training_runner.active_run_for_chatbot(chatbot.id)
+        last_run = training_runner.latest_run_for_chatbot(chatbot.id)
+        
         return render_template('chatbot_details.html', 
                              chatbot=chatbot, 
                              documents=documents, 
                              conversations=conversations,
                              usage_data=usage_data,
+                             model_profiles=model_catalog.selectable_profiles(),
+                             allowed_models=get_allowed_models(current_user.user_plan),
+                             effective_model_alias=resolve_model_for_chatbot(chatbot),
+                             active_run=active_run,
+                             active_run_json=json.dumps(training_runner.run_to_dict(active_run)),
+                             last_run=last_run,
+                             last_training_error=(friendly_error(last_run.error_code)
+                                                  if last_run and last_run.error_code else None),
                              homepage_chatbot=homepage_chatbot,
                              homepage_chatbot_title=homepage_chatbot_title,
                              homepage_chatbot_placeholder=homepage_chatbot_placeholder)
@@ -1310,11 +1966,24 @@ Best regards,
         if not homepage_chatbot:
             homepage_chatbot = Chatbot.query.filter_by(embed_code='a80eb9ae-21cb-4b87-bfa4-2b3a0ec6cafb').first()
         
+        # Rendered into the page so a reload during training resumes polling
+        # instead of showing a stale "Not Trained" state.
+        active_run = training_runner.active_run_for_chatbot(chatbot.id)
+        last_run = training_runner.latest_run_for_chatbot(chatbot.id)
+        
         return render_template('chatbot_details.html', 
                              chatbot=chatbot, 
                              documents=documents, 
                              conversations=conversations,
                              usage_data=usage_data,
+                             model_profiles=model_catalog.selectable_profiles(),
+                             allowed_models=get_allowed_models(current_user.user_plan),
+                             effective_model_alias=resolve_model_for_chatbot(chatbot),
+                             active_run=active_run,
+                             active_run_json=json.dumps(training_runner.run_to_dict(active_run)),
+                             last_run=last_run,
+                             last_training_error=(friendly_error(last_run.error_code)
+                                                  if last_run and last_run.error_code else None),
                              homepage_chatbot=homepage_chatbot,
                              homepage_chatbot_title=homepage_chatbot_title,
                              homepage_chatbot_placeholder=homepage_chatbot_placeholder)
@@ -1335,8 +2004,16 @@ Best regards,
         # Initialize analytics service
         analytics_service = AnalyticsService()
         
-        # Get analytics data
-        analytics_data = analytics_service.get_conversation_analytics(conversations)
+        # Get analytics data. Keyword extraction costs tokens, so it draws on
+        # the same allowance - once the owner is over it, fall back to the local
+        # extractor rather than failing the page.
+        analytics_allowed, _message = check_token_allowance_for_user(current_user)
+        analytics_usage = []
+        analytics_data = analytics_service.get_conversation_analytics(
+            conversations, usage_sink=analytics_usage, allow_ai=analytics_allowed)
+        
+        for usage in analytics_usage:
+            record_token_usage(chatbot.user_id, chatbot.id, usage, source='analytics')
         
         # Get homepage chatbot settings (for platform assistant)
         homepage_chatbot_id = get_setting('homepage_chatbot_id')
@@ -1369,6 +2046,15 @@ Best regards,
         homepage_url = request.form.get('homepage_url', '').strip()
         contact_us_url = request.form.get('contact_us_url', '').strip()
         
+        # Same server-side re-check as on create. An absent field means an older
+        # cached form, so leave the existing choice alone rather than clearing it.
+        model_alias = (request.form.get('model_alias') or '').strip().lower()
+        if model_alias:
+            if model_alias not in get_allowed_models(get_user_plan(current_user)):
+                flash('That AI model is not available on your current plan.', 'error')
+                return redirect(get_chatbot_url(chatbot))
+            chatbot.model_alias = model_alias
+        
         # Update fields
         chatbot.description = description if description else None
         chatbot.greeting_message = greeting_message if greeting_message else None
@@ -1387,11 +2073,7 @@ Best regards,
             allowed_predefined = ['1.png', '2.png', '3.png', '4.png', '5.png', '6.png']
             if selected_avatar in allowed_predefined:
                 # Delete old custom avatar if exists (only if it's not a predefined one)
-                if chatbot.avatar_filename and not chatbot.avatar_filename in allowed_predefined:
-                    upload_dir = get_avatar_upload_dir()
-                    old_avatar_path = os.path.join(upload_dir, chatbot.avatar_filename)
-                    if os.path.exists(old_avatar_path):
-                        os.remove(old_avatar_path)
+                delete_avatar(chatbot.avatar_filename)
                 
                 chatbot.avatar_filename = selected_avatar
             else:
@@ -1406,28 +2088,16 @@ Best regards,
                 if '.' in avatar_file.filename and \
                    avatar_file.filename.rsplit('.', 1)[1].lower() in allowed_extensions:
                     
-                    # Get avatar upload directory (persistent storage on Render)
-                    upload_dir = get_avatar_upload_dir()
-                    
-                    # Delete old avatar if exists (only if it's a custom upload, not predefined)
-                    if chatbot.avatar_filename:
-                        allowed_predefined = ['1.png', '2.png', '3.png', '4.png', '5.png', '6.png']
-                        if chatbot.avatar_filename not in allowed_predefined:
-                            old_avatar_path = os.path.join(upload_dir, chatbot.avatar_filename)
-                            if os.path.exists(old_avatar_path):
-                                os.remove(old_avatar_path)
-                    
-                    # Generate secure filename
-                    filename = secure_filename(avatar_file.filename)
-                    # Add timestamp to avoid conflicts
-                    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-                    name_part, ext = os.path.splitext(filename)
-                    avatar_filename = f"avatar_{name_part}_{timestamp}{ext}"
-                    
-                    # Save file
-                    avatar_path = os.path.join(upload_dir, avatar_filename)
-                    avatar_file.save(avatar_path)
-                    chatbot.avatar_filename = avatar_filename
+                    # Upload the new one first; only drop the old one once the
+                    # replacement is safely stored.
+                    try:
+                        new_avatar_filename = store_avatar(avatar_file)
+                    except StorageError as error:
+                        print(f"ERROR: avatar upload failed: {error}")
+                        flash(friendly_error(error.code), 'error')
+                        return redirect(get_chatbot_url(chatbot))
+                    delete_avatar(chatbot.avatar_filename)
+                    chatbot.avatar_filename = new_avatar_filename
                 else:
                     flash('Invalid avatar file type. Please upload PNG, JPG, GIF, or SVG files.', 'error')
                     return redirect(get_chatbot_url(chatbot))
@@ -1484,25 +2154,17 @@ Best regards,
             ).first()
             
             if existing_document:
-                # Delete the old file from filesystem
-                try:
-                    if os.path.exists(existing_document.file_path):
-                        os.remove(existing_document.file_path)
-                except OSError:
-                    pass  # File might already be deleted, continue
+                # Drop the previous upload; best-effort, never fatal.
+                delete_document_object(existing_document)
                 
-                # Update the existing document record
-                unique_filename = f"{uuid.uuid4()}_{filename}"
-                file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-                
+                # Update the existing document record. Upload first, commit
+                # second: the reverse would leave a row pointing at nothing.
                 try:
-                    file.save(file_path)
-                    # Verify file was actually saved
-                    if not os.path.exists(file_path):
-                        raise OSError("File save failed - file not found after save")
-                    
+                    unique_filename, key = store_document_bytes(
+                        chatbot_id, filename, file.read(), file.mimetype)
+
                     existing_document.filename = unique_filename
-                    existing_document.file_path = file_path
+                    existing_document.storage_key = key
                     existing_document.uploaded_at = datetime.utcnow()
                     existing_document.processed = False  # Mark as unprocessed so it gets retrained
                     
@@ -1529,20 +2191,16 @@ Best regards,
                     flash(error_msg)
                     return redirect(get_chatbot_url(chatbot))
             else:
-                # Create new document
-                unique_filename = f"{uuid.uuid4()}_{filename}"
-                file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-                
+                # Create new document. Upload first, commit second.
                 try:
-                    file.save(file_path)
-                    # Verify file was actually saved
-                    if not os.path.exists(file_path):
-                        raise OSError("File save failed - file not found after save")
-                    
+                    unique_filename, key = store_document_bytes(
+                        chatbot_id, filename, file.read(), file.mimetype)
+
                     document = Document(
                         filename=unique_filename,
                         original_filename=filename,
-                        file_path=file_path,
+                        file_path='',          # legacy column, no longer written
+                        storage_key=key,
                         chatbot_id=chatbot_id
                     )
                     
@@ -1608,28 +2266,20 @@ Best regards,
                 chatbot_id=chatbot_id
             ).first()
             
-            # Save the text content as a file
-            unique_filename = f"{uuid.uuid4()}_{original_filename}"
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-            
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(text)
-            
-            # Verify file was saved
-            if not os.path.exists(file_path):
-                raise OSError("Failed to save Google Doc content")
-            
+            # Store the extracted text
+            data, size_error = check_text_size(text, current_user)
+            if size_error:
+                flash(size_error, 'error')
+                return redirect(get_chatbot_url(chatbot))
+            unique_filename, key = store_document_bytes(
+                chatbot_id, original_filename, data, 'text/plain; charset=utf-8')
+
             if existing_document:
-                # Delete the old file
-                try:
-                    if os.path.exists(existing_document.file_path):
-                        os.remove(existing_document.file_path)
-                except OSError:
-                    pass
-                
+                delete_document_object(existing_document)
+
                 # Update existing document
                 existing_document.filename = unique_filename
-                existing_document.file_path = file_path
+                existing_document.storage_key = key
                 existing_document.uploaded_at = datetime.utcnow()
                 existing_document.processed = False
                 
@@ -1640,7 +2290,8 @@ Best regards,
                 document = Document(
                     filename=unique_filename,
                     original_filename=original_filename,
-                    file_path=file_path,
+                    file_path='',
+                    storage_key=key,
                     chatbot_id=chatbot_id
                 )
                 
@@ -1684,28 +2335,20 @@ Best regards,
                 chatbot_id=chatbot_id
             ).first()
             
-            # Save the text content as a file
-            unique_filename = f"{uuid.uuid4()}_{original_filename}"
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-            
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(text)
-            
-            # Verify file was saved
-            if not os.path.exists(file_path):
-                raise OSError("Failed to save Google Sheet content")
-            
+            # Store the extracted text
+            data, size_error = check_text_size(text, current_user)
+            if size_error:
+                flash(size_error, 'error')
+                return redirect(get_chatbot_url(chatbot))
+            unique_filename, key = store_document_bytes(
+                chatbot_id, original_filename, data, 'text/plain; charset=utf-8')
+
             if existing_document:
-                # Delete the old file
-                try:
-                    if os.path.exists(existing_document.file_path):
-                        os.remove(existing_document.file_path)
-                except OSError:
-                    pass
-                
+                delete_document_object(existing_document)
+
                 # Update existing document
                 existing_document.filename = unique_filename
-                existing_document.file_path = file_path
+                existing_document.storage_key = key
                 existing_document.uploaded_at = datetime.utcnow()
                 existing_document.processed = False
                 
@@ -1716,7 +2359,8 @@ Best regards,
                 document = Document(
                     filename=unique_filename,
                     original_filename=original_filename,
-                    file_path=file_path,
+                    file_path='',
+                    storage_key=key,
                     chatbot_id=chatbot_id
                 )
                 
@@ -1765,28 +2409,21 @@ Best regards,
                 Document.original_filename.like(f"WebScrape_{domain}%")
             ).first()
             
-            # Save the text content as a file
-            unique_filename = f"{uuid.uuid4()}_{original_filename}"
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-            
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(text)
-            
-            # Verify file was saved
-            if not os.path.exists(file_path):
-                raise OSError("Failed to save website content")
-            
+            # Store the scraped text. The scraper pulls up to 50 pages, so
+            # this is the one importer most likely to hit the plan limit.
+            data, size_error = check_text_size(text, current_user)
+            if size_error:
+                flash(size_error, 'error')
+                return redirect(get_chatbot_url(chatbot))
+            unique_filename, key = store_document_bytes(
+                chatbot_id, original_filename, data, 'text/plain; charset=utf-8')
+
             if existing_document:
-                # Delete the old file
-                try:
-                    if os.path.exists(existing_document.file_path):
-                        os.remove(existing_document.file_path)
-                except OSError:
-                    pass
-                
+                delete_document_object(existing_document)
+
                 # Update existing document
                 existing_document.filename = unique_filename
-                existing_document.file_path = file_path
+                existing_document.storage_key = key
                 existing_document.uploaded_at = datetime.utcnow()
                 existing_document.processed = False
                 
@@ -1797,7 +2434,8 @@ Best regards,
                 document = Document(
                     filename=unique_filename,
                     original_filename=original_filename,
-                    file_path=file_path,
+                    file_path='',
+                    storage_key=key,
                     chatbot_id=chatbot_id
                 )
                 
@@ -1823,8 +2461,7 @@ Best regards,
         
         try:
             # Delete the physical file if it exists
-            if os.path.exists(document.file_path):
-                os.remove(document.file_path)
+            delete_document_object(document)
             
             # Delete the document record from database
             db.session.delete(document)
@@ -1855,29 +2492,22 @@ Best regards,
         else:
             chatbot = Chatbot.query.filter_by(id=document.chatbot_id, user_id=current_user.id).first_or_404()
         
-        # Resolve the actual file path - handle both absolute and relative paths
-        file_path = document.file_path
-        
-        # Check if file exists as-is
-        if not os.path.exists(file_path):
-            # Try with just the filename in the upload folder
-            alt_path = os.path.join(app.config['UPLOAD_FOLDER'], document.filename)
-            if os.path.exists(alt_path):
-                file_path = alt_path
-            else:
-                # Handle cross-platform path issues (Windows backslashes on Linux)
-                # Extract just the filename from the stored path
-                filename_only = os.path.basename(file_path.replace('\\', '/'))
-                alt_path = os.path.join(app.config['UPLOAD_FOLDER'], filename_only)
-                if os.path.exists(alt_path):
-                    file_path = alt_path
-                else:
-                    flash(f'File not found on server. Please re-upload the document.')
-                    return redirect(get_chatbot_url(chatbot))
-        
+        # Proxy the bytes rather than redirecting: the private zone has no
+        # pull zone, and the object must stay behind the ownership check above.
+        try:
+            data = load_document_bytes(document)
+        except StorageError as error:
+            print(f"ERROR: could not read document {document.id}: {error}")
+            flash('The file storage service is not responding. Please try again.')
+            return redirect(get_chatbot_url(chatbot))
+
+        if data is None:
+            flash('File not found on server. Please re-upload the document.')
+            return redirect(get_chatbot_url(chatbot))
+
         try:
             return send_file(
-                file_path,
+                BytesIO(data),
                 as_attachment=True,
                 download_name=document.original_filename,
                 mimetype='application/octet-stream'
@@ -1889,65 +2519,92 @@ Best regards,
     @app.route('/train_chatbot/<int:chatbot_id>', methods=['POST'])
     @login_required
     def train_chatbot(chatbot_id):
+        """Start a training run. Returns immediately - the work happens in a thread.
+
+        This used to do the whole pipeline inline, which on one gunicorn worker
+        with a 120s timeout meant long runs died with a 502 and blocked every
+        embedded chat widget while they ran.
+        """
         chatbot = Chatbot.query.filter_by(id=chatbot_id, user_id=current_user.id).first_or_404()
-        documents = Document.query.filter_by(chatbot_id=chatbot_id).all()
-        
-        if not documents:
+
+        def respond(payload, status, flash_message=None, category='message'):
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify({'success': False, 'error': 'Please upload at least one document before training.'})
-            flash('Please upload at least one document before training.')
+                return jsonify(payload), status
+            flash(flash_message or payload.get('error') or '', category)
             return redirect(get_chatbot_url(chatbot))
-        
+
+        # Training draws on the same monthly allowance as chat, so it is capped
+        # too. The owner is logged in here, so say plainly what happened.
+        allowed, _message = check_token_allowance_for_user(current_user)
+        if not allowed:
+            over_limit = ('You have used your monthly token allowance, so training is '
+                          'paused until next month. Upgrade your plan for a larger allowance.')
+            return respond({'success': False, 'error': over_limit}, 402, over_limit, 'warning')
+
+        if not Document.query.filter_by(chatbot_id=chatbot_id).count():
+            message = friendly_error('no_documents')
+            return respond({'success': False, 'error': message, 'error_code': 'no_documents'},
+                           400, message)
+
+        # Fail here rather than burning a run row on something we already know
+        # cannot work.
+        if not os.getenv('OPENAI_API_KEY'):
+            message = friendly_error('no_api_key')
+            return respond({'success': False, 'error': message, 'error_code': 'no_api_key'},
+                           503, message, 'error')
+
         try:
-            # Process all documents for this chatbot
-            all_text = ""
-            for doc in documents:
-                # Resolve the actual file path - handle both absolute and relative paths
-                file_path = doc.file_path
-                
-                # If file_path doesn't exist as-is, try to resolve it
-                if not os.path.exists(file_path):
-                    # Try with just the filename in the upload folder
-                    alt_path = os.path.join(app.config['UPLOAD_FOLDER'], doc.filename)
-                    if os.path.exists(alt_path):
-                        file_path = alt_path
-                    else:
-                        # Handle cross-platform path issues (Windows backslashes on Linux)
-                        # Extract just the filename from the stored path
-                        filename_only = os.path.basename(file_path.replace('\\', '/'))
-                        alt_path = os.path.join(app.config['UPLOAD_FOLDER'], filename_only)
-                        if os.path.exists(alt_path):
-                            file_path = alt_path
-                        else:
-                            raise FileNotFoundError(f"Document file not found: {doc.original_filename} (tried: {doc.file_path}, {alt_path})")
-                
-                text = document_processor.process_document(file_path)
-                all_text += f"\n\n{text}"
-                doc.processed = True
-            
-            # Commit document processing status first
-            db.session.commit()
-            
-            # Train the chatbot with knowledge base generation
-            chatbot_info = {
-                'name': chatbot.name,
-                'description': chatbot.description or ''
-            }
-            chatbot_trainer.train_chatbot(chatbot_id, all_text, use_knowledge_base=True, chatbot_info=chatbot_info)
-            chatbot.is_trained = True
-            db.session.commit()
-            
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify({'success': True, 'message': 'Chatbot trained successfully!'})
-            flash('Chatbot trained successfully!')
-            return redirect(get_chatbot_url(chatbot))
-            
-        except Exception as e:
-            # Even if training fails, documents are already marked as processed
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify({'success': False, 'error': str(e)})
-            flash(f'Training failed: {str(e)}')
-            return redirect(get_chatbot_url(chatbot))
+            run, created = training_runner.enqueue_training(app, chatbot.id, current_user.id)
+        except Exception as error:
+            print(f"ERROR: could not start training for chatbot {chatbot_id}: {error}")
+            message = friendly_error('internal')
+            return respond({'success': False, 'error': message, 'error_code': 'internal'},
+                           500, message, 'error')
+
+        payload = {
+            'success': True,
+            'run_id': run.run_id,
+            'already_running': not created,
+            'status_url': url_for('train_chatbot_status', chatbot_id=chatbot.id,
+                                  run_id=run.run_id),
+            'run': training_runner.run_to_dict(run),
+        }
+        # 409 for "already running" so the browser can attach to the existing run
+        # instead of queueing a duplicate from a second tab.
+        return respond(payload, 202 if created else 409,
+                       'Training started - this page will update automatically.')
+
+    @app.route('/train_chatbot/<int:chatbot_id>/status')
+    @login_required
+    def train_chatbot_status(chatbot_id):
+        """Poll a training run. The browser drives its progress bar off this."""
+        chatbot = Chatbot.query.filter_by(id=chatbot_id, user_id=current_user.id).first_or_404()
+
+        # Cheap and self-throttled to once a minute. Piggy-backing on the poll
+        # avoids needing a scheduler just to notice a restart killed a worker.
+        try:
+            training_runner.reap_stale_runs()
+        except Exception as error:
+            print(f"WARNING: stale-run reaper failed: {error}")
+
+        requested = (request.args.get('run_id') or '').strip()
+        if requested:
+            run = training_runner.get_run(chatbot.id, requested)
+        else:
+            run = training_runner.latest_run_for_chatbot(chatbot.id)
+
+        if run is None:
+            return jsonify({'success': False, 'error': 'No training run found.'}), 404
+
+        return jsonify({
+            'success': True,
+            'run': training_runner.run_to_dict(run),
+            'chatbot': {
+                'is_trained': bool(chatbot.is_trained),
+                'last_trained_at': (chatbot.last_trained_at.isoformat(timespec='seconds') + 'Z'
+                                    if chatbot.last_trained_at else None),
+            },
+        })
 
     @app.route('/delete_chatbot/<int:chatbot_id>', methods=['POST'])
     @login_required
@@ -1957,22 +2614,12 @@ Best regards,
         # Delete associated files
         for document in chatbot.documents:
             try:
-                if os.path.exists(document.file_path):
-                    os.remove(document.file_path)
+                delete_document_object(document)
             except Exception as e:
                 print(f"Error deleting file {document.file_path}: {e}")
         
         # Delete custom avatar if exists (not predefined)
-        if chatbot.avatar_filename:
-            allowed_predefined = ['1.png', '2.png', '3.png', '4.png', '5.png', '6.png']
-            if chatbot.avatar_filename not in allowed_predefined:
-                try:
-                    upload_dir = get_avatar_upload_dir()
-                    avatar_path = os.path.join(upload_dir, chatbot.avatar_filename)
-                    if os.path.exists(avatar_path):
-                        os.remove(avatar_path)
-                except Exception as e:
-                    print(f"Error deleting avatar {chatbot.avatar_filename}: {e}")
+        delete_avatar(chatbot.avatar_filename)
         
         # Delete chatbot training data
         try:
@@ -1985,6 +2632,9 @@ Best regards,
             ChatbotUsage.query.filter_by(chatbot_id=chatbot_id).delete()
         except Exception as e:
             print(f"Error deleting usage tracking: {e}")
+
+        purge_training_runs(chatbot_id)
+        detach_token_usage(chatbot_id)
         
         db.session.delete(chatbot)
         db.session.commit()
@@ -2000,12 +2650,18 @@ Best regards,
         
         try:
             # Get training data from ChatbotTrainer
-            training_data = chatbot_trainer.get_training_data(chatbot_id)
+            training_data = chatbot_trainer.get_training_data(
+                chatbot_id, version=artifact_version(chatbot))
             
             if not training_data:
                 # Check if chatbot is marked as trained but no training data exists
                 if chatbot.is_trained:
-                    error_msg = f"Chatbot '{chatbot.name}' is marked as trained in the database, but no training data file was found. This commonly happens when deploying to production - the database was migrated but training data files weren't transferred."
+                    trained_when = (chatbot.last_trained_at.strftime('%Y-%m-%d %H:%M UTC')
+                                    if chatbot.last_trained_at else 'an unknown date')
+                    error_msg = (f"Chatbot '{chatbot.name}' was trained on {trained_when}, but its "
+                                 f"training data file is missing from the server. This happens when a "
+                                 f"deploy replaces the container without a persistent disk. Retraining "
+                                 f"the chatbot will rebuild it.")
                 else:
                     error_msg = f"Chatbot '{chatbot.name}' has not been trained yet. Please upload documents and train the chatbot first."
                 
@@ -2020,7 +2676,8 @@ Best regards,
                 'success': True,
                 'chatbot_name': chatbot.name,
                 'chatbot_id': chatbot_id,
-                'training_data': training_data,
+                'training_data': training_data_for_display(
+                    training_data, request.args.get('include_vectors') == '1'),
                 'is_knowledge_base': chatbot_trainer.is_knowledge_base_format(training_data)
             })
             
@@ -2101,6 +2758,21 @@ Best regards,
             if not user_message:
                 return jsonify({'error': 'Message is required'}), 400
             
+            # Monthly token cap. Deliberately placed after the end_conversation
+            # branch - a blocked visitor must still be able to close their
+            # conversation - and before any OpenAI client is constructed, so a
+            # blocked request costs one indexed row read and no API call.
+            allowed, block_message = check_token_allowance(chatbot)
+            if not allowed:
+                print(f"[INFO] chatbot {chatbot.id}: owner is over their monthly token allowance")
+                # 200 with 'response', not 429 with 'error': embed.html reads
+                # data.response only, so an error-shaped body renders blank there.
+                return jsonify({
+                    'response': block_message,
+                    'conversation_id': conversation_id or str(uuid.uuid4()),
+                    'limit_reached': True
+                })
+            
             # Generate conversation ID if not provided (for new conversations)
             if not conversation_id:
                 conversation_id = str(uuid.uuid4())
@@ -2122,17 +2794,23 @@ Best regards,
                 traceback.print_exc()
                 return jsonify({'error': f'Service initialization failed: {str(e)}'}), 500
             
-            # Try to use OpenAI service first, fallback to local chat service
+            # Try to use OpenAI service first, fallback to local chat service.
+            # usage stays None on every path that did not bill an OpenAI call.
+            usage = None
+            embed_usage = []
             openai_service = get_chat_service()
-            if openai_service and hasattr(openai_service, 'get_response'):
+            if openai_service and hasattr(openai_service, 'get_response_with_usage'):
                 try:
                     print(f"🔄 Trying OpenAI service")
-                    response = openai_service.get_response(chatbot.id, user_message, conversation_id)
+                    response, usage = openai_service.get_response_with_usage(
+                        chatbot.id, user_message, conversation_id,
+                        embed_usage_sink=embed_usage)
                     print(f"[OK] OpenAI response generated")
                 except Exception as e:
                     print(f"[WARNING] OpenAI service failed: {e}, falling back to local chat service")
                     try:
                         response = chat_service.get_response(chatbot.id, user_message)
+                        usage = None
                         print(f"[OK] Local chat service response generated")
                     except Exception as e2:
                         print(f"[ERROR] Local chat service also failed: {e2}")
@@ -2153,14 +2831,39 @@ Best regards,
             if not response or response.strip() == "":
                 response = "I'm sorry, I couldn't generate a proper response. Please try asking your question differently."
             
-            # Save conversation
+            # Save conversation, with the per-request token ledger
+            model_alias = None
+            try:
+                model_alias = resolve_model_for_chatbot(chatbot)
+            except Exception:
+                pass
+            
             conversation = Conversation(
                 chatbot_id=chatbot.id,
                 user_message=user_message,
-                bot_response=response
+                bot_response=response,
+                model_alias=model_alias,
+                prompt_tokens=(usage or {}).get('prompt_tokens'),
+                completion_tokens=(usage or {}).get('completion_tokens'),
+                total_tokens=(usage or {}).get('total_tokens')
             )
             db.session.add(conversation)
             db.session.commit()
+            
+            # Roll the spend up onto the owner's monthly counter. Best effort -
+            # a metering failure must never turn a good answer into a 500.
+            if usage or embed_usage:
+                try:
+                    if usage:
+                        record_token_usage(chatbot.user_id, chatbot.id, usage, source='chat')
+                    # Query embeddings are metered separately, so the usage
+                    # breakdown shows what retrieval costs apart from what
+                    # answering costs.
+                    for embed_item in embed_usage:
+                        record_token_usage(chatbot.user_id, chatbot.id, embed_item,
+                                           source='embedding')
+                except Exception as e:
+                    print(f"[WARNING] could not record token usage: {e}")
             
             print(f"💬 Response: {response[:100]}...")
             return jsonify({'response': response, 'conversation_id': conversation_id})
@@ -2196,9 +2899,43 @@ Best regards,
     
     @app.route('/uploads/<filename>')
     def uploaded_file(filename):
-        """Serve uploaded avatar images from persistent storage"""
-        upload_dir = get_avatar_upload_dir()
-        return send_from_directory(upload_dir, filename)
+        """Serve a custom chatbot avatar.
+
+        This rule must exist forever: customers pasted absolute
+        https://<host>/uploads/<file> URLs into their own sites when they copied
+        an embed snippet, and we cannot edit those pages. Where the bytes live
+        may change; this URL may not.
+        """
+        # The filename becomes a storage key, so this is a real traversal check.
+        if not filename or secure_filename(filename) != filename:
+            abort(404)
+
+        storage = get_storage()
+        key = avatar_key(filename)
+
+        cdn_url = storage.public_url(PUBLIC, key)
+        if cdn_url:
+            # 302, never 301: a permanent redirect is cached by browsers
+            # indefinitely, and these URLs live on pages we cannot fix. Keeping
+            # it temporary keeps the mapping ours to change.
+            response = redirect(cdn_url, code=302)
+            response.headers['Cache-Control'] = 'public, max-age=3600'
+            return response
+
+        # No CDN (Bunny without a pull zone, or the local backend): proxy the
+        # bytes. Deliberately one path for both, rather than a send_from_directory
+        # special case reading a directory the backend may not be writing to.
+        try:
+            data = storage.get(PUBLIC, key)
+        except StorageNotFound:
+            abort(404)
+        except StorageError as error:
+            print(f"WARNING: avatar fetch failed for {filename}: {error}")
+            abort(502)
+        mimetype, _ = mimetypes.guess_type(filename)
+        response = Response(data, mimetype=mimetype or 'application/octet-stream')
+        response.headers['Cache-Control'] = 'public, max-age=86400'
+        return response
     
     @app.route('/preview/<embed_code>')
     def preview_chatbot(embed_code):
@@ -2246,11 +2983,11 @@ Best regards,
         """Debug endpoint to check chat service functionality"""
         try:
             from services.chat_service import ChatService
-            from services.chatbot_trainer import ChatbotTrainer
+            from services.chatbot_trainer import get_trainer
             
             # Test imports
             chat_service = ChatService()
-            trainer = ChatbotTrainer()
+            trainer = get_trainer()
             
             # Check methods
             trainer_methods = [method for method in dir(trainer) if not method.startswith('_')]
@@ -2260,7 +2997,7 @@ Best regards,
                 'success': True,
                 'chatbot_trainer_methods': trainer_methods,
                 'chat_service_methods': chat_service_methods,
-                'trainer_has_generate_response': hasattr(trainer, 'generate_response'),
+                'trainer_has_search_chunks': hasattr(trainer, 'search_chunks'),
                 'chat_service_has_get_response': hasattr(chat_service, 'get_response')
             })
         except Exception as e:
@@ -2468,8 +3205,7 @@ Best regards,
             # Delete associated files
             for document in chatbot.documents:
                 try:
-                    if os.path.exists(document.file_path):
-                        os.remove(document.file_path)
+                    delete_document_object(document)
                 except Exception as e:
                     print(f"Error deleting file {document.file_path}: {e}")
             
@@ -2484,6 +3220,14 @@ Best regards,
                 ChatbotUsage.query.filter_by(chatbot_id=chatbot.id).delete()
             except Exception as e:
                 print(f"Error deleting usage tracking for chatbot {chatbot.id}: {e}")
+
+            # This cascade never removed avatars, which merely wasted a little
+            # disk before. Object storage is billed per GB, so an orphan here
+            # costs money forever.
+            delete_avatar(chatbot.avatar_filename)
+
+            purge_training_runs(chatbot.id)
+            detach_token_usage(chatbot.id)
         
         db.session.delete(user)
         db.session.commit()
@@ -2507,16 +3251,22 @@ Best regards,
         
         try:
             # Debug: Print the data directory path
-            print(f"DEBUG: ChatbotTrainer data_dir: {chatbot_trainer.data_dir}")
+            print(f"DEBUG: artifact key: {chatbot_trainer.artifact_key(chatbot_id)}")
             print(f"DEBUG: Looking for training data for chatbot {chatbot_id}")
             
             # Get training data from ChatbotTrainer
-            training_data = chatbot_trainer.get_training_data(chatbot_id)
+            training_data = chatbot_trainer.get_training_data(
+                chatbot_id, version=artifact_version(chatbot))
             
             if not training_data:
                 # Check if chatbot is marked as trained but no training data exists
                 if chatbot.is_trained:
-                    error_msg = f"Chatbot '{chatbot.name}' is marked as trained in the database, but no training data file was found. This commonly happens when deploying to production - the database was migrated but training data files weren't transferred."
+                    trained_when = (chatbot.last_trained_at.strftime('%Y-%m-%d %H:%M UTC')
+                                    if chatbot.last_trained_at else 'an unknown date')
+                    error_msg = (f"Chatbot '{chatbot.name}' was trained on {trained_when}, but its "
+                                 f"training data file is missing from the server. This happens when a "
+                                 f"deploy replaces the container without a persistent disk. Retraining "
+                                 f"the chatbot will rebuild it.")
                 else:
                     error_msg = f"Chatbot '{chatbot.name}' has not been trained yet. Please upload documents and train the chatbot first."
                 
@@ -2533,7 +3283,8 @@ Best regards,
                 'success': True,
                 'chatbot_name': chatbot.name,
                 'chatbot_id': chatbot_id,
-                'training_data': training_data,
+                'training_data': training_data_for_display(
+                    training_data, request.args.get('include_vectors') == '1'),
                 'is_knowledge_base': chatbot_trainer.is_knowledge_base_format(training_data)
             })
             
@@ -2570,22 +3321,12 @@ Best regards,
         # Delete associated files
         for document in chatbot.documents:
             try:
-                if os.path.exists(document.file_path):
-                    os.remove(document.file_path)
+                delete_document_object(document)
             except Exception as e:
                 print(f"Error deleting file {document.file_path}: {e}")
         
         # Delete custom avatar if exists (not predefined)
-        if chatbot.avatar_filename:
-            allowed_predefined = ['1.png', '2.png', '3.png', '4.png', '5.png', '6.png']
-            if chatbot.avatar_filename not in allowed_predefined:
-                try:
-                    upload_dir = get_avatar_upload_dir()
-                    avatar_path = os.path.join(upload_dir, chatbot.avatar_filename)
-                    if os.path.exists(avatar_path):
-                        os.remove(avatar_path)
-                except Exception as e:
-                    print(f"Error deleting avatar {chatbot.avatar_filename}: {e}")
+        delete_avatar(chatbot.avatar_filename)
         
         # Delete chatbot training data
         try:
@@ -2598,6 +3339,9 @@ Best regards,
             ChatbotUsage.query.filter_by(chatbot_id=chatbot_id).delete()
         except Exception as e:
             print(f"Error deleting usage tracking: {e}")
+
+        purge_training_runs(chatbot_id)
+        detach_token_usage(chatbot_id)
         
         db.session.delete(chatbot)
         db.session.commit()
@@ -2611,7 +3355,7 @@ Best regards,
         if request.method == 'POST':
             section = request.form.get('section')
             print(f"DEBUG: Processing section: {section}")
-            print(f"DEBUG: Form data: {dict(request.form)}")
+            print(f"DEBUG: Form fields: {sorted(request.form.keys())}")
             
             if section == 'homepage':
                 # Update homepage chatbot settings only
@@ -2646,13 +3390,20 @@ Best regards,
                 flash('Contact page settings updated successfully!')
                 
             elif section == 'openai':
-                # Update OpenAI model settings only
+                # Update the default model tier only
                 print("DEBUG: Processing openai section")
-                openai_model = request.form.get('openai_model', 'gpt-3.5-turbo').strip()
-                print(f"DEBUG: OpenAI model: {openai_model}")
+                # normalize_alias keeps a forged or stale value from reaching the API
+                openai_model = model_catalog.normalize_alias(request.form.get('openai_model'))
+                print(f"DEBUG: Default model tier: {openai_model}")
                 set_setting('openai_model', openai_model)
                 
-                flash('OpenAI model settings updated successfully!')
+                flash('Default AI model updated successfully!')
+
+            elif section == 'token_limit':
+                # Message shown to a visitor when the bot's owner is over their cap
+                message = request.form.get('token_limit_message', '').strip()
+                set_setting('token_limit_message', message or DEFAULT_TOKEN_LIMIT_MESSAGE)
+                flash('Monthly limit message updated successfully!')
                 
             elif section == 'stripe':
                 # Update Stripe settings only
@@ -2662,8 +3413,10 @@ Best regards,
                 stripe_webhook_secret = request.form.get('stripe_webhook_secret', '').strip()
                 
                 set_setting('stripe_publishable_key', stripe_publishable_key)
-                set_setting('stripe_secret_key', stripe_secret_key)
-                set_setting('stripe_webhook_secret', stripe_webhook_secret)
+                update_secret_setting_from_form('stripe_secret_key', stripe_secret_key,
+                                                request.form.get('clear_stripe_secret_key'))
+                update_secret_setting_from_form('stripe_webhook_secret', stripe_webhook_secret,
+                                                request.form.get('clear_stripe_webhook_secret'))
                 
                 flash('Stripe settings updated successfully!')
             else:
@@ -2685,11 +3438,15 @@ Best regards,
         
         # Get current Stripe settings
         current_stripe_publishable_key = get_setting('stripe_publishable_key', '')
-        current_stripe_secret_key = get_setting('stripe_secret_key', '')
-        current_stripe_webhook_secret = get_setting('stripe_webhook_secret', '')
+        # Write-only fields: the template only needs to know whether a value exists.
+        # get_setting (not get_secret_setting) on purpose - the plaintext is never loaded here.
+        stripe_secret_key_configured = bool(get_setting('stripe_secret_key', ''))
+        stripe_webhook_secret_configured = bool(get_setting('stripe_webhook_secret', ''))
         
-        # Get current OpenAI model setting
-        current_openai_model = get_setting('openai_model', 'gpt-3.5-turbo')
+        # Get the current default model tier (stored as an alias)
+        current_openai_model = model_catalog.normalize_alias(get_setting('openai_model'))
+        model_profiles = model_catalog.selectable_profiles()
+        current_token_limit_message = get_setting('token_limit_message', DEFAULT_TOKEN_LIMIT_MESSAGE)
         
         # Get current training prompt
         current_training_prompt = get_setting('training_prompt', '')
@@ -2712,9 +3469,11 @@ Best regards,
                              current_contact_support_hours=current_contact_support_hours,
                              current_contact_live_chat_text=current_contact_live_chat_text,
                              current_stripe_publishable_key=current_stripe_publishable_key,
-                             current_stripe_secret_key=current_stripe_secret_key,
-                             current_stripe_webhook_secret=current_stripe_webhook_secret,
+                             stripe_secret_key_configured=stripe_secret_key_configured,
+                             stripe_webhook_secret_configured=stripe_webhook_secret_configured,
                              current_openai_model=current_openai_model,
+                             model_profiles=model_profiles,
+                             current_token_limit_message=current_token_limit_message,
                              current_training_prompt=current_training_prompt,
                              trained_chatbots=trained_chatbots)
 
@@ -2757,14 +3516,27 @@ Best regards,
     @app.route('/admin/settings/openai', methods=['POST'])
     @admin_required
     def admin_settings_openai():
-        """AJAX endpoint for OpenAI settings"""
+        """AJAX endpoint for the default model tier"""
         try:
-            openai_model = request.form.get('openai_model', 'gpt-3.5-turbo').strip()
+            # normalize_alias keeps a forged or stale value from reaching the API
+            openai_model = model_catalog.normalize_alias(request.form.get('openai_model'))
             set_setting('openai_model', openai_model)
-            
-            return {'success': True, 'message': 'OpenAI model settings updated successfully!'}
+            profile = model_catalog.get_profile(openai_model)
+            return {'success': True,
+                    'message': f'Default AI model set to {profile.display_name}.'}
         except Exception as e:
             return {'success': False, 'message': f'Error updating OpenAI settings: {str(e)}'}, 500
+
+    @app.route('/admin/settings/token-limit', methods=['POST'])
+    @admin_required
+    def admin_settings_token_limit():
+        """AJAX endpoint for the monthly-limit message shown to chat visitors"""
+        try:
+            message = request.form.get('token_limit_message', '').strip()
+            set_setting('token_limit_message', message or DEFAULT_TOKEN_LIMIT_MESSAGE)
+            return {'success': True, 'message': 'Monthly limit message updated successfully!'}
+        except Exception as e:
+            return {'success': False, 'message': f'Error updating limit message: {str(e)}'}, 500
 
     @app.route('/admin/settings/stripe', methods=['POST'])
     @admin_required
@@ -2776,8 +3548,10 @@ Best regards,
             stripe_webhook_secret = request.form.get('stripe_webhook_secret', '').strip()
             
             set_setting('stripe_publishable_key', stripe_publishable_key)
-            set_setting('stripe_secret_key', stripe_secret_key)
-            set_setting('stripe_webhook_secret', stripe_webhook_secret)
+            update_secret_setting_from_form('stripe_secret_key', stripe_secret_key,
+                                            request.form.get('clear_stripe_secret_key'))
+            update_secret_setting_from_form('stripe_webhook_secret', stripe_webhook_secret,
+                                            request.form.get('clear_stripe_webhook_secret'))
             
             return {'success': True, 'message': 'Stripe settings updated successfully!'}
         except Exception as e:
@@ -2957,8 +3731,15 @@ The platform is designed to be user-friendly while providing powerful AI capabil
                 'name': demo_chatbot.name,
                 'description': demo_chatbot.description or ''
             }
-            chatbot_trainer.train_chatbot(demo_chatbot.id, demo_content, use_knowledge_base=True, chatbot_info=demo_chatbot_info)
+            # Runs inline (not through the background runner): this happens at
+            # boot, before any request, and the demo bot is ours - a failure here
+            # must never keep the app from starting.
+            chatbot_trainer.train_chatbot(
+                demo_chatbot.id, [('platform_guide.txt', demo_content)],
+                chatbot_info=demo_chatbot_info,
+                model_alias=model_catalog.DEFAULT_ALIAS)
             demo_chatbot.is_trained = True
+            demo_chatbot.last_trained_at = datetime.utcnow()
             db.session.commit()
             print(f"[OK] Demo chatbot created and trained with embed code: {demo_embed_code}")
         except Exception as e:
@@ -2968,13 +3749,83 @@ The platform is designed to be user-friendly while providing powerful AI capabil
         
         return demo_chatbot
 
+    def read_plan_model_fields():
+        """Parse the model-tier and token-allowance fields off a plan form.
+
+        filter_allowed() drops anything not in the catalog, so a forged POST
+        cannot inject an arbitrary string into the column. An empty or absent
+        token limit is stored as NULL, which means unlimited.
+        """
+        allowed = model_catalog.filter_allowed(request.form.getlist('allowed_models'))
+
+        if 'unlimited_tokens' in request.form:
+            token_limit = None
+        else:
+            raw = (request.form.get('monthly_token_limit') or '').strip().replace(',', '')
+            try:
+                token_limit = int(raw) if raw else None
+            except ValueError:
+                token_limit = None
+            if token_limit is not None and token_limit <= 0:
+                token_limit = None
+
+        return {
+            'allowed_models': json.dumps(allowed),
+            'monthly_token_limit': token_limit,
+            'web_search_enabled': 'web_search_enabled' in request.form,
+        }
+
+    @app.route('/admin/usage')
+    @admin_required
+    def admin_usage():
+        """Token spend for every user in a given month."""
+        period = request.args.get('period') or current_period_key()
+
+        rows = []
+        for user in User.query.order_by(User.username).all():
+            summary = get_usage_summary(user, period)
+            if summary['used'] or summary['blocked_count']:
+                rows.append({'user': user, 'summary': summary})
+        rows.sort(key=lambda r: r['summary']['used'], reverse=True)
+
+        # Months that actually have data, newest first, for the period picker
+        periods = [p[0] for p in db.session.query(TokenUsage.period_key)
+                   .distinct().order_by(TokenUsage.period_key.desc()).all()]
+        if period not in periods:
+            periods.insert(0, period)
+
+        return render_template('admin/usage.html', rows=rows, period=period,
+                               periods=periods,
+                               total_tokens=sum(r['summary']['used'] for r in rows))
+
+    @app.route('/admin/users/<int:user_id>/reset-usage', methods=['POST'])
+    @admin_required
+    def admin_reset_usage(user_id):
+        """Zero one user's current-month usage.
+
+        Usage resets on its own each month - rows are keyed by 'YYYY-MM', so a
+        new month simply starts at zero with no scheduled job to fail. This is
+        the support escape hatch for when someone was blocked by mistake.
+        """
+        user = User.query.get_or_404(user_id)
+        period = current_period_key()
+        try:
+            deleted = TokenUsage.query.filter_by(user_id=user_id, period_key=period).delete()
+            db.session.commit()
+            flash(f'Reset {period} token usage for {user.username} ({deleted} record(s)).')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Could not reset usage for {user.username}: {e}', 'error')
+        return redirect(request.referrer or url_for('admin_usage'))
+
     @app.route('/admin/plans')
     @admin_required
     def admin_plans():
         page = request.args.get('page', 1, type=int)
         plans = Plan.query.order_by(Plan.monthly_price.asc()).paginate(
             page=page, per_page=20, error_out=False)
-        return render_template('admin/plans.html', plans=plans)
+        return render_template('admin/plans.html', plans=plans,
+                               model_profiles=model_catalog.selectable_profiles())
 
     @app.route('/admin/plans/create', methods=['GET', 'POST'])
     @admin_required
@@ -2996,6 +3847,8 @@ The platform is designed to be user-friendly while providing powerful AI capabil
             features_list = [feature.strip() for feature in features_text.split('\n') if feature.strip()]
             features_json = json.dumps(features_list)
             
+            model_fields = read_plan_model_fields()
+            
             plan = Plan(
                 name=name,
                 description=description,
@@ -3007,7 +3860,10 @@ The platform is designed to be user-friendly while providing powerful AI capabil
                 stripe_yearly_price_id=stripe_yearly_price_id if stripe_yearly_price_id else None,
                 features=features_json,
                 is_active=is_active,
-                show_contact_sales=show_contact_sales
+                show_contact_sales=show_contact_sales,
+                allowed_models=model_fields['allowed_models'],
+                monthly_token_limit=model_fields['monthly_token_limit'],
+                web_search_enabled=model_fields['web_search_enabled']
             )
             
             db.session.add(plan)
@@ -3016,7 +3872,9 @@ The platform is designed to be user-friendly while providing powerful AI capabil
             flash(f'Plan "{name}" created successfully!')
             return redirect(url_for('admin_plans'))
         
-        return render_template('admin/create_plan.html')
+        return render_template('admin/create_plan.html',
+                               model_profiles=model_catalog.selectable_profiles(),
+                               default_allowed_models=[model_catalog.CHEAPEST_ALIAS])
 
     @app.route('/admin/plans/<int:plan_id>/edit', methods=['GET', 'POST'])
     @admin_required
@@ -3040,6 +3898,11 @@ The platform is designed to be user-friendly while providing powerful AI capabil
             features_list = [feature.strip() for feature in features_text.split('\n') if feature.strip()]
             plan.features = json.dumps(features_list)
             
+            model_fields = read_plan_model_fields()
+            plan.allowed_models = model_fields['allowed_models']
+            plan.monthly_token_limit = model_fields['monthly_token_limit']
+            plan.web_search_enabled = model_fields['web_search_enabled']
+            
             # Check for name conflicts
             existing_plan = Plan.query.filter(
                 Plan.name == plan.name,
@@ -3047,13 +3910,17 @@ The platform is designed to be user-friendly while providing powerful AI capabil
             ).first()
             if existing_plan:
                 flash('Plan name already exists!')
-                return render_template('admin/edit_plan.html', plan=plan)
+                return render_template('admin/edit_plan.html', plan=plan,
+                                       model_profiles=model_catalog.selectable_profiles(),
+                                       plan_allowed_models=get_allowed_models(plan))
             
             db.session.commit()
             flash(f'Plan "{plan.name}" updated successfully!')
             return redirect(url_for('admin_plans'))
         
-        return render_template('admin/edit_plan.html', plan=plan)
+        return render_template('admin/edit_plan.html', plan=plan,
+                               model_profiles=model_catalog.selectable_profiles(),
+                               plan_allowed_models=get_allowed_models(plan))
 
     @app.route('/admin/plans/<int:plan_id>/delete', methods=['POST'])
     @admin_required
@@ -3336,8 +4203,8 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
     # -----------------------------
     def get_stripe_config():
         publishable_key = get_setting('stripe_publishable_key', '')
-        secret_key = get_setting('stripe_secret_key', '')
-        webhook_secret = get_setting('stripe_webhook_secret', '')
+        secret_key = get_secret_setting('stripe_secret_key', '')
+        webhook_secret = get_secret_setting('stripe_webhook_secret', '')
         return publishable_key, secret_key, webhook_secret
 
     def is_stripe_ready():
@@ -3552,6 +4419,21 @@ Sent at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
 
     with app.app_context():
         db.create_all()
+        # Say plainly, in the logs, where files are going.
+        try:
+            log_storage_status()
+            audit_missing_training_data()
+        except Exception as e:
+            print(f"[WARNING] Storage check failed: {e}")
+        # A daemon thread does not survive a restart, so any run this process id
+        # owned is dead by definition. Without this, rows sit at 'running'
+        # forever and a polling browser never stops.
+        try:
+            reaped = training_runner.reap_stale_runs(boot=True)
+            if reaped:
+                print(f"Marked {reaped} interrupted training run(s) as orphaned")
+        except Exception as e:
+            print(f"[WARNING] Stale training-run reaper failed at boot: {e}")
         # Create demo chatbot after all services are initialized
         try:
             create_demo_chatbot_internal()

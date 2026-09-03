@@ -31,6 +31,7 @@
                             <th>Monthly Price</th>
                             <th>Yearly Price</th>
                             <th>Chatbot Limit</th>
+                            <th>AI Access</th>
                             <th>Status</th>
                             <th>Features</th>
                             <th>Created</th>
@@ -63,6 +64,30 @@
                                     <span class="badge bg-info">
                                         <i class="fas fa-robot me-1"></i>{{ plan.chatbot_limit }} chatbot{{ 's' if plan.chatbot_limit != 1 else '' }}
                                     </span>
+                                </td>
+                                <td>
+                                    {% set allowed = plan.allowed_models|from_json %}
+                                    {% for m in model_profiles %}
+                                        {% if m.alias in allowed %}
+                                            <span class="badge bg-primary">{{ m.display_name }}</span>
+                                        {% endif %}
+                                    {% endfor %}
+                                    {% if not allowed %}
+                                        <span class="badge bg-secondary">Not set</span>
+                                    {% endif %}
+                                    {% if plan.web_search_enabled %}
+                                        <span class="badge bg-light text-dark" title="Web search enabled">
+                                            <i class="fas fa-globe"></i>
+                                        </span>
+                                    {% endif %}
+                                    <br>
+                                    <small class="text-muted">
+                                        {% if plan.monthly_token_limit %}
+                                            {{ "{:,}".format(plan.monthly_token_limit) }} tokens/mo
+                                        {% else %}
+                                            Unlimited tokens
+                                        {% endif %}
+                                    </small>
                                 </td>
                                 <td>
                                     {% if plan.is_active %}

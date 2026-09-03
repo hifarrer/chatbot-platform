@@ -1,0 +1,47 @@
+Northwind Coffee Roasters - Customer FAQ
+
+Q: Where do you roast?
+A: Every bag is roasted in our Ballard facility in Seattle, Washington, in
+   batches of no more than 12 kilograms.
+
+Q: How fresh is the coffee when it ships?
+A: We roast to order. Beans leave the roastery within 24 hours of roasting.
+
+Q: How fast is standard shipping?
+A: Orders placed with order code NW-4471 ship in 2 business days. Standard
+   orders without that code ship in 4 to 6 business days.
+
+Q: Do you ship internationally?
+A: We ship to Canada and Mexico. We do not currently ship to Europe or Asia.
+
+Q: What is your minimum wholesale order?
+A: Twenty pounds per shipment, mixed origins allowed.
+
+Q: Do you offer decaf?
+A: Yes. Our Midnight Decaf is processed with the Swiss Water method and is
+   available in 12 ounce retail bags only.
+
+Q: Can I pause a subscription?
+A: Yes, from the account page. A paused subscription is never billed.
+
+Q: What grind options are there?
+A: Whole bean, drip, French press, and espresso. Whole bean is the default.
+
+Q: Do you sell gift cards?
+A: Yes, in 25, 50 and 100 dollar denominations. Gift cards do not expire.
+
+Q: How should I store the beans?
+A: In an airtight container at room temperature, away from sunlight. Do not
+   refrigerate.
+
+Q: Who do I contact about a damaged shipment?
+A: Email support@northwindroasters.example within 7 days of delivery and we
+   will replace the order.
+
+Q: Do you have a physical storefront?
+A: Yes, one cafe attached to the roastery. It is open 7am to 3pm on weekdays
+   and 8am to 2pm on weekends.
+
+Q: Is your packaging recyclable?
+A: The bags are LDPE 4 and the valves are polypropylene. Both are accepted by
+   the Seattle curbside program.

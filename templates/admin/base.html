@@ -105,6 +105,10 @@
                             <i class="fas fa-robot"></i>
                             Chatbots
                         </a>
+                        <a class="nav-link {% if request.endpoint == 'admin_usage' %}active{% endif %}" href="{{ url_for('admin_usage') }}">
+                            <i class="fas fa-gauge-high"></i>
+                            Token Usage
+                        </a>
                         <a class="nav-link {% if request.endpoint == 'admin_plans' %}active{% endif %}" href="{{ url_for('admin_plans') }}">
                             <i class="fas fa-credit-card"></i>
                             Plans

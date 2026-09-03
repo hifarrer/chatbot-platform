@@ -2,7 +2,8 @@ from openai import OpenAI
 import random
 import os
 import re
-from .chatbot_trainer import ChatbotTrainer
+from .chatbot_trainer import get_trainer
+from .model_catalog import extract_usage
 
 class ChatServiceOpenAI:
     def __init__(self):
@@ -12,10 +13,14 @@ class ChatServiceOpenAI:
         if not self.api_key:
             raise ValueError("OPENAI_API_KEY environment variable is required")
         
-        # Initialize OpenAI client with the new v1.0+ API
-        self.client = OpenAI(api_key=self.api_key)
+        # max_retries=0 hands retry control to services/openai_retry.py, and an
+        # explicit timeout replaces the SDK's 600s default - a visitor waiting ten
+        # minutes on a chat widget is not a real outcome.
+        self.client = OpenAI(api_key=self.api_key, max_retries=0, timeout=60.0)
         
-        self.trainer = ChatbotTrainer()
+        # Shared singleton: the trainer caches parsed artifacts, and a second
+        # instance would mean a second megabytes-sized copy of each one.
+        self.trainer = get_trainer()
         self.default_responses = [
             "I'm sorry, I don't have information about that topic in my training documents.",
             "I don't have enough information in my training data to answer that question accurately.",
@@ -26,27 +31,52 @@ class ChatServiceOpenAI:
         self.conversation_contexts = {}
     
     def get_response(self, chatbot_id, user_message, conversation_id=None):
+        """Back-compat wrapper: the answer text only."""
+        text, _usage = self.get_response_with_usage(chatbot_id, user_message, conversation_id)
+        return text
+
+    def get_response_with_usage(self, chatbot_id, user_message, conversation_id=None,
+                                embed_usage_sink=None):
         """
-        Generate a response using OpenAI Responses API with built-in memory
+        Generate a response using OpenAI Responses API with built-in memory.
+
+        Returns (answer_text, usage) where usage is the normalized token dict
+        from model_catalog.extract_usage(), or None when no OpenAI call was
+        billed - a validation bail-out, or the local similarity fallback.
+
+        The usage is returned explicitly rather than stashed on self, because
+        get_chat_service() caches one instance for the whole process: an
+        instance attribute would leak the previous visitor's token counts into
+        a request that never called OpenAI.
         """
+        usage = None
         print(f" DEBUG: Processing OpenAI Responses API request for chatbot {chatbot_id}: '{user_message}'")
         
         # Get chatbot info for custom system prompt
         from app import Chatbot
         chatbot = Chatbot.query.get(chatbot_id)
         if not chatbot:
-            return "Chatbot not found."
+            return "Chatbot not found.", None
+
+        # Make sure the cached knowledge base matches this bot's latest training
+        # run. last_training_run_id is already on the row we just loaded, so
+        # this costs no query and, on a warm cache, no network call either.
+        from services.chatbot_trainer import artifact_version
+        self.trainer.prime(chatbot_id, artifact_version(chatbot))
         
         # Get relevant context from training data
-        context = self._get_relevant_context(chatbot_id, user_message)
+        # Retrieval now costs tokens too (one small embedding per question), so
+        # the caller gets a sink to meter it separately from the answer itself.
+        context = self._get_relevant_context(chatbot_id, user_message,
+                                             embed_usage_sink=embed_usage_sink)
         
         # Check if we need web search as fallback
-        needs_web_search = self._should_use_web_search(context, user_message)
+        needs_web_search = self._should_use_web_search(context, user_message, chatbot)
         
         # Allow chatbot to work even without documents if it has a custom prompt
         if not context and not chatbot.system_prompt:
             print(" DEBUG: No training data found and no custom prompt")
-            return "I haven't been trained yet. Please upload some documents and train me first!"
+            return "I haven't been trained yet. Please upload some documents and train me first!", None
         
         if context:
             print(f" DEBUG: Using context from {len(context)} relevant passages")
@@ -71,18 +101,21 @@ class ChatServiceOpenAI:
         try:
             # Determine if we should use web search model
             if needs_web_search:
-                selected_model = 'gpt-4o-search-preview'
+                # Web search requires this specific model and only works through
+                # chat.completions, so it deliberately overrides the bot's tier.
+                from services.model_catalog import WEB_SEARCH_PROFILE
+                profile = WEB_SEARCH_PROFILE
+                selected_model = profile.model_id
                 print(f" DEBUG: Using OpenAI web search model: {selected_model}")
             else:
-                # Get the selected model from database settings
-                try:
-                    from app import Settings
-                    setting = Settings.query.filter_by(key='openai_model').first()
-                    selected_model = setting.value if setting else 'gpt-3.5-turbo'
-                except Exception as e:
-                    print(f" DEBUG: Error accessing database for OpenAI model: {e}")
-                    selected_model = 'gpt-3.5-turbo'
-                print(f" DEBUG: Using OpenAI model: {selected_model}")
+                # Per-chatbot tier, falling back to the global default and capped
+                # at whatever the owner's plan allows. resolve_model_for_chatbot
+                # never raises - it returns the default tier on any error.
+                from app import resolve_model_for_chatbot
+                from services.model_catalog import get_profile
+                profile = get_profile(resolve_model_for_chatbot(chatbot))
+                selected_model = profile.model_id
+                print(f" DEBUG: Using {profile.display_name} ({selected_model}) for chatbot {chatbot_id}")
             
             # Prepare the input for Responses API
             input_text = f"{system_prompt}\n\nUser: {user_message}"
@@ -117,7 +150,8 @@ class ChatServiceOpenAI:
                         ]
                     )
                     answer = response.choices[0].message.content.strip()
-                    print(f" DEBUG: Web search API call successful")
+                    usage = extract_usage(response)
+                    print(f" DEBUG: Web search API call successful (usage: {usage})")
                 except Exception as e:
                     print(f" DEBUG: Web search API call failed: {e}")
                     raise e
@@ -129,7 +163,8 @@ class ChatServiceOpenAI:
                         input=input_text
                     )
                     answer = response.output_text.strip()
-                    print(f" DEBUG: Responses API call with previous_response_id successful")
+                    usage = extract_usage(response)
+                    print(f" DEBUG: Responses API call with previous_response_id successful (usage: {usage})")
                 except Exception as e:
                     print(f" DEBUG: Responses API call with previous_response_id failed: {e}")
                     raise e
@@ -140,7 +175,8 @@ class ChatServiceOpenAI:
                         input=input_text
                     )
                     answer = response.output_text.strip()
-                    print(f" DEBUG: Responses API call successful")
+                    usage = extract_usage(response)
+                    print(f" DEBUG: Responses API call successful (usage: {usage})")
                 except Exception as e:
                     print(f" DEBUG: Responses API call failed: {e}")
                     raise e
@@ -173,7 +209,7 @@ class ChatServiceOpenAI:
                 # Fallback to original answer
                 formatted_answer = answer
             
-            return formatted_answer
+            return formatted_answer, usage
             
         except Exception as e:
             print(f" DEBUG: OpenAI Responses API error: {e}")
@@ -187,24 +223,45 @@ class ChatServiceOpenAI:
                 # Clean up training references from fallback response too
                 cleaned_response = self._clean_training_references(fallback_response)
                 # Format the response for better readability
-                return self._format_response_text(cleaned_response)
+                return self._format_response_text(cleaned_response), None
             else:
-                return random.choice(self.default_responses)
+                return random.choice(self.default_responses), None
     
-    def _get_relevant_context(self, chatbot_id, user_message, max_context_length=2000):
+    def _get_relevant_context(self, chatbot_id, user_message, max_context_length=12000,
+                              embed_usage_sink=None):
         """
         Get relevant context from training data.
-        Uses knowledge base format if available, otherwise falls back to similarity search.
+
+        Hybrid when a vector index exists: the distilled kb_facts go first (they
+        are what the system prompt is tuned for), then semantically retrieved
+        source chunks fill the remaining budget. The chunks are what make a fact
+        buried deep in a long document answerable at all - keyword matching over
+        summarized facts never could.
+
+        The facts get half the budget, not all of it. "Whatever is left after
+        the facts" was measured at 384-451 characters against chunks of
+        1700-2900, so no chunk ever fitted and the vector index was built,
+        embedded, stored and searched for nothing. A reserved half guarantees
+        room for the passage that actually contains the answer.
         """
         print(f" DEBUG: Getting relevant context for chatbot {chatbot_id}")
-        print(f" DEBUG: User message: '{user_message}'")
         
-        # First check if we have knowledge base format
+        # Load once and pass it down. This used to be re-read (and re-parsed)
+        # three times per message, including inside a loop over matches.
         training_data = self.trainer.get_training_data(chatbot_id)
         
         if training_data and self.trainer.is_knowledge_base_format(training_data):
-            print(" DEBUG: Using knowledge base format for context")
-            return self._get_context_from_knowledge_base(chatbot_id, user_message, max_context_length)
+            has_index = self.trainer.has_vector_index(training_data)
+            # Cap the facts only when there are chunks to make room for. With no
+            # index there is nothing else competing, so they keep the lot.
+            facts_budget = max_context_length // 2 if has_index else max_context_length
+            passages = self._get_context_from_knowledge_base(
+                chatbot_id, user_message, facts_budget, training_data) or []
+            if has_index:
+                chunks = self.trainer.search_chunks(chatbot_id, user_message, top_k=4,
+                                                    usage_sink=embed_usage_sink)
+                passages = self._merge_chunk_passages(passages, chunks, max_context_length)
+            return passages or None
         
         # Fall back to legacy similarity search
         print(" DEBUG: Using legacy similarity search for context")
@@ -272,14 +329,42 @@ class ChatServiceOpenAI:
         
         return context_passages
     
-    def _get_context_from_knowledge_base(self, chatbot_id, user_message, max_context_length=2000):
+    def _merge_chunk_passages(self, passages, chunks, max_context_length):
+        """Append retrieved source chunks after the distilled facts, within budget."""
+        if not chunks:
+            print(" DEBUG: no source chunks retrieved")
+            return passages
+        used = sum(len(passage) for passage in passages)
+        added = 0
+        for chunk in chunks:
+            text = (chunk.get('content') or '').strip()
+            if not text:
+                continue
+            label = chunk.get('source') or 'document'
+            passage = "[Relevance: %.2f] [Source: %s]\n%s" % (
+                chunk.get('similarity', 0), label, text)
+            if used + len(passage) >= max_context_length:
+                break
+            passages.append(passage)
+            used += len(passage)
+            added += 1
+        # Logged because the failure mode here is silent: retrieval can find the
+        # right passage and still contribute nothing if the budget is spent.
+        print(f" DEBUG: merged {added}/{len(chunks)} source chunk(s), "
+              f"{used}/{max_context_length} chars used")
+        return passages
+
+    def _get_context_from_knowledge_base(self, chatbot_id, user_message,
+                                         max_context_length=4000, training_data=None):
         """
         Get relevant context from knowledge base format
         """
-        print(f" DEBUG: Querying knowledge base for context")
+        if training_data is None:
+            training_data = self.trainer.get_training_data(chatbot_id)
         
         # Query the knowledge base
-        kb_results = self.trainer.query_knowledge_base(chatbot_id, user_message, top_k=5)
+        kb_results = self.trainer.query_knowledge_base(chatbot_id, user_message, top_k=5,
+                                                       training_data=training_data)
         
         if not kb_results or not kb_results.get('matches'):
             print(" DEBUG: No matches found in knowledge base")
@@ -288,8 +373,6 @@ class ChatServiceOpenAI:
         matches = kb_results['matches']
         brand = kb_results.get('brand', {})
         
-        # Get business info from training data if available
-        training_data = self.trainer.get_training_data(chatbot_id)
         business_info = training_data.get('business_info', {}) if training_data else {}
         
         print(f" DEBUG: Found {len(matches)} matches in knowledge base")
@@ -354,10 +437,9 @@ class ChatServiceOpenAI:
                 # If there's a reference to a KB fact, include that too
                 if match.get('response_ref'):
                     ref_id = match['response_ref']
-                    # Find the referenced fact
-                    training_data = self.trainer.get_training_data(chatbot_id)
-                    for fact in training_data.get('kb_facts', []):
-                        if fact['id'] == ref_id:
+                    # Find the referenced fact (training_data is already loaded)
+                    for fact in (training_data or {}).get('kb_facts', []):
+                        if fact.get('id') == ref_id:
                             response = f"{response}\n\nDetails: {fact['answer_long']}"
                             break
                 
@@ -402,10 +484,23 @@ class ChatServiceOpenAI:
         
         return context_passages
     
-    def _should_use_web_search(self, context_passages, user_message):
+    def _should_use_web_search(self, context_passages, user_message, chatbot=None):
         """
         Determine if web search should be used as fallback
         """
+        # Web search runs on a fixed, pricier model regardless of the bot's own
+        # tier, so it is sold per plan. Bots on a plan without it never take
+        # this path and always answer on the tier their owner pays for.
+        if chatbot is not None:
+            try:
+                from app import User, get_user_plan, plan_allows_web_search
+                owner = User.query.get(chatbot.user_id)
+                if not owner or not plan_allows_web_search(get_user_plan(owner)):
+                    return False
+            except Exception as e:
+                print(f" DEBUG: web search plan check failed, disabling web search: {e}")
+                return False
+
         # Get similarity threshold from settings
         try:
             from app import Settings
@@ -468,9 +563,21 @@ class ChatServiceOpenAI:
         print("="*80 + "\n")
         
         if not training_prompt_template:
-            print(" DEBUG: No training prompt template found in database settings")
-            # Fallback to just the custom prompt if no template
-            return custom_prompt or "You are a helpful AI assistant."
+            # Returning only the custom prompt here would silently discard every
+            # retrieved passage - the bot would answer "I don't have that
+            # information" while sitting on a perfectly good knowledge base.
+            # migrate_add_training_prompt.py seeds this setting, so this path is
+            # a fresh/unseeded database, not the normal case.
+            print(" DEBUG: No training prompt template in settings; using built-in template")
+            base = custom_prompt or "You are a helpful AI assistant."
+            if not context_passages:
+                return base
+            joined = "\n\n".join(context_passages)
+            return (f"{base}\n\n"
+                    "Answer using the information below, which comes from the documents "
+                    "this chatbot was trained on. If the answer is not there, say so plainly. "
+                    "Do not mention internal file names or relevance scores.\n\n"
+                    f"{joined}")
         
         # Use the chatbot's custom prompt as the base_prompt placeholder
         base_prompt = custom_prompt or "You are a helpful AI assistant."

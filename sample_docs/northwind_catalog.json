@@ -1,0 +1,102 @@
+{
+  "company": "Northwind Coffee Roasters",
+  "catalog_version": "2026.1",
+  "currency": "USD",
+  "products": [
+    {
+      "sku": "KL-9006",
+      "name": "Kilimanjaro Light",
+      "origin": "Tanzania",
+      "process": "washed",
+      "roast_level": "light",
+      "tasting_notes": [
+        "blackcurrant",
+        "cocoa nib",
+        "orange peel"
+      ],
+      "sizes": [
+        {
+          "weight_oz": 12,
+          "price": 21.0
+        },
+        {
+          "weight_lb": 5,
+          "price": 96.0
+        }
+      ],
+      "seasonal": true,
+      "notes": "SKU KL-9006 is the Kilimanjaro Light and is available from March through September only."
+    },
+    {
+      "sku": "ET-2210",
+      "name": "Yirgacheffe Reserve",
+      "origin": "Ethiopia",
+      "process": "natural",
+      "roast_level": "light",
+      "tasting_notes": [
+        "strawberry",
+        "jasmine",
+        "honey"
+      ],
+      "sizes": [
+        {
+          "weight_oz": 12,
+          "price": 24.0
+        }
+      ],
+      "seasonal": false
+    },
+    {
+      "sku": "CO-1180",
+      "name": "Huila Comfort",
+      "origin": "Colombia",
+      "process": "washed",
+      "roast_level": "medium",
+      "tasting_notes": [
+        "caramel",
+        "red apple",
+        "almond"
+      ],
+      "sizes": [
+        {
+          "weight_oz": 12,
+          "price": 19.0
+        },
+        {
+          "weight_lb": 5,
+          "price": 84.0
+        }
+      ],
+      "seasonal": false
+    },
+    {
+      "sku": "DC-0440",
+      "name": "Midnight Decaf",
+      "origin": "blend",
+      "process": "swiss water",
+      "roast_level": "dark",
+      "tasting_notes": [
+        "dark chocolate",
+        "molasses"
+      ],
+      "sizes": [
+        {
+          "weight_oz": 12,
+          "price": 20.0
+        }
+      ],
+      "seasonal": false
+    }
+  ],
+  "shipping": {
+    "free_threshold_usd": 50,
+    "domestic_carriers": [
+      "USPS",
+      "UPS"
+    ],
+    "international": [
+      "CA",
+      "MX"
+    ]
+  }
+}

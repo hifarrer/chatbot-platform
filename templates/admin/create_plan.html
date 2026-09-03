@@ -76,6 +76,81 @@
                             </div>
                         </div>
                         
+
+                        <hr>
+                        <h6 class="text-muted mb-3">
+                            <i class="fas fa-robot me-2"></i>AI Access
+                        </h6>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label>Allowed AI Models *</label>
+                                    {% for m in model_profiles %}
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox"
+                                               id="model_{{ m.alias }}" name="allowed_models"
+                                               value="{{ m.alias }}"
+                                               {% if m.alias in default_allowed_models %}checked{% endif %}>
+                                        <label class="form-check-label" for="model_{{ m.alias }}">
+                                            <strong>{{ m.display_name }}</strong>
+                                            <small class="text-muted d-block">{{ m.blurb }}</small>
+                                        </label>
+                                    </div>
+                                    {% endfor %}
+                                    <small class="form-text text-muted">
+                                        Which model tiers subscribers on this plan can choose
+                                        for their chatbots. If none are checked, the plan gets
+                                        the cheapest tier only.
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="monthly_token_limit">Monthly Token Allowance</label>
+                                    <input type="number" class="form-control"
+                                           id="monthly_token_limit" name="monthly_token_limit"
+                                           min="1" step="1000" value="100000">
+                                    <small class="form-text text-muted">
+                                        Total tokens per calendar month across chat, training and
+                                        analytics. Chatbots stop answering once the allowance runs
+                                        out. Note that longer conversations cost more per message,
+                                        because prior turns are re-sent as context.
+                                    </small>
+                                </div>
+
+                                <div class="form-group">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox"
+                                               id="unlimited_tokens" name="unlimited_tokens"
+                                               >
+                                        <label class="form-check-label" for="unlimited_tokens">
+                                            Unlimited tokens
+                                        </label>
+                                        <small class="form-text text-muted">
+                                            Overrides the allowance above. No monthly cap.
+                                        </small>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox"
+                                               id="web_search_enabled" name="web_search_enabled"
+                                               >
+                                        <label class="form-check-label" for="web_search_enabled">
+                                            Allow web search
+                                        </label>
+                                        <small class="form-text text-muted">
+                                            Lets chatbots fall back to a live web search when the
+                                            training data has no answer. Runs on a fixed, pricier
+                                            model regardless of the chatbot's tier.
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">

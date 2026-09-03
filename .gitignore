@@ -133,6 +133,9 @@ dmypy.json
 # Uploaded files
 uploads/
 training_data/
+# Locally-uploaded avatars. Not ignored before, so one `git add .` would
+# have committed customer images into the repository.
+static/uploads/
 instance/
 
 # Test files (optional - you might want to keep some)
@@ -170,3 +173,5 @@ logs/
 # Temporary files
 *.tmp
 *.temp 
+# QA run manifests (throwaway ids from qa_phase3_live_prod.py)
+qa_phase3_manifest*.json

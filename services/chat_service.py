@@ -1,9 +1,9 @@
 import random
-from .chatbot_trainer import ChatbotTrainer
+from .chatbot_trainer import get_trainer
 
 class ChatService:
     def __init__(self):
-        self.trainer = ChatbotTrainer()
+        self.trainer = get_trainer()
         self.default_responses = [
             "I'm sorry, I don't have information about that topic in my training documents. Could you try asking something else?",
             "I don't have enough information in my training data to answer that question accurately.",

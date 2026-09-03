@@ -36,6 +36,58 @@
     </div>
 {% endif %}
 
+{% if usage_summary %}
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0">
+                <i class="fas fa-gauge-high me-2"></i>Monthly AI Usage
+                <small class="text-muted fw-normal">({{ usage_summary.period_key }})</small>
+            </h6>
+            <span class="text-muted small">
+                {% if usage_summary.limit %}
+                    {{ "{:,}".format(usage_summary.used) }} / {{ "{:,}".format(usage_summary.limit) }} tokens
+                {% else %}
+                    {{ "{:,}".format(usage_summary.used) }} tokens used &middot; no limit
+                {% endif %}
+            </span>
+        </div>
+
+        {% if usage_summary.limit %}
+        <div class="progress" style="height: 10px;">
+            <div class="progress-bar {% if usage_summary.over_limit %}bg-danger{% elif usage_summary.percent >= 80 %}bg-warning{% else %}bg-success{% endif %}"
+                 role="progressbar" style="width: {{ usage_summary.percent }}%;"
+                 aria-valuenow="{{ usage_summary.percent }}" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+
+        {% if usage_summary.over_limit %}
+        <div class="alert alert-danger mt-3 mb-0">
+            <i class="fas fa-circle-exclamation me-2"></i>
+            <strong>Monthly allowance used up.</strong>
+            Your chatbots are not answering new questions
+            {% if usage_summary.blocked_count %}
+            ({{ usage_summary.blocked_count }} message{{ 's' if usage_summary.blocked_count != 1 else '' }} turned away this month)
+            {% endif %}
+            until your allowance resets.
+            <a href="{{ url_for('plans') }}" class="alert-link">Upgrade your plan</a> to continue now.
+        </div>
+        {% elif usage_summary.percent >= 80 %}
+        <div class="alert alert-warning mt-3 mb-0">
+            <i class="fas fa-triangle-exclamation me-2"></i>
+            You have used {{ usage_summary.percent }}% of this month's allowance.
+            <a href="{{ url_for('plans') }}" class="alert-link">Upgrade your plan</a> for more headroom.
+        </div>
+        {% endif %}
+        {% endif %}
+
+        <div class="form-text mt-2">
+            Counts chat replies, training and analytics. Longer conversations cost
+            more per message, because earlier turns are re-sent as context.
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {% if chatbots %}
     <div class="row">
         {% for chatbot in chatbots %}
