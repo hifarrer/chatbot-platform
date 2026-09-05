@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, send_file, session, abort, Response
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, send_file, session, abort, Response, g
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_cors import CORS
@@ -9,6 +9,7 @@ import os
 import json
 import logging
 import mimetypes
+import time
 import uuid
 from io import BytesIO
 import secrets
@@ -22,7 +23,7 @@ from services.analytics_service import AnalyticsService
 from services.crypto import encrypt_secret, decrypt_secret, encryption_status
 from services import model_catalog
 from services import training_runner
-from services.logging_setup import configure_logging
+from services.logging_setup import RunLogger, configure_logging, get_logger
 from services.object_storage import (PRIVATE, PUBLIC, StorageError, StorageNotFound,
                                      artifact_key, avatar_key, describe_storage,
                                      document_key, get_storage, log_storage_status)
@@ -40,6 +41,47 @@ DEFAULT_TOKEN_LIMIT_MESSAGE = (
     "I'm taking a short break right now and can't answer new questions. "
     "Please try again later or contact us directly."
 )
+
+# ----------------------------------------------------------------------
+# Request logging
+# ----------------------------------------------------------------------
+
+_web_log = get_logger('owlbee.web')
+
+# A request slower than this gets a line even when it succeeded. An upload that
+# "hangs" in the browser is either absent from the log entirely (it never
+# arrived) or present with a large ms - and those two need different fixes.
+SLOW_REQUEST_MS = int(os.environ.get('SLOW_REQUEST_MS') or 3000)
+
+# Static assets and the health probe are most of the request volume and none of
+# the interesting failures.
+QUIET_PATH_PREFIXES = ('/static/', '/favicon', '/health')
+
+
+def request_logger(**fields):
+    """Logger bound to the current request so all its lines share a request_id.
+
+    That id is also returned to the browser as X-Request-Id, which is what turns
+    "the upload spun forever" into a single grep.
+
+    Tolerates being called outside a request context: the storage helpers it
+    wraps are also reached from the training thread.
+    """
+    bound = {}
+    try:
+        request_id = getattr(g, 'request_id', None)
+        if request_id:
+            bound['request_id'] = request_id
+    except Exception:
+        pass
+    try:
+        if current_user.is_authenticated:
+            bound['user_id'] = current_user.id
+    except Exception:
+        pass
+    bound.update({k: v for k, v in fields.items() if v is not None})
+    return RunLogger(_web_log, **bound)
+
 
 # Optional Stripe dependency (guarded)
 try:
@@ -493,17 +535,20 @@ def check_text_size(text, user):
     return data, None
 
 
-def store_document_bytes(chatbot_id, filename, data, content_type=None):
+def store_document_bytes(chatbot_id, filename, data, content_type=None, logger=None):
     """Upload a document and return (unique_filename, storage_key).
 
     Raises StorageError. Callers upload BEFORE committing the row: the reverse
     leaves rows pointing at objects that do not exist, whereas this ordering can
     only leave an object with no row - which costs a little storage and is swept
     by migrate_to_bunny.py --audit.
+
+    `logger` is threaded through to the storage call so its retry and failure
+    lines carry the request id and chatbot id rather than standing alone.
     """
     unique_filename = f"{uuid.uuid4()}_{secure_filename(filename)}"
     key = document_key(chatbot_id, unique_filename)
-    get_storage().put(PRIVATE, key, data, content_type=content_type)
+    get_storage().put(PRIVATE, key, data, content_type=content_type, logger=logger)
     return unique_filename, key
 
 
@@ -1080,18 +1125,24 @@ def create_app():
     AVATAR_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'svg'}
     PREDEFINED_AVATARS = ['1.png', '2.png', '3.png', '4.png', '5.png', '6.png']
 
-    def store_avatar(avatar_file):
+    def store_avatar(avatar_file, logger=None):
         """Upload an avatar to the public zone. Returns its filename.
 
         Raises StorageError on an upload failure, so the caller can tell the
         user rather than saving a chatbot that points at a missing image.
         """
+        log = logger or request_logger()
         filename = secure_filename(avatar_file.filename)
         timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
         name_part, ext = os.path.splitext(filename)
         avatar_filename = f"avatar_{name_part}_{timestamp}{ext}"
-        get_storage().put(PUBLIC, avatar_key(avatar_filename), avatar_file.read(),
-                          content_type=avatar_file.mimetype)
+        payload = avatar_file.read()
+        started = time.monotonic()
+        log.event('avatar.storing', bytes=len(payload), ext=ext.lstrip('.').lower())
+        get_storage().put(PUBLIC, avatar_key(avatar_filename), payload,
+                          content_type=avatar_file.mimetype, logger=log)
+        log.event('avatar.stored', avatar=avatar_filename, bytes=len(payload),
+                  ms=int((time.monotonic() - started) * 1000))
         return avatar_filename
 
     def delete_avatar(avatar_filename):
@@ -1104,6 +1155,10 @@ def create_app():
         try:
             get_storage().delete(PUBLIC, avatar_key(avatar_filename))
         except Exception as error:
+            # Leaves an orphaned object, which costs storage and nothing else -
+            # so it stays non-fatal, but it no longer goes unrecorded.
+            request_logger().warning('avatar.delete_failed', avatar=avatar_filename,
+                                     error=f'{type(error).__name__}: {error}')
             print(f"Error deleting avatar {avatar_filename}: {error}")
     
     @app.template_global()
@@ -1228,6 +1283,70 @@ def create_app():
         return chat_service
 
     # Routes
+
+    @app.before_request
+    def start_request_log():
+        g.request_id = uuid.uuid4().hex[:12]
+        g.request_started = time.monotonic()
+
+    @app.after_request
+    def finish_request_log(response):
+        started = getattr(g, 'request_started', None)
+        request_id = getattr(g, 'request_id', None)
+        if request_id:
+            # Echoed to the browser so a user-reported failure maps to a log line.
+            response.headers['X-Request-Id'] = request_id
+        if started is None:
+            return response
+
+        ms = int((time.monotonic() - started) * 1000)
+        status = response.status_code
+        quiet = request.path.startswith(QUIET_PATH_PREFIXES)
+        slow = ms >= SLOW_REQUEST_MS
+
+        if status >= 500:
+            level = logging.ERROR
+        elif status >= 400 or slow:
+            level = logging.WARNING
+        elif quiet or request.method == 'GET':
+            level = logging.DEBUG
+        else:
+            level = logging.INFO
+
+        fields = {'method': request.method, 'path': request.path,
+                  'status': status, 'ms': ms}
+        if slow:
+            fields['slow'] = True
+        if request.content_length:
+            fields['content_length'] = request.content_length
+        request_logger().event('http.request', level=level, **fields)
+        return response
+
+    @app.teardown_request
+    def log_request_exception(error):
+        # Only set for an exception that escaped the view; the response has
+        # already been turned into a 500 by the time this runs.
+        if error is None:
+            return
+        request_logger().error('http.exception', method=request.method,
+                               path=request.path,
+                               error=f'{type(error).__name__}: {error}',
+                               exc_info=True)
+
+    @app.errorhandler(413)
+    def handle_payload_too_large(error):
+        """Werkzeug aborts mid-body on MAX_CONTENT_LENGTH, which reaches the
+        browser as a dead connection rather than a message. Say so instead."""
+        limit_mb = app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)
+        request_logger().warning('http.payload_too_large', path=request.path,
+                                 content_length=request.content_length,
+                                 limit_mb=limit_mb)
+        message = (f'That file is larger than the {limit_mb}MB upload limit. '
+                   f'Please upload a smaller file.')
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'error': message}), 413
+        flash(message, 'error')
+        return redirect(request.referrer or url_for('index'))
 
     @app.before_request
     def attach_user_plan_to_current_user():
@@ -1832,7 +1951,10 @@ Best regards,
                         try:
                             avatar_filename = store_avatar(avatar_file)
                         except StorageError as error:
-                            print(f"ERROR: avatar upload failed: {error}")
+                            request_logger().error('avatar.failed', on='create',
+                                                   code=error.code, status=error.status,
+                                                   attempts=error.attempts,
+                                                   error=str(error))
                             flash(friendly_error(error.code), 'error')
                             return redirect(url_for('create_chatbot'))
                     else:
@@ -2091,9 +2213,13 @@ Best regards,
                     # Upload the new one first; only drop the old one once the
                     # replacement is safely stored.
                     try:
-                        new_avatar_filename = store_avatar(avatar_file)
+                        new_avatar_filename = store_avatar(
+                            avatar_file, logger=request_logger(chatbot_id=chatbot.id))
                     except StorageError as error:
-                        print(f"ERROR: avatar upload failed: {error}")
+                        request_logger(chatbot_id=chatbot.id).error(
+                            'avatar.failed', on='update', code=error.code,
+                            status=error.status, attempts=error.attempts,
+                            error=str(error))
                         flash(friendly_error(error.code), 'error')
                         return redirect(get_chatbot_url(chatbot))
                     delete_avatar(chatbot.avatar_filename)
@@ -2111,23 +2237,33 @@ Best regards,
     @login_required
     def upload_document(chatbot_id):
         chatbot = Chatbot.query.filter_by(id=chatbot_id, user_id=current_user.id).first_or_404()
-        
+
         # Check if this is an Ajax request
         is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
-        
+        log = request_logger(chatbot_id=chatbot_id)
+        # Logged before anything can go wrong, so an upload that never finishes
+        # is still distinguishable from one that never arrived.
+        log.event('upload.received', ajax=is_ajax,
+                  content_length=request.content_length)
+
         if 'file' not in request.files:
+            log.warning('upload.rejected', reason='no_file_field')
             if is_ajax:
                 return jsonify({'success': False, 'error': 'No file selected'}), 400
             flash('No file selected')
             return redirect(get_chatbot_url(chatbot))
-        
+
         file = request.files['file']
         if file.filename == '':
+            log.warning('upload.rejected', reason='empty_filename')
             if is_ajax:
                 return jsonify({'success': False, 'error': 'No file selected'}), 400
             flash('No file selected')
             return redirect(get_chatbot_url(chatbot))
-        
+
+        # For the rejection paths, which never get as far as a storage key.
+        extension = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+
         if file and allowed_file(file.filename):
             # Check file size limit based on user's plan
             user_plan = get_user_plan(current_user)
@@ -2139,6 +2275,8 @@ Best regards,
             file.seek(0)  # Reset file pointer
             
             if file_size > file_size_limit_bytes:
+                log.warning('upload.rejected', reason='over_plan_limit', ext=extension,
+                            bytes=file_size, limit_mb=user_plan.file_size_limit_mb)
                 error_msg = f'File size ({file_size / (1024*1024):.1f}MB) exceeds your plan limit ({user_plan.file_size_limit_mb}MB). Please upgrade your plan or use a smaller file.'
                 if is_ajax:
                     return jsonify({'success': False, 'error': error_msg}), 400
@@ -2160,8 +2298,13 @@ Best regards,
                 # Update the existing document record. Upload first, commit
                 # second: the reverse would leave a row pointing at nothing.
                 try:
+                    started = time.monotonic()
+                    log.event('upload.storing', ext=extension, bytes=file_size,
+                              replaces_document_id=existing_document.id)
                     unique_filename, key = store_document_bytes(
-                        chatbot_id, filename, file.read(), file.mimetype)
+                        chatbot_id, filename, file.read(), file.mimetype, logger=log)
+                    log.event('upload.stored', key=key, bytes=file_size,
+                              ms=int((time.monotonic() - started) * 1000))
 
                     existing_document.filename = unique_filename
                     existing_document.storage_key = key
@@ -2185,6 +2328,9 @@ Best regards,
                     flash(f'Document "{filename}" has been updated successfully!')
                 except Exception as e:
                     db.session.rollback()
+                    log.error('upload.failed', ext=extension, bytes=file_size,
+                              is_update=True, code=getattr(e, 'code', None),
+                              error=f'{type(e).__name__}: {e}', exc_info=True)
                     error_msg = f'Error saving file: {str(e)}. Please try again.'
                     if is_ajax:
                         return jsonify({'success': False, 'error': error_msg}), 500
@@ -2193,8 +2339,12 @@ Best regards,
             else:
                 # Create new document. Upload first, commit second.
                 try:
+                    started = time.monotonic()
+                    log.event('upload.storing', ext=extension, bytes=file_size)
                     unique_filename, key = store_document_bytes(
-                        chatbot_id, filename, file.read(), file.mimetype)
+                        chatbot_id, filename, file.read(), file.mimetype, logger=log)
+                    log.event('upload.stored', key=key, bytes=file_size,
+                              ms=int((time.monotonic() - started) * 1000))
 
                     document = Document(
                         filename=unique_filename,
@@ -2222,12 +2372,16 @@ Best regards,
                     flash('Document uploaded successfully!')
                 except Exception as e:
                     db.session.rollback()
+                    log.error('upload.failed', ext=extension, bytes=file_size,
+                              is_update=False, code=getattr(e, 'code', None),
+                              error=f'{type(e).__name__}: {e}', exc_info=True)
                     error_msg = f'Error saving file: {str(e)}. Please try again.'
                     if is_ajax:
                         return jsonify({'success': False, 'error': error_msg}), 500
                     flash(error_msg)
                     return redirect(get_chatbot_url(chatbot))
         else:
+            log.warning('upload.rejected', reason='bad_extension', ext=extension)
             error_msg = 'Invalid file type. Please upload PDF, DOCX, TXT, JSON, or XLSX files.'
             if is_ajax:
                 return jsonify({'success': False, 'error': error_msg}), 400
@@ -2930,6 +3084,9 @@ Best regards,
         except StorageNotFound:
             abort(404)
         except StorageError as error:
+            request_logger().error('avatar.fetch_failed', avatar=filename,
+                                   code=error.code, status=error.status,
+                                   error=str(error))
             print(f"WARNING: avatar fetch failed for {filename}: {error}")
             abort(502)
         mimetype, _ = mimetypes.guess_type(filename)

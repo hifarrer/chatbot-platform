@@ -25,11 +25,13 @@ import io
 import os
 import re
 import threading
+import time
 import uuid
 from urllib.parse import quote
 
 import requests
 
+from services.logging_setup import RunLogger, get_logger
 from services.storage_retry import call_with_retry
 
 PUBLIC = 'public'
@@ -47,6 +49,20 @@ _INVALID_SEGMENT = re.compile(r'(^$|^\.$|^\.\.$)')
 
 _backend = None
 _backend_lock = threading.Lock()
+
+
+def _elapsed_ms(started):
+    return int((time.monotonic() - started) * 1000)
+
+
+def _default_logger(backend_name):
+    """Every storage call logs, whether or not the caller passed a logger.
+
+    call_with_retry already emits storage.retry / storage.fatal / storage.exhausted,
+    but only when handed a logger - and no route ever handed it one, so a failing
+    upload produced not one line in production. The backend now supplies its own.
+    """
+    return RunLogger(get_logger('owlbee.storage'), backend=backend_name)
 
 
 # ----------------------------------------------------------------------
@@ -190,6 +206,7 @@ class BunnyBackend(StorageBackend):
         # One session for keep-alive: on the chat path a fresh TLS handshake per
         # artifact fetch is most of the latency.
         self.session = session or requests.Session()
+        self.log = _default_logger(self.name)
 
     # -- helpers ------------------------------------------------------
 
@@ -236,6 +253,8 @@ class BunnyBackend(StorageBackend):
         if content_type:
             headers['Content-Type'] = content_type
         request_timeout = self._timeout(timeout)
+        log = logger or self.log
+        started = time.monotonic()
 
         def send():
             return self.session.put(url, data=payload, headers=headers,
@@ -246,15 +265,29 @@ class BunnyBackend(StorageBackend):
                 return 'ok', len(payload)
             return self._classify_error(response, 'put', zone, key)
 
-        call_with_retry(send, op='storage.put', attempts=attempts or self.attempts,
-                        logger=logger, on_response=classify,
-                        log_fields={'zone': zone, 'key': key, 'bytes': len(payload)})
+        # A put is the operation whose silent failure costs a customer a file,
+        # so it logs both outcomes rather than only the bad one.
+        log.debug('storage.put.start', zone=zone, key=key, bytes=len(payload),
+                  connect_timeout=request_timeout[0], read_timeout=request_timeout[1])
+        try:
+            call_with_retry(send, op='storage.put', attempts=attempts or self.attempts,
+                            logger=log, on_response=classify,
+                            log_fields={'zone': zone, 'key': key, 'bytes': len(payload)})
+        except StorageError as error:
+            log.error('storage.put.failed', zone=zone, key=key, bytes=len(payload),
+                      ms=_elapsed_ms(started), code=error.code, status=error.status,
+                      attempts=error.attempts, error=str(error))
+            raise
+        log.event('storage.put.ok', zone=zone, key=key, bytes=len(payload),
+                  ms=_elapsed_ms(started))
         return len(payload)
 
     def get(self, zone, key, *, timeout=None, attempts=None, logger=None):
         url = self._url(zone, key)
         headers = self._headers(zone)
         request_timeout = self._timeout(timeout)
+        log = logger or self.log
+        started = time.monotonic()
 
         def send():
             return self.session.get(url, headers=headers, timeout=request_timeout)
@@ -264,13 +297,29 @@ class BunnyBackend(StorageBackend):
                 return 'ok', response.content
             return self._classify_error(response, 'get', zone, key)
 
-        return call_with_retry(send, op='storage.get', attempts=attempts or self.attempts,
-                               logger=logger, on_response=classify,
-                               log_fields={'zone': zone, 'key': key})
+        try:
+            data = call_with_retry(send, op='storage.get', attempts=attempts or self.attempts,
+                                   logger=log, on_response=classify,
+                                   log_fields={'zone': zone, 'key': key})
+        except StorageNotFound:
+            # Expected on the /uploads path for a key that was never written.
+            log.warning('storage.get.missing', zone=zone, key=key, ms=_elapsed_ms(started))
+            raise
+        except StorageError as error:
+            log.error('storage.get.failed', zone=zone, key=key, ms=_elapsed_ms(started),
+                      code=error.code, status=error.status, attempts=error.attempts,
+                      error=str(error))
+            raise
+        # Reads happen on every chat request; INFO here would drown the log.
+        log.debug('storage.get.ok', zone=zone, key=key, bytes=len(data or b''),
+                  ms=_elapsed_ms(started))
+        return data
 
     def delete(self, zone, key, *, logger=None):
         url = self._url(zone, key)
         headers = self._headers(zone)
+        log = logger or self.log
+        started = time.monotonic()
 
         def send():
             return self.session.delete(url, headers=headers, timeout=self._timeout(None))
@@ -282,9 +331,17 @@ class BunnyBackend(StorageBackend):
                 return 'ok', False  # already gone: idempotent, not an error
             return self._classify_error(response, 'delete', zone, key)
 
-        return call_with_retry(send, op='storage.delete', attempts=self.attempts,
-                               logger=logger, on_response=classify,
-                               log_fields={'zone': zone, 'key': key})
+        try:
+            removed = call_with_retry(send, op='storage.delete', attempts=self.attempts,
+                                      logger=log, on_response=classify,
+                                      log_fields={'zone': zone, 'key': key})
+        except StorageError as error:
+            log.error('storage.delete.failed', zone=zone, key=key, ms=_elapsed_ms(started),
+                      code=error.code, status=error.status, error=str(error))
+            raise
+        log.event('storage.delete.ok', zone=zone, key=key, removed=removed,
+                  ms=_elapsed_ms(started))
+        return removed
 
     def stat(self, zone, key):
         """Size and mtime, via a listing of the parent directory.
@@ -320,7 +377,7 @@ class BunnyBackend(StorageBackend):
             return self._classify_error(response, 'list', zone, prefix)
 
         response = call_with_retry(send, op='storage.list', attempts=self.attempts,
-                                   on_response=classify,
+                                   logger=self.log, on_response=classify,
                                    log_fields={'zone': zone, 'key': prefix})
         if response is None:
             return []
@@ -387,6 +444,7 @@ class LocalBackend(StorageBackend):
 
     def __init__(self, roots):
         self.roots = roots
+        self.log = _default_logger(self.name)
         for path in roots.values():
             os.makedirs(path, exist_ok=True)
 
@@ -405,19 +463,28 @@ class LocalBackend(StorageBackend):
         # The one surviving temp-file + os.replace: a Bunny PUT is already
         # atomic, so this is the only place that needs to fake it.
         tmp = f'{path}.tmp-{uuid.uuid4().hex[:8]}'
+        log = logger or self.log
+        started = time.monotonic()
         try:
             with open(tmp, 'wb') as handle:
                 handle.write(payload)
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(tmp, path)
-        except Exception:
+        except Exception as error:
             try:
                 if os.path.exists(tmp):
                     os.remove(tmp)
             except OSError:
                 pass
+            log.error('storage.put.failed', zone=zone, key=key, bytes=len(payload),
+                      ms=_elapsed_ms(started), code='storage_unavailable',
+                      error=f'{type(error).__name__}: {error}')
             raise
+        # Same event name as the Bunny backend on purpose: one grep covers both,
+        # and the `backend` field says which one wrote the bytes.
+        log.event('storage.put.ok', zone=zone, key=key, bytes=len(payload),
+                  ms=_elapsed_ms(started))
         return len(payload)
 
     def get(self, zone, key, *, timeout=None, attempts=None, logger=None):
@@ -426,6 +493,7 @@ class LocalBackend(StorageBackend):
             with open(path, 'rb') as handle:
                 return handle.read()
         except FileNotFoundError:
+            (logger or self.log).warning('storage.get.missing', zone=zone, key=key)
             raise StorageNotFound(f'get: not found: {key}', op='get', zone=zone, key=key)
 
     def delete(self, zone, key, *, logger=None):
