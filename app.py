@@ -2113,9 +2113,18 @@ Best regards,
     @app.route('/chatbot/<int:chatbot_id>/analytics')
     @login_required
     def chatbot_analytics(chatbot_id):
-        """Display analytics for a chatbot's conversations"""
-        chatbot = Chatbot.query.filter_by(id=chatbot_id, user_id=current_user.id).first_or_404()
-        
+        """Display analytics for a chatbot's conversations.
+
+        Admins reach this from the admin area for any bot; everyone else only
+        ever sees their own. A non-admin asking for someone else's bot still
+        gets the same 404 as before, so the route never confirms that an id
+        exists for a user who has no business with it.
+        """
+        chatbot = Chatbot.query.get_or_404(chatbot_id)
+        is_admin_view = chatbot.user_id != current_user.id
+        if is_admin_view and not current_user.is_admin:
+            abort(404)
+
         # Get conversations from the last 30 days only
         thirty_days_ago = datetime.utcnow() - timedelta(days=30)
         conversations = Conversation.query.filter(
@@ -2128,8 +2137,12 @@ Best regards,
         
         # Get analytics data. Keyword extraction costs tokens, so it draws on
         # the same allowance - once the owner is over it, fall back to the local
-        # extractor rather than failing the page.
-        analytics_allowed, _message = check_token_allowance_for_user(current_user)
+        # extractor rather than failing the page. The allowance is read from the
+        # OWNER, not current_user, because record_token_usage() below bills the
+        # owner: an admin viewing someone else's bot must neither spend from nor
+        # be blocked by their own quota.
+        owner = chatbot.owner or User.query.get(chatbot.user_id)
+        analytics_allowed, _message = check_token_allowance_for_user(owner)
         analytics_usage = []
         analytics_data = analytics_service.get_conversation_analytics(
             conversations, usage_sink=analytics_usage, allow_ai=analytics_allowed)
@@ -2153,6 +2166,7 @@ Best regards,
         return render_template('analytics.html',
                              chatbot=chatbot,
                              analytics=analytics_data,
+                             is_admin_view=is_admin_view,
                              homepage_chatbot=homepage_chatbot,
                              homepage_chatbot_title=homepage_chatbot_title,
                              homepage_chatbot_placeholder=homepage_chatbot_placeholder)
