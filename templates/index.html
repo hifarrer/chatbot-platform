@@ -71,36 +71,6 @@
 </div>
 
 <div class="container">
-    <!-- Dynamic Stats Section -->
-    {% for section in homepage_sections %}
-        {% if section.section_type == 'stats' %}
-        <div class="row mb-5">
-            <div class="col-lg-12 text-center">
-                <h2 class="mb-4">{{ section.title or 'See It In Action' }}</h2>
-                {% if section.subtitle %}
-                    <p class="text-muted mb-4">{{ section.subtitle }}</p>
-                {% endif %}
-                <div class="demo-stats">
-                    <div class="row g-4">
-                        {% set stats = section.content|from_json %}
-                        {% for stat in stats %}
-                        <div class="col-md-3">
-                            <div class="stat-card">
-                                <div class="stat-icon">
-                                    <i class="{{ stat.icon }} fa-2x text-{{ stat.color }}"></i>
-                                </div>
-                                <h3 class="counter" data-target="{{ stat.value }}">0</h3>
-                                <p>{{ stat.title }}</p>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-        </div>
-        {% endif %}
-    {% endfor %}
-
     <!-- Dynamic Homepage Sections -->
     {% for section in homepage_sections %}
         {% if section.section_type == 'how_it_works' %}

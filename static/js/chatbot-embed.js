@@ -2,6 +2,177 @@
 (function() {
     'use strict';
 
+    /* ===== owlbee-safe-html v1 BEGIN - mirrored in static/js/chatbot-embed.js;
+       qa_phase6_reply_html.py fails if these two blocks differ ===== */
+    var SafeHtml = (function () {
+        'use strict';
+
+        // Mirrors ALLOWED_TAGS in services/reply_sanitizer.py.
+        var ALLOWED_TAGS = ['A', 'B', 'STRONG', 'I', 'EM', 'U', 'BR', 'P',
+                            'UL', 'OL', 'LI', 'CODE', 'SPAN'];
+
+        // Removed with their contents: unwrapping a <script> would print the
+        // payload as visible text instead of running it, which is not a win.
+        var DROP_WITH_CONTENT = ['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED',
+                                 'APPLET', 'NOSCRIPT', 'TEMPLATE', 'SVG', 'MATH',
+                                 'FORM', 'INPUT', 'TEXTAREA', 'SELECT', 'BUTTON',
+                                 'LINK', 'META', 'BASE'];
+
+        var GLOBAL_ATTRS = ['class', 'title'];
+        var TAG_ATTRS = { A: ['href'] };
+        var ALLOWED_SCHEMES = ['http:', 'https:', 'mailto:', 'tel:'];
+
+        // A tab or newline inside "java<tab>script:" still makes a live URL,
+        // so these die before the scheme is inspected.
+        var CONTROL_CHARS = /[\x00-\x20\x7f]/g;
+        var SCHEME_RE = /^([a-zA-Z][a-zA-Z0-9+.\-]*):/;
+
+        function escapeHtml(text) {
+            return String(text === null || text === undefined ? '' : text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function safeHref(value) {
+            if (!value) { return null; }
+            var url = String(value).replace(CONTROL_CHARS, '');
+            if (!url) { return null; }
+            if (url.charAt(0) === '#') { return url; }
+            // Protocol-relative: no honest use in a support answer.
+            if (url.indexOf('//') === 0) { return null; }
+            var scheme = SCHEME_RE.exec(url);
+            if (scheme) {
+                return ALLOWED_SCHEMES.indexOf(scheme[1].toLowerCase() + ':') === -1
+                    ? null : url;
+            }
+            return 'https://' + url;
+        }
+
+        function contains(list, value) {
+            return list.indexOf(value) !== -1;
+        }
+
+        function attachedTo(root, node) {
+            var current = node;
+            while (current) {
+                if (current === root) { return true; }
+                current = current.parentNode;
+            }
+            return false;
+        }
+
+        function unwrap(el) {
+            var parent = el.parentNode;
+            if (!parent) { return; }
+            while (el.firstChild) {
+                parent.insertBefore(el.firstChild, el);
+            }
+            parent.removeChild(el);
+        }
+
+        function hasAncestorTag(root, el, tagName) {
+            var current = el.parentNode;
+            while (current && current !== root) {
+                if (current.nodeName === tagName) { return true; }
+                current = current.parentNode;
+            }
+            return false;
+        }
+
+        /**
+         * Parse untrusted HTML into an inert DocumentFragment, allowlisted.
+         * <template> content is inert: no scripts run and no resources load while
+         * we inspect it.
+         */
+        function sanitizeFragment(html, extraTags) {
+            var tpl = document.createElement('template');
+            tpl.innerHTML = html === null || html === undefined ? '' : String(html);
+            var root = tpl.content;
+            var allowed = extraTags ? ALLOWED_TAGS.concat(extraTags) : ALLOWED_TAGS;
+
+            var elements = Array.prototype.slice.call(root.querySelectorAll('*'));
+            for (var i = 0; i < elements.length; i++) {
+                var el = elements[i];
+                if (!attachedTo(root, el)) { continue; }
+
+                var name = el.nodeName;
+                if (contains(DROP_WITH_CONTENT, name)) {
+                    if (el.parentNode) { el.parentNode.removeChild(el); }
+                    continue;
+                }
+                if (!contains(allowed, name)) {
+                    unwrap(el);
+                    continue;
+                }
+
+                var keep = GLOBAL_ATTRS.concat(TAG_ATTRS[name] || []);
+                var attrs = Array.prototype.slice.call(el.attributes);
+                for (var a = 0; a < attrs.length; a++) {
+                    if (!contains(keep, attrs[a].name.toLowerCase())) {
+                        el.removeAttribute(attrs[a].name);
+                    }
+                }
+
+                if (name === 'A') {
+                    // A nested anchor is the exact shape this code exists to stop.
+                    if (hasAncestorTag(root, el, 'A')) { unwrap(el); continue; }
+                    var href = safeHref(el.getAttribute('href'));
+                    if (!href) { unwrap(el); continue; }
+                    el.setAttribute('href', href);
+                    el.setAttribute('target', '_blank');
+                    el.setAttribute('rel', 'noopener noreferrer');
+                }
+            }
+            return root;
+        }
+
+        /**
+         * Run fn over every text node under root, skipping those inside any tag
+         * named in opts.skipInside. Callers that rewrite text must go through
+         * this, never over the serialized HTML - rewriting the string is what put
+         * a <strong> inside an href and broke the link in the first place.
+         */
+        function walkTextNodes(root, opts, fn) {
+            var skip = (opts && opts.skipInside ? opts.skipInside : []).map(function (t) {
+                return t.toUpperCase();
+            });
+            var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+            var nodes = [];
+            var node;
+            while ((node = walker.nextNode())) { nodes.push(node); }
+
+            for (var i = 0; i < nodes.length; i++) {
+                var current = nodes[i];
+                var blocked = false;
+                var parent = current.parentNode;
+                while (parent && parent !== root) {
+                    if (skip.indexOf(parent.nodeName) !== -1) { blocked = true; break; }
+                    parent = parent.parentNode;
+                }
+                if (!blocked) { fn(current); }
+            }
+        }
+
+        /** Replace an element's children with sanitized HTML. */
+        function setSafeHtml(el, html, extraTags) {
+            while (el.firstChild) { el.removeChild(el.firstChild); }
+            el.appendChild(sanitizeFragment(html, extraTags));
+            return el;
+        }
+
+        return {
+            escapeHtml: escapeHtml,
+            safeHref: safeHref,
+            sanitizeFragment: sanitizeFragment,
+            walkTextNodes: walkTextNodes,
+            setSafeHtml: setSafeHtml
+        };
+    })();
+    /* ===== owlbee-safe-html v1 END ===== */
+
     // ChatBot Embed Library
     window.ChatbotEmbed = {
         init: function(config) {
@@ -43,13 +214,13 @@
                     <div class="chatbot-toggle" id="chatbot-toggle-${this.config.embedCode}">
                         <div class="chatbot-toggle-avatar">
                             ${this.config.avatarUrl ? 
-                                `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
+                                `<img src="${SafeHtml.escapeHtml(this.config.avatarUrl)}" alt="Chatbot Avatar">` : 
                                 '🤖'
                             }
                         </div>
                         <div class="chatbot-toggle-content">
                             <div class="chatbot-toggle-greeting">
-                                ${this.config.greetingMessage || "Need help?"}
+                                ${SafeHtml.escapeHtml(this.config.greetingMessage || "Need help?")}
                             </div>
                             <div class="chatbot-toggle-button">
                                 <span>Ask anything</span>
@@ -71,7 +242,7 @@
                             <div class="chatbot-title">
                                 <div class="chatbot-avatar">
                                     ${this.config.avatarUrl ? 
-                                        `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
+                                        `<img src="${SafeHtml.escapeHtml(this.config.avatarUrl)}" alt="Chatbot Avatar">` : 
                                         '🤖'
                                     }
                                 </div>
@@ -96,13 +267,13 @@
                             <div class="message bot-message">
                                 <div class="message-avatar">
                                     ${this.config.avatarUrl ? 
-                                        `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
+                                        `<img src="${SafeHtml.escapeHtml(this.config.avatarUrl)}" alt="Chatbot Avatar">` : 
                                         '🤖'
                                     }
                                 </div>
                                 <div class="message-content">
                                     <div class="message-bubble">
-                                        ${this.config.greetingMessage}
+                                        ${SafeHtml.escapeHtml(this.config.greetingMessage)}
                                     </div>
                                 </div>
                             </div>
@@ -983,8 +1154,14 @@
             .then(data => {
                 this.hideTyping();
                 // Handle undefined, null, or empty responses
-                const botResponse = data.response || data.error || 'Sorry, I encountered an issue. Please try again.';
-                this.addMessage(botResponse, 'bot');
+                // response_html is the server-sanitized, well-formed reply.
+                // data.response is the plain-text twin, kept so a widget
+                // cached from before that field existed still works.
+                if (data.response_html) {
+                    this.addMessage(data.response_html, 'bot', { html: true });
+                } else {
+                    this.addMessage(data.response || data.error || 'Sorry, I encountered an issue. Please try again.', 'bot');
+                }
                 
                 // Store conversation ID for future messages
                 if (data.conversation_id) {
@@ -999,85 +1176,57 @@
             });
         },
 
-        addMessage: function(text, sender) {
+        addMessage: function(text, sender, options) {
+            const opts = options || {};
             const messagesContainer = document.getElementById(`chatbot-messages-${this.config.embedCode}`);
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${sender}-message`;
 
-            const avatar = sender === 'user' ? '👤' : 
-                          (this.config.avatarUrl ? 
-                            `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
-                            '🤖');
             const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-            // Convert URLs and emails to clickable links
-            const processedText = this.convertLinksToHtml(text);
+            const avatarDiv = document.createElement('div');
+            avatarDiv.className = 'message-avatar';
+            if (sender === 'user') {
+                avatarDiv.textContent = '\u{1F464}';
+            } else if (this.config.avatarUrl) {
+                const img = document.createElement('img');
+                img.src = this.config.avatarUrl;
+                img.alt = 'Chatbot Avatar';
+                avatarDiv.appendChild(img);
+            } else {
+                avatarDiv.textContent = '\u{1F916}';
+            }
 
-            messageDiv.innerHTML = `
-                <div class="message-avatar">${avatar}</div>
-                <div class="message-content">
-                    <div class="message-bubble">${processedText}</div>
-                    <div class="message-time">${time}</div>
-                </div>
-            `;
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble';
+            if (opts.html) {
+                // Only ever the server's sanitized response_html. Re-sanitized
+                // here because this widget runs on the customer's own site.
+                bubble.appendChild(SafeHtml.sanitizeFragment(text));
+            } else {
+                // Visitor input, error strings and canned copy. textContent
+                // cannot be talked into becoming markup, which is what the old
+                // innerHTML path allowed - a visitor could store XSS on the
+                // customer's page just by typing it.
+                bubble.textContent = text;
+            }
+
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'message-time';
+            timeDiv.textContent = time;
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.appendChild(bubble);
+            contentDiv.appendChild(timeDiv);
+
+            messageDiv.appendChild(avatarDiv);
+            messageDiv.appendChild(contentDiv);
 
             messagesContainer.appendChild(messageDiv);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         },
 
-        convertLinksToHtml: function(text) {
-            if (!text) return text;
-            
-            // Store original text for @ checking
-            const originalText = text;
-            
-            // Email regex pattern
-            const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi;
-            
-            // Phone number regex pattern (matches various phone number formats)
-            const phoneRegex = /(\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})/gi;
-            
-            // URL regex pattern (matches http, https, www, and domain patterns)
-            const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/gi;
-            
-            let processedText = text;
-            
-            // Process emails FIRST to avoid URL regex interfering with email domains
-            processedText = processedText.replace(emailRegex, (match) => {
-                return `<strong>${match}</strong>`;
-            });
-            
-            // Process phone numbers SECOND to avoid URL regex interfering
-            processedText = processedText.replace(phoneRegex, (match) => {
-                return `<strong>${match}</strong>`;
-            });
-            
-            // Convert URLs to clickable links LAST
-            processedText = processedText.replace(urlRegex, (match) => {
-                // Skip if this match is already inside a <strong> tag (email or phone)
-                if (processedText.indexOf(`<strong>${match}</strong>`) !== -1) {
-                    return match;
-                }
-                
-                // Check if there's an @ symbol before this match in the ORIGINAL text
-                const matchIndex = originalText.indexOf(match);
-                if (matchIndex > 0) {
-                    const beforeMatch = originalText.substring(0, matchIndex);
-                    if (beforeMatch.includes('@')) {
-                        return match; // Don't convert to link if @ is before it
-                    }
-                }
-                
-                let url = match;
-                // Add https:// if the URL doesn't have a protocol
-                if (!url.match(/^https?:\/\//i)) {
-                    url = 'https://' + url;
-                }
-                return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${match}</a>`;
-            });
-            
-            return processedText;
-        },
 
         showTyping: function() {
             const messagesContainer = document.getElementById(`chatbot-messages-${this.config.embedCode}`);
@@ -1085,7 +1234,7 @@
             typingDiv.className = 'message bot-message typing-message';
             
             const avatar = this.config.avatarUrl ? 
-                          `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
+                          `<img src="${SafeHtml.escapeHtml(this.config.avatarUrl)}" alt="Chatbot Avatar">` : 
                           '🤖';
             
             typingDiv.innerHTML = `
@@ -1178,13 +1327,13 @@
                     <div class="message bot-message">
                         <div class="message-avatar">
                             ${this.config.avatarUrl ? 
-                                `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
+                                `<img src="${SafeHtml.escapeHtml(this.config.avatarUrl)}" alt="Chatbot Avatar">` : 
                                 '🤖'
                             }
                         </div>
                         <div class="message-content">
                             <div class="message-bubble">
-                                ${this.config.greetingMessage}
+                                ${SafeHtml.escapeHtml(this.config.greetingMessage)}
                             </div>
                         </div>
                     </div>
@@ -1204,7 +1353,7 @@
             buttonContainer.innerHTML = `
                 <div class="message-avatar">
                     ${this.config.avatarUrl ? 
-                        `<img src="${this.config.avatarUrl}" alt="Chatbot Avatar">` : 
+                        `<img src="${SafeHtml.escapeHtml(this.config.avatarUrl)}" alt="Chatbot Avatar">` : 
                         '🤖'
                     }
                 </div>

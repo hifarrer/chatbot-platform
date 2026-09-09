@@ -27,6 +27,7 @@ from services.logging_setup import RunLogger, configure_logging, get_logger
 from services.object_storage import (PRIVATE, PUBLIC, StorageError, StorageNotFound,
                                      artifact_key, avatar_key, describe_storage,
                                      document_key, get_storage, log_storage_status)
+from services.reply_sanitizer import reply_to_plain_text, sanitize_reply
 from services.training_errors import friendly_error
 
 # Monthly token allowance applied to the auto-created Free plan. Paid plans get
@@ -158,6 +159,11 @@ class Conversation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     chatbot_id = db.Column(db.Integer, db.ForeignKey('chatbot.id'), nullable=False)
     user_message = db.Column(db.Text, nullable=False)
+    # Raw model output, deliberately unsanitized: this is the audit record of
+    # what the model actually produced, and sanitizing on write would be lossy
+    # and irreversible. NEVER render it as HTML. The two transcript previews
+    # are Jinja-autoescaped; anything new must go through
+    # services.reply_sanitizer.sanitize_reply first.
     bot_response = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     response_status = db.Column(db.String(20), default='active')  # 'active', 'resolved', 'pending'
@@ -2935,8 +2941,12 @@ Best regards,
                 print(f"[INFO] chatbot {chatbot.id}: owner is over their monthly token allowance")
                 # 200 with 'response', not 429 with 'error': embed.html reads
                 # data.response only, so an error-shaped body renders blank there.
+                # response_html so every 200 from this route has one shape.
+                # block_message is admin-editable, so a stray '<' in it would
+                # break the widget exactly like a model-authored one.
                 return jsonify({
-                    'response': block_message,
+                    'response': reply_to_plain_text(block_message),
+                    'response_html': sanitize_reply(block_message),
                     'conversation_id': conversation_id or str(uuid.uuid4()),
                     'limit_reached': True
                 })
@@ -2998,7 +3008,23 @@ Best regards,
             # Ensure response is not None or empty
             if not response or response.strip() == "":
                 response = "I'm sorry, I couldn't generate a proper response. Please try asking your question differently."
-            
+
+            # The model's reply is untrusted markup. The system prompt and the
+            # scraped knowledge base can both put raw <a class="..."> in it, and
+            # _format_plan_information adds <h3>/<b> of its own - so sanitize
+            # once, here, and no client has to guess. See services/reply_sanitizer.py.
+            sanitize_stats = {}
+            response_html = sanitize_reply(response, stats_sink=sanitize_stats)
+            response_text = reply_to_plain_text(response)
+            if not response_html.strip():
+                # A reply that was *entirely* markup sanitizes to nothing, and
+                # the empty-check above ran before we knew that.
+                response_html = response_text = (
+                    "I'm sorry, I couldn't generate a proper response. "
+                    "Please try asking your question differently.")
+            request_logger(chatbot_id=chatbot.id).debug('chat.reply_sanitized',
+                                                        **sanitize_stats)
+
             # Save conversation, with the per-request token ledger
             model_alias = None
             try:
@@ -3034,7 +3060,12 @@ Best regards,
                     print(f"[WARNING] could not record token usage: {e}")
             
             print(f"💬 Response: {response[:100]}...")
-            return jsonify({'response': response, 'conversation_id': conversation_id})
+            # 'response' stays plain text so a widget cached from before this
+            # change keeps getting exactly what its old link regex expects;
+            # 'response_html' is what current clients render.
+            return jsonify({'response': response_text,
+                            'response_html': response_html,
+                            'conversation_id': conversation_id})
             
         except Exception as e:
             print(f"[ERROR] Chat API Error: {str(e)}")

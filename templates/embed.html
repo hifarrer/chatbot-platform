@@ -136,6 +136,7 @@
         </div>
     </div>
 
+    <script src="{{ url_for('static', filename='js/owlbee-safe-html.js') }}"></script>
     <script>
         const embedCode = '{{ embed_code }}';
         const apiUrl = `/api/chat/${embedCode}`;
@@ -151,7 +152,10 @@
             // Add user message
             const userMessage = document.createElement('div');
             userMessage.className = 'message user';
-            userMessage.innerHTML = `<div class="message-content">${message}</div>`;
+            const userContent = document.createElement('div');
+            userContent.className = 'message-content';
+            userContent.textContent = message;
+            userMessage.appendChild(userContent);
             messagesContainer.appendChild(userMessage);
             
             // Add loading message
@@ -179,7 +183,12 @@
                 // Add bot response
                 const botMessage = document.createElement('div');
                 botMessage.className = 'message bot';
-                botMessage.innerHTML = `<div class="message-content">${data.response}</div>`;
+                const botContent = document.createElement('div');
+                botContent.className = 'message-content';
+                // This page never linkified at all, so it gains working
+                // links here for the first time - from the server, not a regex.
+                OwlbeeSafeHtml.setSafeHtml(botContent, data.response_html || data.response || '');
+                botMessage.appendChild(botContent);
                 messagesContainer.appendChild(botMessage);
                 
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;

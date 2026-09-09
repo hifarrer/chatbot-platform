@@ -1215,61 +1215,39 @@ function createToastContainer() {
     return container;
 }
 
-function convertLinksToHtml(text) {
-    if (!text) return text;
-    
-    // Store original text for @ checking
-    const originalText = text;
-    
-    let processedText = text;
-    
-    // Format text for better readability
-    processedText = formatTextForChat(processedText);
-    
-    // Email regex pattern
-    const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi;
-    
-    // Phone number regex pattern (matches various phone number formats)
-    const phoneRegex = /(\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})/gi;
-    
-    // URL regex pattern (matches http, https, www, and domain patterns)
-    const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/gi;
-    
-    // Process emails FIRST to avoid URL regex interfering with email domains
-    processedText = processedText.replace(emailRegex, (match) => {
-        return `<strong>${match}</strong>`;
+// Tags formatTextForChat is allowed to emit, on top of the base allowlist.
+// This is exactly what the .chat-messages CSS further down already styles.
+const COSMETIC_TAGS = ['DIV', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD', 'H3'];
+
+function renderBotMessage(html, plainText) {
+    /**
+     * Build a bot bubble from the server's sanitized response_html.
+     *
+     * The cosmetic layer below (bold plan names, prices, lists, JSON tables)
+     * runs over text nodes only. It used to run over the whole HTML string,
+     * which is what broke links: /\b(Free|...)\b/gi matched the "free" inside
+     * https://smallscholars.com.au/free-trial-enquiries/ and injected a
+     * <strong> into the middle of the URL, and the link regex that ran next
+     * then cut the anchor in half at the space inside that tag.
+     */
+    // parseJsonTables needs a whole JSON blob in one string, and the server's
+    // linkifier splits a text node at every URL - so a bare domain in a table
+    // cell would leave each fragment unparseable and the table would silently
+    // vanish. When the reply really does contain a table, format the plain text
+    // with the original whole-string pipeline instead: a table has no links to
+    // lose, and sanitizing the result still guarantees well-formed output.
+    if (plainText && parseJsonTables(plainText) !== plainText) {
+        return OwlbeeSafeHtml.sanitizeFragment(formatTextForChat(plainText), COSMETIC_TAGS);
+    }
+
+    const frag = OwlbeeSafeHtml.sanitizeFragment(html, COSMETIC_TAGS);
+    OwlbeeSafeHtml.walkTextNodes(frag, { skipInside: ['A', 'CODE'] }, node => {
+        const formatted = formatTextForChat(node.data);
+        if (formatted === node.data) { return; }
+        const replacement = OwlbeeSafeHtml.sanitizeFragment(formatted, COSMETIC_TAGS);
+        node.parentNode.replaceChild(replacement, node);
     });
-    
-    // Process phone numbers SECOND to avoid URL regex interfering
-    processedText = processedText.replace(phoneRegex, (match) => {
-        return `<strong>${match}</strong>`;
-    });
-    
-    // Convert URLs to clickable links LAST
-    processedText = processedText.replace(urlRegex, (match) => {
-        // Skip if this match is already inside a <strong> tag (email or phone)
-        if (processedText.indexOf(`<strong>${match}</strong>`) !== -1) {
-            return match;
-        }
-        
-        // Check if there's an @ symbol before this match in the ORIGINAL text
-        const matchIndex = originalText.indexOf(match);
-        if (matchIndex > 0) {
-            const beforeMatch = originalText.substring(0, matchIndex);
-            if (beforeMatch.includes('@')) {
-                return match; // Don't convert to link if @ is before it
-            }
-        }
-        
-        let url = match;
-        // Add https:// if the URL doesn't have a protocol
-        if (!url.match(/^https?:\/\//i)) {
-            url = 'https://' + url;
-        }
-        return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="chatbot-link">${match}</a>`;
-    });
-    
-    return processedText;
+    return frag;
 }
 
 function formatTextForChat(text) {
@@ -1430,11 +1408,14 @@ function createTableFromObject(data) {
 
 function escapeHtml(text) {
     /**
-     * Escape HTML characters to prevent XSS
+     * Escape HTML characters to prevent XSS.
+     *
+     * Delegates to the shared helper, which also escapes quotes - the
+     * textContent/innerHTML trick this used to use escapes & < > but
+     * leaves " and ' intact, so it was only ever safe for element
+     * content and silently wrong inside an attribute.
      */
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return OwlbeeSafeHtml.escapeHtml(text);
 }
 
 function formatPlanInformation(text) {
@@ -1526,7 +1507,11 @@ function sendMessage() {
     // Add user message
     const userDiv = document.createElement('div');
     userDiv.className = 'mb-2 text-end';
-    userDiv.innerHTML = `<div class="d-inline-block bg-primary text-white rounded px-3 py-2" style="max-width: 70%;">${message}</div>`;
+    const userBubble = document.createElement('div');
+    userBubble.className = 'd-inline-block bg-primary text-white rounded px-3 py-2';
+    userBubble.style.maxWidth = '70%';
+    userBubble.textContent = message;
+    userDiv.appendChild(userBubble);
     chatMessages.appendChild(userDiv);
     
     // Add loading indicator
@@ -1565,8 +1550,12 @@ function sendMessage() {
         // Add bot response
         const botDiv = document.createElement('div');
         botDiv.className = 'mb-2';
-        const processedResponse = convertLinksToHtml(data.response);
-        botDiv.innerHTML = `<div class="d-inline-block bg-light rounded px-3 py-2" style="max-width: 70%;"><i class="fas fa-robot me-2 text-primary"></i>${processedResponse}</div>`;
+        const botBubble = document.createElement('div');
+        botBubble.className = 'd-inline-block bg-light rounded px-3 py-2';
+        botBubble.style.maxWidth = '70%';
+        botBubble.innerHTML = '<i class="fas fa-robot me-2 text-primary"></i>';
+        botBubble.appendChild(renderBotMessage(data.response_html || data.response || '', data.response || ''));
+        botDiv.appendChild(botBubble);
         chatMessages.appendChild(botDiv);
         
         chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -2185,11 +2174,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Helper function to escape HTML (if not already defined)
     if (typeof escapeHtml === 'undefined') {
-        window.escapeHtml = function(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        };
+        window.escapeHtml = OwlbeeSafeHtml.escapeHtml;
     }
 });
 </script>
