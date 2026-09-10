@@ -10,22 +10,9 @@ This script will:
 import os
 import sys
 import sqlite3
-import psycopg2
 from psycopg2.extras import RealDictCursor
-from dotenv import load_dotenv
 from datetime import datetime
-
-def get_postgres_connection():
-    """Get PostgreSQL connection using environment variables"""
-    load_dotenv()
-    
-    return psycopg2.connect(
-        host=os.environ.get('PGHOST'),
-        database=os.environ.get('PGDATABASE'),
-        user=os.environ.get('PGUSER'),
-        password=os.environ.get('PGPASSWORD'),
-        port=os.environ.get('PGPORT', 5432)
-    )
+from services.db_connection import describe_target, get_postgres_connection
 
 def get_sqlite_connection():
     """Get SQLite connection, try multiple possible locations"""
@@ -270,6 +257,7 @@ def main():
     try:
         # Get connections
         pg_conn = get_postgres_connection()
+        print(f"📡 Connected to: {describe_target()}")
         sqlite_conn = get_sqlite_connection()
         
         # Create PostgreSQL tables

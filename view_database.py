@@ -6,26 +6,17 @@ Shows all data in the PostgreSQL database in a readable format
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
-import os
 from datetime import datetime
-from dotenv import load_dotenv
+from services.db_connection import describe_target, get_postgres_connection
 
 def view_database():
     print("🗄️  owlbee.ai PostgreSQL Database Viewer")
     print("=" * 50)
     
     try:
-        # Load environment variables
-        load_dotenv()
-        
         # Connect to PostgreSQL
-        conn = psycopg2.connect(
-            host=os.environ.get('PGHOST'),
-            database=os.environ.get('PGDATABASE'),
-            user=os.environ.get('PGUSER'),
-            password=os.environ.get('PGPASSWORD'),
-            port=os.environ.get('PGPORT', 5432)
-        )
+        conn = get_postgres_connection()
+        print(f"📡 Connected to: {describe_target()}")
         
         cursor = conn.cursor(cursor_factory=RealDictCursor)
     

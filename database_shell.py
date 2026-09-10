@@ -6,9 +6,8 @@ Allows you to run SQL queries directly on the PostgreSQL database
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
-import os
 import sys
-from dotenv import load_dotenv
+from services.db_connection import describe_target, get_postgres_connection
 
 def database_shell():
     print("🗄️  Chatbot Platform PostgreSQL Database Shell")
@@ -16,17 +15,9 @@ def database_shell():
     print("=" * 50)
     
     try:
-        # Load environment variables
-        load_dotenv()
-        
         # Connect to PostgreSQL
-        conn = psycopg2.connect(
-            host=os.environ.get('PGHOST'),
-            database=os.environ.get('PGDATABASE'),
-            user=os.environ.get('PGUSER'),
-            password=os.environ.get('PGPASSWORD'),
-            port=os.environ.get('PGPORT', 5432)
-        )
+        conn = get_postgres_connection()
+        print(f"📡 Connected to: {describe_target()}")
         
         cursor = conn.cursor(cursor_factory=RealDictCursor)
     

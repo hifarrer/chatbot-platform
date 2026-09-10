@@ -10,23 +10,10 @@ This script can:
 import os
 import sys
 import sqlite3
-import psycopg2
 from psycopg2.extras import RealDictCursor
-from dotenv import load_dotenv
 from datetime import datetime
 import json
-
-def get_postgres_connection():
-    """Get PostgreSQL connection using environment variables"""
-    load_dotenv()
-    
-    return psycopg2.connect(
-        host=os.environ.get('PGHOST'),
-        database=os.environ.get('PGDATABASE'),
-        user=os.environ.get('PGUSER'),
-        password=os.environ.get('PGPASSWORD'),
-        port=os.environ.get('PGPORT', 5432)
-    )
+from services.db_connection import describe_target, get_postgres_connection
 
 def migrate_from_sqlite_file(sqlite_path, pg_conn):
     """Migrate data from a specific SQLite file"""
@@ -263,7 +250,7 @@ def main():
     
     try:
         pg_conn = get_postgres_connection()
-        print("✅ Connected to PostgreSQL")
+        print(f"✅ Connected to PostgreSQL: {describe_target()}")
         
         while True:
             print("\n📋 Choose an option:")

@@ -6,23 +6,14 @@ Usage: python run_sql_inserts.py <sql_file>
 
 import os
 import sys
-import psycopg2
-from dotenv import load_dotenv
+from services.db_connection import describe_target, get_postgres_connection
 
 def run_sql_file(sql_file_path):
     """Run SQL INSERT statements from a file"""
     try:
-        # Load environment variables
-        load_dotenv()
-        
         # Connect to PostgreSQL
-        conn = psycopg2.connect(
-            host=os.environ.get('PGHOST'),
-            database=os.environ.get('PGDATABASE'),
-            user=os.environ.get('PGUSER'),
-            password=os.environ.get('PGPASSWORD'),
-            port=os.environ.get('PGPORT', 5432)
-        )
+        conn = get_postgres_connection()
+        print(f"📡 Connected to: {describe_target()}")
         
         cursor = conn.cursor()
         
